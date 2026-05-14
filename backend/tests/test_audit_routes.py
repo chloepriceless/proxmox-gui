@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+from datetime import UTC
+
 import pytest
 
 from tests.factories import login_as, make_user
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -23,9 +24,7 @@ async def _seed_audit_row(
     target_id: str | None = "100",
 ):
     """Insert an AuditLog row directly for test setup."""
-    from datetime import datetime, timezone
-
-    from sqlalchemy.ext.asyncio import async_sessionmaker
+    from datetime import datetime
 
     from app.models import AuditLog
 
@@ -38,7 +37,7 @@ async def _seed_audit_row(
             target_id=target_id,
             result=result,
             error=error,
-            occurred_at=datetime.now(timezone.utc).replace(tzinfo=None),
+            occurred_at=datetime.now(UTC).replace(tzinfo=None),
         )
         session.add(entry)
         await session.commit()
@@ -48,13 +47,13 @@ async def _make_pat(client, cookies: dict) -> str:
     """Mint a PAT via the API and return the raw token string."""
     csrf = cookies["csrf_token"]
     resp = await client.post(
-        "/api/v1/me/tokens",
+        "/api/v1/me/tokens/",
         json={"name": "audit-test-pat", "expires_in_days": 30},
         cookies=cookies,
         headers={"X-CSRF-Token": csrf},
     )
     assert resp.status_code == 201, f"PAT mint failed: {resp.text}"
-    return resp.json()["token"]
+    return resp.json()["plaintext"]
 
 
 # ---------------------------------------------------------------------------

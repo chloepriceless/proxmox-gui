@@ -161,6 +161,7 @@ def create_app() -> FastAPI:
 
     # Plan 01-05: auth + me + ssh-keys + tokens routers. Imports kept local to
     # the factory so test runs that don't need them aren't import-cycle penalised.
+    from app.audit.routes import router as audit_router
     from app.auth.routes import router as auth_router
     from app.clusters.routes import router as clusters_router
     from app.me.routes import router as me_router
@@ -192,6 +193,8 @@ def create_app() -> FastAPI:
     app.include_router(
         users_router, prefix="/api/v1/users", tags=["users"]
     )
+    # Plan 02-02: audit log read routes (AUDIT-03, AUDIT-04, AUDIT-05).
+    app.include_router(audit_router, prefix="/api/v1/audit", tags=["audit"])
 
     return app
 

@@ -5,16 +5,14 @@ Verifies RBAC predicate and filter correctness.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime
 
 import pytest
 import pytest_asyncio
-import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.auth.dependencies import Principal
 from app.models import AuditLog, Team, TeamMembership, User
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -94,7 +92,7 @@ async def _seed_log(
         target_id=target_id,
         result=result,
         source_ip=None,
-        occurred_at=occurred_at or datetime.now(timezone.utc).replace(tzinfo=None),
+        occurred_at=occurred_at or datetime.now(UTC).replace(tzinfo=None),
     )
     session.add(entry)
     await session.flush()
@@ -102,7 +100,6 @@ async def _seed_log(
 
 
 def _make_principal(user: User, mode: str = "session") -> Principal:
-    from typing import Literal
     return Principal(user=user, mode=mode)  # type: ignore[arg-type]
 
 
@@ -118,10 +115,10 @@ async def test_admin_sees_every_row(reader_session: AsyncSession) -> None:
     from app.audit.schemas import AuditFilter
 
     admin = await _seed_user(reader_session, user_id=1, is_admin=True)
-    t1 = await _seed_team(reader_session, team_id=10, name="team-alpha")
-    t2 = await _seed_team(reader_session, team_id=11, name="team-beta")
-    u2 = await _seed_user(reader_session, user_id=2, is_admin=False)
-    u3 = await _seed_user(reader_session, user_id=3, is_admin=False)
+    await _seed_team(reader_session, team_id=10, name="team-alpha")
+    await _seed_team(reader_session, team_id=11, name="team-beta")
+    await _seed_user(reader_session, user_id=2, is_admin=False)
+    await _seed_user(reader_session, user_id=3, is_admin=False)
 
     # Seed 5 rows across 3 users and 2 teams
     await _seed_log(reader_session, actor_user_id=1, team_id=10)
@@ -147,8 +144,8 @@ async def test_non_admin_default_sees_only_own_rows(
     from app.audit.schemas import AuditFilter
 
     me = await _seed_user(reader_session, user_id=1, is_admin=False)
-    other = await _seed_user(reader_session, user_id=2, is_admin=False)
-    t = await _seed_team(reader_session, team_id=10, name="shared-team")
+    await _seed_user(reader_session, user_id=2, is_admin=False)
+    await _seed_team(reader_session, team_id=10, name="shared-team")
     await _seed_membership(reader_session, user_id=1, team_id=10)
     await _seed_membership(reader_session, user_id=2, team_id=10)
 
@@ -181,10 +178,10 @@ async def test_non_admin_with_show_team_actions_sees_team_scoped(
     from app.audit.schemas import AuditFilter
 
     me = await _seed_user(reader_session, user_id=1, is_admin=False)
-    teammate = await _seed_user(reader_session, user_id=2, is_admin=False)
-    outsider = await _seed_user(reader_session, user_id=3, is_admin=False)
-    t_mine = await _seed_team(reader_session, team_id=10, name="my-team")
-    t_other = await _seed_team(reader_session, team_id=20, name="other-team")
+    await _seed_user(reader_session, user_id=2, is_admin=False)
+    await _seed_user(reader_session, user_id=3, is_admin=False)
+    await _seed_team(reader_session, team_id=10, name="my-team")
+    await _seed_team(reader_session, team_id=20, name="other-team")
     await _seed_membership(reader_session, user_id=1, team_id=10)
     await _seed_membership(reader_session, user_id=2, team_id=10)
     await _seed_membership(reader_session, user_id=3, team_id=20)
@@ -253,11 +250,11 @@ async def test_filter_date_range(reader_session: AsyncSession) -> None:
     await reader_session.commit()
 
     principal = _make_principal(admin)
-    # Filter: from=now (inclusive)
+    # Filter: from=now (inclusive); must use alias "from" via model_validate
     rows, total = await list_audit(
         reader_session,
         principal=principal,
-        filters=AuditFilter(from_=now),
+        filters=AuditFilter.model_validate({"from": now}),
         page=1,
         page_size=50,
     )

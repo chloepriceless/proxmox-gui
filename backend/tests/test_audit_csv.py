@@ -4,16 +4,14 @@ from __future__ import annotations
 
 import csv
 import io
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 import pytest_asyncio
-import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.auth.dependencies import Principal
-from app.models import AuditLog, Team, TeamMembership, User
-
+from app.models import AuditLog, Team, User
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -79,7 +77,7 @@ async def _seed_log(
         target_id=target_id,
         result=result,
         error=error,
-        occurred_at=datetime.now(timezone.utc).replace(tzinfo=None),
+        occurred_at=datetime.now(UTC).replace(tzinfo=None),
     )
     session.add(entry)
     await session.flush()
@@ -180,9 +178,9 @@ async def test_csv_respects_rbac(csv_session: AsyncSession) -> None:
     from app.audit.schemas import AuditFilter
 
     me = await _seed_user(csv_session, user_id=1, is_admin=False)
-    other = await _seed_user(csv_session, user_id=2, is_admin=False)
-    my_team = await _seed_team(csv_session, team_id=10, name="my-team")
-    other_team = await _seed_team(csv_session, team_id=20, name="other-team")
+    await _seed_user(csv_session, user_id=2, is_admin=False)
+    await _seed_team(csv_session, team_id=10, name="my-team")
+    await _seed_team(csv_session, team_id=20, name="other-team")
 
     # 1 row I own, 3 rows owned by others in other team
     await _seed_log(
