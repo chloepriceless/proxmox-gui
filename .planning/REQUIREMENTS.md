@@ -9,11 +9,16 @@ Requirements for initial release. Each maps to roadmap phases via the Traceabili
 
 ### Authentication & Sessions
 
-- [ ] **AUTH-01**: User can log in with username and password (Argon2id hashed)
-- [ ] **AUTH-02**: User session persists across browser refresh (secure cookie)
-- [ ] **AUTH-03**: User can log out from any page
-- [ ] **AUTH-04**: User can change their own password from a profile page
-- [ ] **AUTH-05**: User can manage their stored SSH public keys (add, view, delete)
+- [x] **AUTH-01
+**: User can log in with username and password (Argon2id hashed)
+- [x] **AUTH-02
+**: User session persists across browser refresh (secure cookie)
+- [x] **AUTH-03
+**: User can log out from any page
+- [x] **AUTH-04
+**: User can change their own password from a profile page
+- [x] **AUTH-05
+**: User can manage their stored SSH public keys (add, view, delete)
 - [ ] **AUTH-06**: Session expires after configurable idle timeout
 - [ ] **AUTH-07**: Admin can create, edit, disable, and delete user accounts
 - [ ] **AUTH-08**: Admin can assign users to teams (group of users sharing quotas)
@@ -103,7 +108,8 @@ Requirements for initial release. Each maps to roadmap phases via the Traceabili
 ### REST API
 
 - [x] **API-01**: REST API exposes every UI capability (UI consumes the same API — no UI-only backdoors)
-- [ ] **API-02**: API auth via per-user Personal Access Tokens
+- [x] **API-02
+**: API auth via per-user Personal Access Tokens
 - [x] **API-03**: OpenAPI spec auto-generated from code and served at a documented path
 - [ ] **API-04**: Mutating endpoints return `202 Accepted` with a job ID; clients poll job status
 - [ ] **API-05**: API enforces the same quotas and tenancy as the UI
@@ -185,11 +191,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| AUTH-01 | Phase 1 | Pending |
-| AUTH-02 | Phase 1 | Pending |
-| AUTH-03 | Phase 1 | Pending |
-| AUTH-04 | Phase 1 | Pending |
-| AUTH-05 | Phase 1 | Pending |
+| AUTH-01 | Phase 1 | Complete (01-05) |
+| AUTH-02 | Phase 1 | Complete (01-05) |
+| AUTH-03 | Phase 1 | Complete (01-05) |
+| AUTH-04 | Phase 1 | Complete (01-05) |
+| AUTH-05 | Phase 1 | Complete (01-05) |
 | AUTH-06 | Phase 5 | Pending |
 | AUTH-07 | Phase 1 | Pending |
 | AUTH-08 | Phase 1 | Pending |
@@ -251,9 +257,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CON-01 | Phase 4 | Pending |
 | CON-02 | Phase 4 | Pending |
 | CON-03 | Phase 4 | Pending |
-| API-01 | Phase 1 | Complete (01-01) |
-| API-02 | Phase 1 | Pending |
-| API-03 | Phase 1 | Complete (01-01) |
+| API-01 | Phase 1 | Complete (01-05) |
+| API-02 | Phase 1 | Complete (01-05) |
+| API-03 | Phase 1 | Complete (01-05) |
 | API-04 | Phase 3 | Pending |
 | API-05 | Phase 2 | Pending |
 | AUDIT-01 | Phase 2 | Pending |
