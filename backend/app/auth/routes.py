@@ -44,16 +44,30 @@ router = APIRouter()
 
 
 def _client_ip(request: Request) -> str:
-    """Best-effort client IP, preferring the first ``X-Forwarded-For`` hop.
+    """Best-effort client IP for the rate-limit bucket key.
 
-    In production the LXC ships behind Caddy which sets ``X-Forwarded-For``;
-    in dev the header is absent and we fall back to ``request.client.host``.
-    Take only the FIRST value (left-most) per RFC 7239 / common reverse-proxy
-    convention — the rest are downstream proxies.
+    HI-01 fix: ``X-Forwarded-For`` is honoured ONLY when the TCP peer is
+    in :attr:`Settings.trusted_proxies`. Without this guard, an external
+    client could forge ``X-Forwarded-For: 1.2.3.4`` on every request and
+    each one would look like a different source IP, defeating the 10/60s
+    per-IP login rate limit (T-01-05-08).
+
+    In the default single-LXC + Caddy topology, Caddy speaks to the API
+    over localhost — the operator sets ``PROXMOX_GUI_TRUSTED_PROXIES``
+    to ``["127.0.0.1", "::1"]`` in the systemd unit's environment, and
+    the leftmost ``X-Forwarded-For`` token (the original client) is used.
+    With the default empty list, the direct TCP peer is always returned,
+    which is the safe-by-default behaviour.
+
+    Take only the FIRST value (left-most) per RFC 7239 / common reverse-
+    proxy convention — the rest are downstream proxies.
     """
-    fwd = request.headers.get("X-Forwarded-For")
-    if fwd:
-        return fwd.split(",")[0].strip()
+    if request.client is not None and request.client.host in settings.trusted_proxies:
+        fwd = request.headers.get("X-Forwarded-For")
+        if fwd:
+            first = fwd.split(",")[0].strip()
+            if first:
+                return first
     if request.client is not None:
         return request.client.host
     return "unknown"

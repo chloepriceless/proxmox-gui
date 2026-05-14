@@ -62,6 +62,15 @@ class Settings(BaseSettings):
     cookie_secure: bool = True
     cookie_samesite: str = "lax"
 
+    # HI-01: trusted reverse-proxy IPs. ``X-Forwarded-For`` is honoured ONLY
+    # when ``request.client.host`` matches an entry in this set. In the
+    # default same-host Caddy + LXC deployment the proxy speaks to the API
+    # over localhost, so set this to ``["127.0.0.1", "::1"]`` in production.
+    # Empty default (this list) means: never trust ``X-Forwarded-For``,
+    # always use the direct TCP peer — the safe-by-default choice.
+    # See ``app.auth.routes._client_ip`` for the consumer.
+    trusted_proxies: list[str] = []
+
     # Token TTLs.
     access_token_ttl_seconds: int = 15 * 60
     refresh_token_ttl_seconds: int = 7 * 24 * 3600

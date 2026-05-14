@@ -157,8 +157,16 @@ async def test_login_rate_limit_returns_429_after_threshold(
 
     We monkey-patch the rate-limit window to short to keep tests fast and
     reset the bucket dict (the limiter holds module-level state).
+
+    HI-01 fix interaction: ``_client_ip`` only trusts ``X-Forwarded-For``
+    when the TCP peer is in ``settings.trusted_proxies``. ASGITransport
+    surfaces the peer as ``127.0.0.1``, so we add that to trusted_proxies
+    for the duration of the test to keep the existing XFF trick working.
     """
     from app.auth import rate_limit
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "trusted_proxies", ["127.0.0.1", "::1"])
 
     # Clear any state from previous tests.
     rate_limit._buckets.clear()
@@ -181,3 +189,44 @@ async def test_login_rate_limit_returns_429_after_threshold(
 
     # 10 attempts allowed → 11th must be 429.
     assert last_status == 429
+
+
+@pytest.mark.asyncio
+async def test_login_xff_ignored_when_peer_not_trusted(
+    client, session_factory, monkeypatch
+):
+    """HI-01: ``X-Forwarded-For`` from an untrusted peer must NOT bypass
+    the per-IP rate limiter.
+
+    With ``trusted_proxies`` empty (the safe default), the rate limiter
+    bucket is keyed by the direct TCP peer (always ``127.0.0.1`` under
+    ASGITransport). Any value of ``X-Forwarded-For`` the attacker sets
+    is ignored — so rotating the header across 20 attempts must still
+    trip the 10/60s gate.
+    """
+    from app.auth import rate_limit
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "trusted_proxies", [])
+    rate_limit._buckets.clear()
+
+    await make_user(session_factory, username="xff_target", password="testpass12345")
+
+    statuses: list[int] = []
+    for i in range(15):
+        # Rotate the forged header on every attempt. With XFF blindly
+        # trusted this would never trip the limit (each request appears
+        # to come from a different IP). With the HI-01 fix it MUST trip.
+        response = await client.post(
+            "/api/v1/auth/login",
+            json={"username": "xff_target", "password": "wrong"},
+            headers={"X-Forwarded-For": f"198.51.100.{i + 1}"},
+        )
+        statuses.append(response.status_code)
+
+    # Tail of the sequence must contain at least one 429 — proves the
+    # bucket is shared across the rotated headers.
+    assert 429 in statuses, (
+        f"rate limiter did not trip with rotated X-Forwarded-For "
+        f"(trusted_proxies=[]); statuses={statuses}"
+    )
