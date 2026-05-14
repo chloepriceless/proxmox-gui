@@ -1,8 +1,9 @@
 <!--
-  Root dashboard — Phase 1 placeholder.
+  Root dashboard — Phase 1 placeholder authenticated landing page.
 
-  This is the only feature route this plan implements. Plan 08 (frontend
-  UI implementation) adds /login, /setup, /profile/*, /admin/*.
+  Per UI-SPEC, this is the only auth'd page in Phase 1 that doesn't have
+  specific feature content; it just demonstrates the shell renders. Plans
+  09 + 10 add /profile/*, /admin/*; Phase 2 lights up real inventory here.
 -->
 <script lang="ts">
   import type { PageData } from './$types';

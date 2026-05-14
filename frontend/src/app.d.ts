@@ -1,12 +1,14 @@
 // See https://svelte.dev/docs/kit/types#app
+import type { User } from '$lib/api/types';
+
 declare global {
   namespace App {
     // interface Error {}
     interface Locals {
-      user: { id: number; username: string; is_admin: boolean } | null;
+      user: User | null;
     }
     interface PageData {
-      user: { id: number; username: string; email: string; is_admin: boolean } | null;
+      user: User | null;
       setupNeeded: boolean;
       apiReachable: boolean;
     }

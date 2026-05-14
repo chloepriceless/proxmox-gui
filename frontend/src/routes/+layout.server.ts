@@ -1,31 +1,56 @@
-// Root layout server load — STUB shipped in Plan 01-03 (frontend-scaffold).
+// Root layout server load — real auth probe (Plan 01-08).
 //
-// TODO(01-08): replace with real auth probe.
-//
-// Plan 01-08 (frontend-auth-shell) will replace this stub with:
-//   1. GET /api/v1/me — hydrate `user` (or redirect to /login on 401)
-//   2. GET /api/v1/setup/status — set `setupNeeded` (or 404 the /setup route
-//      when an admin already exists, per first-run wizard contract)
-//
-// For Phase 1 Plan 03 we ship the contract shape: { user, setupNeeded,
-// apiReachable } so downstream pages can render their loading/empty states
-// without a backend present. The /health probe (Plan 01-01 endpoint) tells
-// us whether the API is reachable; we tolerate failure so the frontend dev
-// loop works without uvicorn running.
+// Behaviour:
+//   1. Probe GET /api/v1/setup/status (open endpoint, no auth required).
+//      If `no_admin_yet` is true, redirect every non-/setup route to /setup.
+//   2. Probe GET /api/v1/me with same-origin cookies forwarded by event.fetch
+//      (Pitfall A7). 200 → user; 401/403 → null.
+//   3. If user is null AND not on /login or /setup, redirect to /login with
+//      the original pathname preserved as `?next=...`.
+//   4. Return { user, setupNeeded, apiReachable } for the SPA layout.
 
+import { redirect } from '@sveltejs/kit';
+import { api } from '$lib/api/client';
 import type { LayoutServerLoad } from './$types';
 
-export const load: LayoutServerLoad = async ({ fetch }) => {
-  let apiReachable = false;
-  try {
-    const res = await fetch('/api/v1/health');
-    apiReachable = res.ok;
-  } catch {
-    apiReachable = false;
+const SETUP_PREFIX = '/setup';
+const LOGIN_PATH = '/login';
+
+function isSetupRoute(pathname: string): boolean {
+  return pathname === SETUP_PREFIX || pathname.startsWith(`${SETUP_PREFIX}/`);
+}
+
+function isLoginRoute(pathname: string): boolean {
+  return pathname === LOGIN_PATH || pathname.startsWith(`${LOGIN_PATH}/`);
+}
+
+export const load: LayoutServerLoad = async ({ fetch, url }) => {
+  const setupStatus = await api.setup.status({ fetch });
+  const apiReachable = setupStatus !== null;
+
+  // 1. setup-needed gate (no_admin_yet) — redirects everywhere EXCEPT /setup
+  // routes themselves. /login and /setup are otherwise treated symmetrically:
+  // both are unauthenticated public surfaces.
+  if (setupStatus?.no_admin_yet) {
+    if (!isSetupRoute(url.pathname)) {
+      throw redirect(303, '/setup');
+    }
+    return { user: null, setupNeeded: true, apiReachable };
   }
-  return {
-    user: null,
-    setupNeeded: false,
-    apiReachable
-  };
+
+  // 2. auth probe via /me. Returns null on 401/403/network failure.
+  const user = apiReachable ? await api.me.get({ fetch }) : null;
+
+  // 3. unauth gate — redirect to /login if not on /login or /setup.
+  if (user === null) {
+    if (!isLoginRoute(url.pathname) && !isSetupRoute(url.pathname)) {
+      const next = url.pathname + url.search;
+      const search = next === '/' ? '' : `?next=${encodeURIComponent(next)}`;
+      throw redirect(303, `${LOGIN_PATH}${search}`);
+    }
+    return { user: null, setupNeeded: false, apiReachable };
+  }
+
+  // 4. happy path — admin already exists, user is logged in.
+  return { user, setupNeeded: false, apiReachable };
 };

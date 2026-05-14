@@ -1,16 +1,11 @@
-// Current-user store — placeholder shape for Plan 01-03.
+// Current-user store — hydrated from +layout.svelte's data.user every load.
 //
-// Plan 01-08 (frontend-auth-shell) wires the real /api/v1/me probe in
-// +layout.server.ts and hydrates this store from `data.user` in
-// +layout.svelte. For Phase 1 Plan 03 we ship the contract so downstream
-// code can compile against the final import path.
+// Plan 01-08 (frontend-auth-shell) hydrates this from the real /api/v1/me
+// probe done in +layout.server.ts.
 
-export type CurrentUser = {
-  id: number;
-  username: string;
-  email: string;
-  is_admin: boolean;
-} | null;
+import type { User } from '$lib/api/types';
+
+export type CurrentUser = User | null;
 
 class UserStore {
   current: CurrentUser = $state(null);

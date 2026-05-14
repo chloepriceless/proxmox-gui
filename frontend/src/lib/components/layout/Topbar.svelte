@@ -15,13 +15,12 @@
   still runs.
 -->
 <script lang="ts">
-  import { goto } from '$app/navigation';
+  import { goto, invalidateAll } from '$app/navigation';
   import * as Select from '$lib/components/ui/select';
   import * as Tooltip from '$lib/components/ui/tooltip';
   import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
-  import { Button } from '$lib/components/ui/button';
   import ThemeToggle from '$lib/components/layout/ThemeToggle.svelte';
-  import { apiFetch } from '$lib/utils/api';
+  import { api } from '$lib/api/client';
   import type { CurrentUser } from '$lib/stores/user.svelte';
 
   let { user }: { user: CurrentUser } = $props();
@@ -35,13 +34,9 @@
   }
 
   async function logout() {
-    try {
-      await apiFetch('/auth/logout', { method: 'POST' });
-    } catch {
-      // The backend may not have the endpoint yet (Plan 01-05 lands it).
-      // Even if it errors, send the user to the login screen so they don't
-      // appear "logged in" client-side after they clicked Log out.
-    }
+    // api.auth.logout swallows errors — backend logout is idempotent.
+    await api.auth.logout();
+    await invalidateAll();
     await goto('/login');
   }
 </script>

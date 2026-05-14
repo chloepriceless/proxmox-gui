@@ -42,6 +42,15 @@ type FetchBody = RequestInit['body'] | Record<string, unknown> | unknown[];
 
 export interface ApiInit extends Omit<RequestInit, 'body'> {
   body?: FetchBody;
+  /**
+   * Optional fetch override. SSR loaders MUST pass `event.fetch` so cookies
+   * and the SvelteKit URL relativisation come along (Pitfall A7). Browser
+   * callers omit this and the global fetch is used.
+   *
+   * Underscore-prefixed because it is NOT a standard `fetch` init field —
+   * the wrapper consumes it and discards before forwarding.
+   */
+  _fetch?: typeof fetch;
 }
 
 /**
@@ -76,8 +85,15 @@ export async function apiFetch(path: string, init: ApiInit = {}): Promise<Respon
     }
   }
 
-  return fetch(buildUrl(path), {
-    ...init,
+  // Strip the underscore-prefixed _fetch helper before forwarding to the real
+  // fetch — it is NOT part of RequestInit and Node would log a warning if we
+  // passed it through.
+  const fetchImpl = init._fetch ?? fetch;
+  const forwarded: ApiInit = { ...init };
+  delete forwarded._fetch;
+
+  return fetchImpl(buildUrl(path), {
+    ...forwarded,
     method,
     headers,
     body,

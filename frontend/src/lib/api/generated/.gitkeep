@@ -1,0 +1,4 @@
+Reserved for `@hey-api/openapi-ts` output (frontend/openapi.config.ts → emit
+the typed client tree here). Hand-written types live in `../types.ts`; the
+generated tree will sit alongside them once openapi-ts is wired (Plan 09 or
+later).
