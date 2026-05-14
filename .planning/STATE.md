@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_plan: 4 of 10 (01-04 deployment-skeleton is next)
+current_plan: 5 of 10 (01-05 auth-subsystem is next)
 status: executing
-stopped_at: Completed Plan 01-03; ready for Plan 01-04
-last_updated: "2026-05-14T03:38:06.499Z"
+stopped_at: Completed Plan 01-04; ready for Plan 01-05
+last_updated: "2026-05-14T03:49:57.612Z"
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 10
-  completed_plans: 3
-  percent: 30
+  completed_plans: 4
+  percent: 40
 ---
 
 # STATE: Proxmox Self-Service GUI
@@ -29,15 +29,16 @@ progress:
 ## Current Position
 
 Phase: 01 (Foundation) — EXECUTING
-Current Plan: 4 of 10 (01-04 deployment-skeleton is next)
+Current Plan: 5 of 10 (01-05 auth-subsystem is next)
 
 - **Milestone:** v1
 - **Phase:** 01 — Foundation (executing)
 - **Plan:** 01-01 backend-scaffold ✅ complete
 - **Plan:** 01-02 db-schema ✅ complete
 - **Plan:** 01-03 frontend-scaffold ✅ complete
+- **Plan:** 01-04 deployment-skeleton ✅ complete
 - **Status:** Executing Phase 01
-- **Progress:** [███░░░░░░░] 30%
+- **Progress:** [████░░░░░░] 40%
 
 ## Phases at a Glance
 
@@ -54,8 +55,8 @@ Current Plan: 4 of 10 (01-04 deployment-skeleton is next)
 ## Performance Metrics
 
 - **Phases complete:** 0/5
-- **Plans complete:** 3/10
-- **Requirements shipped:** 11/89 (API-01, API-03 via Plan 01-01; AUTH-01, AUTH-02, AUTH-05, AUTH-07, AUTH-08, CLUST-01, CLUST-05 schema-landed via Plan 01-02; UI-01, UI-02 frontend-shell via Plan 01-03)
+- **Plans complete:** 4/10
+- **Requirements shipped:** 15/89 (API-01, API-03 via Plan 01-01; AUTH-01, AUTH-02, AUTH-05, AUTH-07, AUTH-08, CLUST-01, CLUST-05 schema-landed via Plan 01-02; UI-01, UI-02 frontend-shell via Plan 01-03; DEPLOY-01, DEPLOY-02, DEPLOY-03, DEPLOY-05 helper-script skeleton via Plan 01-04)
 - **Out-of-scope items deferred:** see REQUIREMENTS.md v2 section
 
 ### Plan Metrics
@@ -65,6 +66,7 @@ Current Plan: 4 of 10 (01-04 deployment-skeleton is next)
 | 01    | 01   | ~25 min  | 2     | 25    | 33 pass |
 | 01    | 02   | ~9 min   | 2     | 19    | 56 pass |
 | 01    | 03   | ~10 min  | 2     | 162   | 3 pass  |
+| 01    | 04   | ~7 min   | 2     | 10    | n/a (no test phase — shellcheck-clean + caddy validate ok) |
 
 ## Accumulated Context
 
@@ -99,6 +101,12 @@ Current Plan: 4 of 10 (01-04 deployment-skeleton is next)
 | Inter Variable woff2 sourced from rsms/inter master at `docs/font-files/InterVariable.woff2` | Self-hosted air-gap requirement (UI-SPEC §Typography, threat T-01-03-06); 352KB binary committed | Plan 01-03 SUMMARY |
 | `kit.csrf.checkOrigin` removed (deprecated) — relying on default SvelteKit CSRF + API-side `csrf_protect` from Plan 01-01 | Plan 01-01's API CSRF dependency is authoritative; SvelteKit defaults are correct for its form actions | Plan 01-03 SUMMARY |
 | `pnpm-workspace.yaml` with `allowBuilds.esbuild: true` | pnpm 11 refuses install on unapproved build scripts; required for non-interactive CI | Plan 01-03 SUMMARY |
+| master.key + jwt.secret + pat.pepper ship at mode 0400 (more restrictive than CONTEXT D-14's 0600 minimum) | Principle of least privilege; FastAPI service user never writes after generation; still satisfies Pitfall A6's `st_mode & 0o077 == 0` | Plan 01-04 SUMMARY |
+| Debian 12 python3.12 sourced from bookworm-backports; pyenv fallback deferred to Phase 5 (DEPLOY-04) | Cleanest Debian path; pyenv build-from-source is operational complexity for Phase 5 polish | Plan 01-04 SUMMARY |
+| Worker systemd unit ships installed but DISABLED in Phase 1 (ExecStart=sleep infinity placeholder) | D-17 mandates the unit ship now; arq wiring is Phase 3 (Job Queue & Lifecycle) | Plan 01-04 SUMMARY |
+| Caddy auto-sets X-Forwarded-For + X-Forwarded-Proto; we only set Host + X-Real-IP explicitly | Silences `caddy validate` warnings without behavior change | Plan 01-04 SUMMARY |
+| CSP intentionally omitted from Caddyfile in Phase 1 (documented gap; Phase 5 polish) | Acceptable v1 risk per ASVS V14.4 + V14.5 split — HSTS/X-Frame/X-Content-Type-Options/Referrer-Policy ship now | Plan 01-04 SUMMARY |
+| Caddyfile committed in `caddy fmt`-canonical (tab-indented) form | Future edits stay lint-clean; matches `caddy validate` formatter expectation | Plan 01-04 SUMMARY |
 
 ### Open Questions (resolve before/during named phase)
 
@@ -114,7 +122,8 @@ Current Plan: 4 of 10 (01-04 deployment-skeleton is next)
 - [x] Execute Plan 01-01 backend-scaffold
 - [x] Execute Plan 01-02 db-schema (11 ORM models + Alembic 0001_initial + invariant tests)
 - [x] Execute Plan 01-03 frontend-scaffold (SvelteKit 2 + Svelte 5 + Tailwind v4 + shadcn-svelte app shell)
-- [ ] Execute Plan 01-04 deployment-skeleton (next — helper-script, Caddy, systemd units)
+- [x] Execute Plan 01-04 deployment-skeleton (install.sh + bootstrap.sh + systemd units + Caddyfile + key generators)
+- [ ] Execute Plan 01-05 auth-subsystem (next — Argon2id passwords, JWT, refresh rotation, session cookies)
 - [ ] Schedule SDN/noVNC/community-scripts spikes in Phase 4 planning
 
 ### Blockers
@@ -123,12 +132,13 @@ None.
 
 ## Session Continuity
 
-**To resume:** Run `/gsd-execute-phase 1` to continue with Plan 01-04 (deployment-skeleton).
+**To resume:** Run `/gsd-execute-phase 1` to continue with Plan 01-05 (auth-subsystem).
 
 **Next milestone:** First end-to-end "click → running VM/LXC" lands at the end of Phase 4.
 
 **Recently completed:**
 
+- 2026-05-14 — Plan 01-04 deployment-skeleton (one-line helper-script installer, idempotent bootstrap.sh, three systemd units, Caddyfile + tls internal, master.key + jwt.secret + pat.pepper generators at mode 0400; shellcheck-clean; caddy validate Valid configuration; DEPLOY-01/02/03/05 marked complete)
 - 2026-05-14 — Plan 01-03 frontend-scaffold (SvelteKit 2 + Tailwind v4 + shadcn-svelte; 20 UI primitives; app shell + theme store + CSRF helper; 3 sanity tests green; production build clean)
 - 2026-05-14 — Plan 01-02 db-schema (11 ORM models, Alembic 0001_initial, 23 new tests; 56 total green)
 - 2026-05-14 — Plan 01-01 backend-scaffold (FastAPI app factory + 7 core primitives, 33 tests green)
@@ -136,9 +146,9 @@ None.
 - 2026-05-14 — Requirements definition (89 v1 requirements across 13 categories)
 - 2026-05-14 — Roadmap (5-phase structure, 100% coverage)
 
-**Last session:** 2026-05-14T03:35:41Z
-**Stopped at:** Completed Plan 01-03; ready for Plan 01-04
-**Resume file:** `.planning/phases/01-foundation/01-04-deployment-skeleton-PLAN.md`
+**Last session:** 2026-05-14T03:49:57.605Z
+**Stopped at:** Completed Plan 01-04; ready for Plan 01-05
+**Resume file:** None
 
 ---
 *State managed by GSD; do not edit phase counts manually — use `/gsd-transition` and `/gsd-progress`.*

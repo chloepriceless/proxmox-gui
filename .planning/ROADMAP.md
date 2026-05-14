@@ -33,7 +33,7 @@ Users can self-provision and manage VMs/LXCs on Proxmox through a polished, opin
 - [x] 01-01-backend-scaffold-PLAN.md — FastAPI app factory, core primitives (cipher/JWT/passwords/CSRF/db), pyproject, tests *(completed 2026-05-14, 25 files, 33 tests green; SUMMARY: .planning/phases/01-foundation/01-01-backend-scaffold-SUMMARY.md)*
 - [x] 01-02-db-schema-PLAN.md — SQLAlchemy 2.0 ORM models for 11 tables + Alembic 0001_initial + schema invariants *(completed 2026-05-14, 19 files, 56 tests green; SUMMARY: .planning/phases/01-foundation/01-02-db-schema-SUMMARY.md)*
 - [x] 01-03-frontend-scaffold-PLAN.md — SvelteKit 2 + Svelte 5 + Tailwind v4 + shadcn-svelte init + app shell skeleton + theme store *(completed 2026-05-14, 162 files, 3 tests green; SUMMARY: .planning/phases/01-foundation/01-03-frontend-scaffold-SUMMARY.md)*
-- [ ] 01-04-deployment-skeleton-PLAN.md — install.sh + bootstrap.sh + systemd units + Caddyfile + key generators (master.key 0400)
+- [x] 01-04-deployment-skeleton-PLAN.md — install.sh + bootstrap.sh + systemd units + Caddyfile + key generators (master.key 0400) *(completed 2026-05-14, 10 files, shellcheck-clean + caddy validate ok; SUMMARY: .planning/phases/01-foundation/01-04-deployment-skeleton-SUMMARY.md)*
 - [ ] 01-05-auth-subsystem-PLAN.md — Login/refresh-rotation/logout/password change/CSRF/PATs/SSH keys (Argon2id + JWT + dual-mode auth)
 - [ ] 01-06-clusters-tenant-bootstrap-PLAN.md — PVE connector + cluster CRUD (incl. POST /clusters/test dry-run) + D-02 transactional tenant bootstrap + team CRUD (DELETE returns 409 when bindings exist per D-04)
 - [ ] 01-07-users-admin-setup-PLAN.md — Admin user CRUD (AUTH-07/08) + first-run setup wizard backend (DEPLOY-05)
@@ -101,7 +101,7 @@ Users can self-provision and manage VMs/LXCs on Proxmox through a polished, opin
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation | 2/10 | Executing | - |
+| 1. Foundation | 4/10 | Executing | - |
 | 2. Multi-Cluster Inventory, Quotas & Audit | 0/TBD | Not started | - |
 | 3. Job Queue & Lifecycle | 0/TBD | Not started | - |
 | 4. Provisioning, Networking & Console | 0/TBD | Not started | - |

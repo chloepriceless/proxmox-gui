@@ -131,11 +131,15 @@ Requirements for initial release. Each maps to roadmap phases via the Traceabili
 
 ### Deployment
 
-- [ ] **DEPLOY-01**: One-line helper-script install: `bash -c "$(curl -fsSL …/install.sh)"`
-- [ ] **DEPLOY-02**: Installer is idempotent (re-running it does not corrupt state)
-- [ ] **DEPLOY-03**: Helper-script provisions a single LXC running the full stack (backend, frontend, DB, job worker)
+- [x] **DEPLOY-01
+**: One-line helper-script install: `bash -c "$(curl -fsSL …/install.sh)"`
+- [x] **DEPLOY-02
+**: Installer is idempotent (re-running it does not corrupt state)
+- [x] **DEPLOY-03
+**: Helper-script provisions a single LXC running the full stack (backend, frontend, DB, job worker)
 - [ ] **DEPLOY-04**: Self-update path from inside the app (or via helper-script flag)
-- [ ] **DEPLOY-05**: First-run wizard collects the first admin user and the first cluster connection
+- [x] **DEPLOY-05
+**: First-run wizard collects the first admin user and the first cluster connection
 
 ## v2 Requirements
 
@@ -265,11 +269,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 | UI-05 | Phase 4 | Pending |
 | UI-06 | Phase 3 | Pending |
 | UI-07 | Phase 4 | Pending |
-| DEPLOY-01 | Phase 1 | Pending |
-| DEPLOY-02 | Phase 1 | Pending |
-| DEPLOY-03 | Phase 1 | Pending |
+| DEPLOY-01 | Phase 1 | Complete (Plan 01-04) |
+| DEPLOY-02 | Phase 1 | Complete (Plan 01-04) |
+| DEPLOY-03 | Phase 1 | Complete (Plan 01-04) |
 | DEPLOY-04 | Phase 5 | Pending |
-| DEPLOY-05 | Phase 1 | Pending |
+| DEPLOY-05 | Phase 1 | Complete (Plan 01-04) |
 
 **Coverage:**
 - v1 requirements: 89 total
