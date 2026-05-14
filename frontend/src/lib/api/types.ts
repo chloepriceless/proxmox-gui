@@ -152,3 +152,118 @@ export interface PasswordChangeRequest {
   current_password: string;
   new_password: string;
 }
+
+// ---------------------------------------------------------------------------
+// Admin surface (Plan 01-10): users + teams + clusters CRUD
+// ---------------------------------------------------------------------------
+
+/** Mirrors `app.teams.schemas.UserSummary` (a team member). */
+export interface TeamMemberSummary {
+  id: number;
+  username: string;
+  email: string;
+}
+
+/** Mirrors `app.teams.schemas.TeamResponse` (list shape). */
+export interface Team {
+  id: number;
+  name: string;
+  personal: boolean;
+  is_active: boolean;
+  member_count: number;
+  created_at: string;
+}
+
+/** Mirrors `app.teams.schemas.TeamDetailResponse` (single team + members). */
+export interface TeamDetail extends Team {
+  members: TeamMemberSummary[];
+}
+
+/** Mirrors `app.teams.schemas.TeamCreate` (write-only; personal is rejected). */
+export interface TeamCreateRequest {
+  name: string;
+}
+
+export interface TeamUpdateRequest {
+  name?: string;
+  is_active?: boolean;
+}
+
+/** Mirrors `app.users.schemas.UserResponse` (list shape — includes teams). */
+export interface AdminUser {
+  id: number;
+  username: string;
+  email: string;
+  is_admin: boolean;
+  is_active: boolean;
+  created_at: string;
+  teams: TeamSummary[];
+}
+
+/** Mirrors `app.users.schemas.UserDetailResponse`. */
+export interface AdminUserDetail extends AdminUser {
+  last_login: string | null;
+}
+
+/** Mirrors `app.users.schemas.UserCreate` (write-only). */
+export interface AdminUserCreateRequest {
+  username: string;
+  email: string;
+  password: string;
+  is_admin?: boolean;
+  team_ids?: number[];
+}
+
+/** Mirrors `app.users.schemas.UserCreateResponse` (adds personal_team_id). */
+export interface AdminUserCreateResponse extends AdminUser {
+  personal_team_id: number;
+}
+
+/** Mirrors `app.users.schemas.UserUpdate` — all optional, extra=forbid. */
+export interface AdminUserUpdateRequest {
+  email?: string;
+  is_admin?: boolean;
+  is_active?: boolean;
+  team_ids?: number[];
+}
+
+/** Mirrors `app.users.schemas.AdminPasswordRequest` (write-only). */
+export interface AdminPasswordRequest {
+  new_password: string;
+}
+
+/** Mirrors `app.clusters.schemas.ClusterResponse` (read shape — NEVER carries api_token_secret). */
+export interface Cluster {
+  id: number;
+  name: string;
+  host: string;
+  port: number;
+  verify_ssl: boolean;
+  token_user: string;
+  token_name: string;
+  tls_fingerprint: string | null;
+  is_active: boolean;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * Mirrors `app.clusters.schemas.ClusterUpdate` (PATCH).
+ *
+ * `api_token_secret` is OPTIONAL — when omitted, the existing stored token is
+ * preserved (UI-SPEC §Required cluster registration form "Update token"
+ * pattern). When provided, the backend re-validates before persisting.
+ */
+export interface ClusterUpdateRequest {
+  name?: string;
+  host?: string;
+  port?: number;
+  verify_ssl?: boolean;
+  token_user?: string;
+  token_name?: string;
+  api_token_secret?: string;
+  tls_fingerprint?: string | null;
+  notes?: string | null;
+  is_active?: boolean;
+}
