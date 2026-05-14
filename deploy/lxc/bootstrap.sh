@@ -85,17 +85,24 @@ elif python3 --version 2>/dev/null | grep -qE '^Python 3\.12\.'; then
     PYTHON_BIN="$(command -v python3)"
     echo "    found system python3 == 3.12: $($PYTHON_BIN --version)"
 else
-    if ! command -v uv >/dev/null 2>&1; then
+    UV_BIN="/usr/local/bin/uv"
+    if [[ ! -x "$UV_BIN" ]]; then
         echo "    installing uv (Astral python-build-standalone manager)..."
         curl -LsSf https://astral.sh/uv/install.sh \
             | env UV_INSTALL_DIR=/usr/local/bin UV_NO_MODIFY_PATH=1 sh
+        # Sanity: pct exec runs with a minimal PATH that may not include
+        # /usr/local/bin, so always invoke uv by absolute path below.
+        if [[ ! -x "$UV_BIN" ]]; then
+            echo "ERROR: uv install reported success but $UV_BIN is missing." >&2
+            exit 1
+        fi
     fi
     export UV_PYTHON_INSTALL_DIR=/opt/python
     mkdir -p "$UV_PYTHON_INSTALL_DIR"
     chmod 0755 "$UV_PYTHON_INSTALL_DIR"
     echo "    downloading Python 3.12 via uv (python-build-standalone, ~30 MB)..."
-    uv python install 3.12
-    PYTHON_BIN="$(uv python find 3.12)"
+    "$UV_BIN" python install 3.12
+    PYTHON_BIN="$("$UV_BIN" python find 3.12)"
     # $APP_USER must be able to read+execute the managed interpreter
     chmod -R o+rX "$UV_PYTHON_INSTALL_DIR"
     echo "    installed: $PYTHON_BIN"
