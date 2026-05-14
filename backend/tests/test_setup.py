@@ -25,7 +25,6 @@ from sqlalchemy import select
 
 from app.models import Team, TeamMembership, User
 
-
 # ----------------------------------------------------------------------------
 # /setup/status
 # ----------------------------------------------------------------------------
@@ -52,7 +51,7 @@ async def test_setup_status_after_admin_returns_no_admin_yet_false(
         "/api/v1/setup/admin",
         json={
             "username": "rootadmin",
-            "email": "rootadmin@example.test",
+            "email": "rootadmin@example.com",
             "password": "supersecret-123",
         },
     )
@@ -78,7 +77,7 @@ async def test_setup_admin_creates_admin_user_and_personal_team(
         "/api/v1/setup/admin",
         json={
             "username": "owner",
-            "email": "owner@example.test",
+            "email": "owner@example.com",
             "password": "supersecret-123",
         },
     )
@@ -95,7 +94,7 @@ async def test_setup_admin_creates_admin_user_and_personal_team(
         assert len(users) == 1
         admin = users[0]
         assert admin.username == "owner"
-        assert admin.email == "owner@example.test"
+        assert admin.email == "owner@example.com"
         assert admin.is_admin is True
         assert admin.is_active is True
         assert admin.password_hash != "supersecret-123"  # hashed
@@ -121,7 +120,7 @@ async def test_setup_admin_second_call_returns_409(client, session_factory):
         "/api/v1/setup/admin",
         json={
             "username": "first",
-            "email": "first@example.test",
+            "email": "first@example.com",
             "password": "supersecret-123",
         },
     )
@@ -131,7 +130,7 @@ async def test_setup_admin_second_call_returns_409(client, session_factory):
         "/api/v1/setup/admin",
         json={
             "username": "second",
-            "email": "second@example.test",
+            "email": "second@example.com",
             "password": "supersecret-456",
         },
     )
@@ -146,7 +145,7 @@ async def test_setup_admin_with_short_password_returns_422(client, session_facto
         "/api/v1/setup/admin",
         json={
             "username": "shortpw",
-            "email": "shortpw@example.test",
+            "email": "shortpw@example.com",
             "password": "short",
         },
     )
@@ -160,7 +159,7 @@ async def test_setup_admin_with_invalid_username_returns_422(client, session_fac
         "/api/v1/setup/admin",
         json={
             "username": "bad name!",  # space + ! not allowed
-            "email": "bad@example.test",
+            "email": "bad@example.com",
             "password": "supersecret-123",
         },
     )
@@ -192,7 +191,7 @@ async def test_admin_can_login_after_setup(client, session_factory):
         "/api/v1/setup/admin",
         json={
             "username": "loginadmin",
-            "email": "loginadmin@example.test",
+            "email": "loginadmin@example.com",
             "password": "supersecret-123",
         },
     )
