@@ -239,9 +239,9 @@ def test_parse_rsa_ed25519_ecdsa_all_yield_fingerprints():
 
 
 def test_parse_malformed_raises_valueerror():
-    from app.ssh_keys.service import parse_ssh_pubkey
-
     import pytest as _pytest
+
+    from app.ssh_keys.service import parse_ssh_pubkey
 
     with _pytest.raises(ValueError):
         parse_ssh_pubkey("not even close")

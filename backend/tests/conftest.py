@@ -54,6 +54,25 @@ def install_test_cipher():
     yield
 
 
+@pytest.fixture(autouse=True)
+def _reset_rate_limit_buckets():
+    """Clear the in-memory rate-limit state between tests.
+
+    The limiter (``app.auth.rate_limit._buckets``) is module-level on purpose
+    (single-process design for v1). Without this reset, every login in every
+    test contributes to the same dict, which trips the 10/60s gate by the
+    time the SSH-key + PAT suites run — false-positive 429s mask real bugs.
+    """
+    try:
+        from app.auth import rate_limit
+    except ImportError:
+        yield
+        return
+    rate_limit._buckets.clear()
+    yield
+    rate_limit._buckets.clear()
+
+
 @pytest_asyncio.fixture
 async def engine():
     """Per-test in-memory SQLite engine with full schema created."""

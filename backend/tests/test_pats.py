@@ -20,7 +20,6 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import select
 
 from app.models import PersonalAccessToken
 from tests.factories import login_as, make_user
