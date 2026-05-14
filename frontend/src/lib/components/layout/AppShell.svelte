@@ -14,7 +14,13 @@
   import { Toaster } from '$lib/components/ui/sonner';
   import type { CurrentUser } from '$lib/stores/user.svelte';
 
-  let { user, children }: { user: CurrentUser; children: Snippet } = $props();
+  type ClusterSummary = { id: number; name: string };
+
+  let {
+    user,
+    clusters = [],
+    children,
+  }: { user: CurrentUser; clusters?: ClusterSummary[]; children: Snippet } = $props();
 </script>
 
 <a
@@ -25,7 +31,7 @@
 </a>
 
 <div class="bg-background flex min-h-screen flex-col text-foreground">
-  <Topbar {user} />
+  <Topbar {user} {clusters} />
   <div class="flex flex-1 overflow-hidden">
     <Sidebar {user} />
     <main id="main-content" class="flex-1 overflow-y-auto">

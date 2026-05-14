@@ -30,6 +30,7 @@ import * as setupModule from './setup';
 import * as clustersModule from './clusters';
 import * as usersModule from './users';
 import * as teamsModule from './teams';
+import * as inventoryModule from './inventory';
 
 export { ApiError } from '$lib/utils/api';
 export type * from './types';
@@ -40,7 +41,8 @@ export const api = {
   setup: setupModule,
   clusters: clustersModule,
   users: usersModule,
-  teams: teamsModule
+  teams: teamsModule,
+  inventory: inventoryModule
 } as const;
 
 export type Api = typeof api;

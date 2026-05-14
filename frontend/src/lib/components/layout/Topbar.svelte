@@ -3,27 +3,27 @@
 
   Contract: UI-SPEC §Topbar contract.
     - Left: 24×24 logo + product name "Proxmox GUI" (Heading 18/600).
-    - Center: cluster picker — disabled placeholder in Phase 1.
-    - Right: ThemeToggle + UserMenu (DropdownMenu off avatar).
+    - Center: ClusterContextPicker (Phase 2 — replaces Phase 1 disabled <Select>).
+    - Right: [QuotaIndicator slot] ThemeToggle + UserMenu (DropdownMenu off avatar).
     - Bottom border 1px --border.
-    - The cluster picker tooltip says "Switch clusters in Phase 2".
 
-  Note on the UserMenu logout: the API endpoint is wired in Plan 01-08
-  (auth shell). Here it is a stub that calls apiFetch('/auth/logout') and
-  navigates to /login — the backend may not yet implement /auth/logout in
-  this plan, but the fetch failure path silently no-ops and the redirect
-  still runs.
+  Phase 2 (Plan 02-05):
+    - Disabled <Select> replaced with <ClusterContextPicker /> combobox.
+    - A comment slot reserves the QuotaIndicator position for Plan 02-06.
+    - Topbar now receives `clusters` prop from AppShell (sourced from
+      +layout.server.ts which fetches api.clusters.list).
 -->
 <script lang="ts">
   import { goto, invalidateAll } from '$app/navigation';
-  import * as Select from '$lib/components/ui/select';
-  import * as Tooltip from '$lib/components/ui/tooltip';
   import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
   import ThemeToggle from '$lib/components/layout/ThemeToggle.svelte';
+  import ClusterContextPicker from '$lib/components/inventory/ClusterContextPicker.svelte';
   import { api } from '$lib/api/client';
   import type { CurrentUser } from '$lib/stores/user.svelte';
 
-  let { user }: { user: CurrentUser } = $props();
+  type ClusterSummary = { id: number; name: string };
+
+  let { user, clusters = [] }: { user: CurrentUser; clusters?: ClusterSummary[] } = $props();
 
   function initials(u: NonNullable<CurrentUser>): string {
     const name = u.username || u.email || '?';
@@ -66,28 +66,11 @@
   </div>
 
   <div class="hidden md:block">
-    <Tooltip.Provider delayDuration={150}>
-      <Tooltip.Root>
-        <Tooltip.Trigger>
-          {#snippet child({ props })}
-            <div {...props}>
-              <Select.Root type="single" disabled>
-                <Select.Trigger class="w-[220px]" aria-label="Select cluster">
-                  All clusters
-                </Select.Trigger>
-                <Select.Content>
-                  <Select.Item value="placeholder">All clusters</Select.Item>
-                </Select.Content>
-              </Select.Root>
-            </div>
-          {/snippet}
-        </Tooltip.Trigger>
-        <Tooltip.Content>Switch clusters in Phase 2</Tooltip.Content>
-      </Tooltip.Root>
-    </Tooltip.Provider>
+    <ClusterContextPicker {clusters} />
   </div>
 
   <div class="flex items-center gap-2">
+    <!-- QuotaIndicator: mounted by Plan 02-06 -->
     <ThemeToggle />
     <DropdownMenu.Root>
       <DropdownMenu.Trigger>

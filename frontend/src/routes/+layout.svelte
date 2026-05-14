@@ -45,7 +45,7 @@
 </script>
 
 {#if data.user && !isPublic}
-  <AppShell user={data.user}>
+  <AppShell user={data.user} clusters={data.clusters ?? []}>
     {@render children()}
   </AppShell>
 {:else}

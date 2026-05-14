@@ -35,7 +35,7 @@ export const load: LayoutServerLoad = async ({ fetch, url }) => {
     if (!isSetupRoute(url.pathname)) {
       throw redirect(303, '/setup');
     }
-    return { user: null, setupNeeded: true, apiReachable };
+    return { user: null, setupNeeded: true, apiReachable, clusters: [] };
   }
 
   // 2. auth probe via /me. Returns null on 401/403/network failure.
@@ -48,9 +48,20 @@ export const load: LayoutServerLoad = async ({ fetch, url }) => {
       const search = next === '/' ? '' : `?next=${encodeURIComponent(next)}`;
       throw redirect(303, `${LOGIN_PATH}${search}`);
     }
-    return { user: null, setupNeeded: false, apiReachable };
+    return { user: null, setupNeeded: false, apiReachable, clusters: [] };
   }
 
-  // 4. happy path — admin already exists, user is logged in.
-  return { user, setupNeeded: false, apiReachable };
+  // 4. happy path — fetch cluster list (id + name only) for ClusterContextPicker.
+  // Silently falls back to empty array on any API error — the picker still
+  // renders with "All clusters" as the sole option.
+  let clusters: Array<{ id: number; name: string }> = [];
+  try {
+    const clusterList = await api.clusters.list({ fetch });
+    clusters = clusterList.map((c) => ({ id: c.id, name: c.name }));
+  } catch {
+    // non-fatal: picker degrades gracefully
+    clusters = [];
+  }
+
+  return { user, setupNeeded: false, apiReachable, clusters };
 };

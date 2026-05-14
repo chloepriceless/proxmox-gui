@@ -2,8 +2,9 @@
   Sidebar — Hetzner-style left rail.
 
   Contract: UI-SPEC §Sidebar contract.
-    - Two sections in Phase 1: "Account" (always visible), "Admin"
-      (is_admin only). Phase 2 adds more sections.
+    - Phase 1 sections: "Account" (always visible), "Admin" (is_admin only).
+    - Phase 2 additions (Plan 02-05): "Resources" section above "Account"
+      with Inventory + Audit log links (UI-SPEC §Sidebar nav additions).
     - Active item: bg-muted background + 3px left-edge primary bar.
     - 240px wide >=lg, collapses to 56px icon-only at <lg.
     - All icons drawn from the UI-SPEC §Icons allow-list.
@@ -16,6 +17,8 @@
   import ExternalLink from '@lucide/svelte/icons/external-link';
   import Users from '@lucide/svelte/icons/users';
   import Server from '@lucide/svelte/icons/server';
+  import ListChecks from '@lucide/svelte/icons/list-checks';
+  import History from '@lucide/svelte/icons/history';
   import type { Component } from 'svelte';
   import type { CurrentUser } from '$lib/stores/user.svelte';
 
@@ -27,6 +30,11 @@
   };
 
   let { user }: { user: CurrentUser } = $props();
+
+  const resourceItems: NavItem[] = [
+    { href: '/inventory', label: 'Inventory', icon: ListChecks },
+    { href: '/audit', label: 'Audit log', icon: History }
+  ];
 
   const accountItems: NavItem[] = [
     { href: '/profile', label: 'Profile', icon: User },
@@ -59,6 +67,43 @@
   aria-label="Primary navigation"
 >
   <nav class="flex flex-1 flex-col gap-6 px-2 py-4 lg:px-3">
+
+    <!-- Resources section (Phase 2) — Inventory + Audit log -->
+    <div>
+      <h2
+        class="text-muted-foreground mb-1 hidden px-3 text-[11px] font-semibold uppercase tracking-wider lg:block"
+      >
+        Resources
+      </h2>
+      <ul class="flex flex-col gap-0.5">
+        {#each resourceItems as item (item.href)}
+          {@const active = isActive(item.href, $page.url.pathname)}
+          <li class="relative">
+            {#if active}
+              <span
+                aria-hidden="true"
+                class="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r bg-primary"
+              ></span>
+            {/if}
+            <a
+              href={item.href}
+              class="flex h-9 items-center gap-2 rounded-md px-3 text-[13px] font-medium transition-colors hover:bg-muted {active
+                ? 'bg-muted text-foreground'
+                : 'text-muted-foreground hover:text-foreground'}"
+              aria-current={active ? 'page' : undefined}
+            >
+              <item.icon
+                class="size-4 shrink-0 {active ? 'text-primary' : ''}"
+                aria-hidden="true"
+              />
+              <span class="hidden lg:inline">{item.label}</span>
+            </a>
+          </li>
+        {/each}
+      </ul>
+    </div>
+
+    <!-- Account section -->
     <div>
       <h2
         class="text-muted-foreground mb-1 hidden px-3 text-[11px] font-semibold uppercase tracking-wider lg:block"

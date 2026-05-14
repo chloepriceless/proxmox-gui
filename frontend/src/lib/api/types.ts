@@ -267,3 +267,79 @@ export interface ClusterUpdateRequest {
   notes?: string | null;
   is_active?: boolean;
 }
+
+// ---------------------------------------------------------------------------
+// Phase 2 Inventory types (Plan 02-05): VM/LXC inventory + RRD
+// ---------------------------------------------------------------------------
+
+/** Mirrors `app.inventory.schemas.VMInventoryItem`. */
+export interface VMInventoryItem {
+  cluster_id: number;
+  vmid: number;
+  name: string | null;
+  type: 'qemu' | 'lxc';
+  node: string;
+  status: string;
+  maxcpu: number;
+  /** bytes */
+  maxmem: number;
+  /** bytes */
+  maxdisk: number;
+  tags: string[];
+  pool: string | null;
+  is_stale: boolean;
+}
+
+/** Mirrors `app.inventory.schemas.ClusterInventory`. */
+export interface ClusterInventory {
+  cluster_id: number;
+  cluster_name: string;
+  cluster_status: string;
+  is_stale: boolean;
+  last_error: string | null;
+  items: VMInventoryItem[];
+}
+
+/** Mirrors `app.inventory.schemas.VMDetail`. */
+export interface VMDetail {
+  cluster_id: number;
+  vmid: number;
+  name: string | null;
+  type: 'qemu' | 'lxc';
+  node: string;
+  status: string;
+  uptime: number;
+  cpu: number;
+  mem: number;
+  maxcpu: number;
+  /** bytes */
+  maxmem: number;
+  /** bytes */
+  disk: number;
+  /** bytes */
+  maxdisk: number;
+  netin: number;
+  netout: number;
+  diskread: number;
+  diskwrite: number;
+  tags: string[];
+  description: string | null;
+  raw_config: Record<string, unknown>;
+}
+
+/** Mirrors `app.inventory.schemas.RRDSample`. */
+export interface RRDSample {
+  time: number;
+  cpu: number;
+  mem: number;
+  maxmem: number;
+  disk: number;
+  maxdisk: number;
+  netin: number;
+  netout: number;
+  diskread: number;
+  diskwrite: number;
+}
+
+/** Distinguishes between QEMU VM and LXC container at the API call level. */
+export type ResourceKind = 'vm' | 'lxc';
