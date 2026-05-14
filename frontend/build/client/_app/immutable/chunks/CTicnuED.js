@@ -1,0 +1,1 @@
+import"./kSsaFjxf.js";import{s as e,r as i}from"./BxxFkhu7.js";import{b as p}from"./Du1eGV_S.js";function a(r,c){let s=i(c,["$$slots","$$events","$$legacy"]);const o=[["circle",{cx:"12",cy:"12",r:"1"}],["circle",{cx:"19",cy:"12",r:"1"}],["circle",{cx:"5",cy:"12",r:"1"}]];p(r,e({name:"ellipsis"},()=>s,{get iconNode(){return o}}))}export{a as E};

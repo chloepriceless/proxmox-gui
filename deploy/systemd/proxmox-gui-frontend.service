@@ -1,0 +1,34 @@
+# /etc/systemd/system/proxmox-gui-frontend.service
+# SvelteKit adapter-node server. Caddy reverse-proxies / → 127.0.0.1:3000.
+#
+# The build/ directory is committed to the repo (pre-built artefact),
+# so the LXC never has to run pnpm / vite. Node 18 (from Debian) just
+# runs the bundled JS entry point.
+
+[Unit]
+Description=Proxmox GUI Frontend (SvelteKit adapter-node)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=proxmox-gui
+Group=proxmox-gui
+WorkingDirectory=/opt/proxmox-gui/frontend/build
+Environment=HOST=127.0.0.1
+Environment=PORT=3000
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node /opt/proxmox-gui/frontend/build/index.js
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# hardening (ASVS V14.1)
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

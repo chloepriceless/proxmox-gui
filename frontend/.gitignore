@@ -1,6 +1,8 @@
 node_modules
 .svelte-kit
-build
+# build/ is intentionally tracked — the install LXC uses the pre-built
+# adapter-node artefact instead of running pnpm/vite in-LXC. Regenerate
+# locally with `pnpm run build` and commit the diff.
 .DS_Store
 .env
 .env.*

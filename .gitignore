@@ -49,5 +49,12 @@ Thumbs.db
 # Node (frontend)
 node_modules/
 .svelte-kit/
-build/
 dist/
+
+# Build outputs:
+#  - generic `build/` ignored (test fixtures, scratch builds)
+#  - frontend/build/ EXPLICITLY tracked: committed adapter-node artefact
+#    so the install LXC never runs pnpm/vite (Plan 01-04 follow-up)
+build/
+!frontend/build/
+!frontend/build/**
