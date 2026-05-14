@@ -39,8 +39,16 @@ def test_all_eleven_models_import() -> None:
     )
 
 
-def test_metadata_has_exactly_eleven_tables() -> None:
-    """``Base.metadata.tables`` is the source of truth for Alembic autogen."""
+def test_metadata_has_exactly_eleven_business_tables() -> None:
+    """``Base.metadata.tables`` carries the 11 Phase-1 business tables.
+
+    Test-only models (those whose ``__tablename__`` starts with ``_test_``)
+    are filtered out — :mod:`tests.test_cipher` declares a ``_test_secret_row``
+    class on :data:`Base` for the EncryptedSecret round-trip; that pollution
+    is intentional and out of scope for this invariant. The schema-invariant
+    test in :mod:`tests.test_schema_invariants` applies the same filter via
+    its allowlist.
+    """
     from app.models import Base
 
     expected = {
@@ -56,11 +64,14 @@ def test_metadata_has_exactly_eleven_tables() -> None:
         "quotas",
         "jobs",
     }
-    actual = set(Base.metadata.tables.keys())
-    assert actual == expected, (
-        f"unexpected tables; missing={expected - actual} extra={actual - expected}"
+    business = {
+        name for name in Base.metadata.tables if not name.startswith("_test_")
+    }
+    assert business == expected, (
+        f"business tables mismatch; missing={expected - business} "
+        f"extra={business - expected}"
     )
-    assert len(Base.metadata.tables) == 11
+    assert len(business) == 11
 
 
 def test_cluster_api_token_secret_uses_encrypted_secret() -> None:
