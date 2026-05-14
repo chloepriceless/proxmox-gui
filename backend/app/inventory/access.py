@@ -60,7 +60,18 @@ async def _team_tokens_for_cluster(
 
 
 def _get_registry(request: Request) -> PVEConnectorRegistry:
-    return request.app.state.registry
+    registry = getattr(request.app.state, "registry", None)
+    if registry is None:
+        # Fallback for tests that don't run the full lifespan.
+        from sqlalchemy.ext.asyncio import async_sessionmaker
+
+        from app.core.db import engine
+
+        registry = PVEConnectorRegistry(
+            None, async_sessionmaker(engine, expire_on_commit=False)
+        )
+        request.app.state.registry = registry
+    return registry
 
 
 async def resolve_resource(

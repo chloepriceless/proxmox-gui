@@ -11,12 +11,9 @@ from unittest.mock import patch
 import pytest
 
 from tests.fixtures.pve_responses import (
-    CLUSTER_RESOURCES_LXC,
     CLUSTER_RESOURCES_VM,
     FakeProxmox,
-    connection_error,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -280,7 +277,7 @@ async def test_resolve_resource_returns_stale_when_breaker_open(session_factory)
     with patch("app.clusters.connector.ProxmoxAPI", return_value=fake):
         # First call: populate cache
         async with session_factory() as db:
-            resolved_ok = await resolve_resource(
+            await resolve_resource(
                 db=db,
                 registry=registry,
                 principal=principal,

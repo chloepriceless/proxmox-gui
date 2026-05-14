@@ -12,11 +12,10 @@ import pytest
 from tests.factories import login_as, make_user
 from tests.fixtures.pve_responses import (
     CLUSTER_RESOURCES_VM,
-    FakeProxmox,
     VM_CONFIG,
     VM_STATUS_RUNNING,
+    FakeProxmox,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -28,7 +27,7 @@ async def _seed_cluster_and_token(session_factory, *, team_id: int = 42, poolid:
 
     Returns (cluster_id, team_id, poolid).
     """
-    from app.models import Cluster, Team, TeamClusterToken, TeamMembership
+    from app.models import Cluster, Team, TeamClusterToken
 
     async with session_factory() as session:
         team = Team(id=team_id, name=f"gui-team-{team_id}", personal=False, is_active=True)
@@ -166,7 +165,6 @@ async def test_put_tags_pve_unreachable_returns_502_and_audits_failure(client, s
     """When PVE throws PVEUnreachable, PUT returns 502 and writes a failure audit row with scrubbed error."""
     from sqlalchemy import select
 
-    from app.clusters.errors import PVEUnreachable
     from app.models import AuditLog
 
     user = await make_user(session_factory, username="tagsunreach", is_admin=False)
@@ -234,7 +232,7 @@ async def test_put_tags_pat_auth_bypasses_csrf(client, session_factory, app):
     """Bearer PAT auth bypasses CSRF check; PUT succeeds and audit row has actor_user_id set."""
     from sqlalchemy import select
 
-    from app.models import AuditLog, PersonalAccessToken
+    from app.models import AuditLog
 
     user = await make_user(session_factory, username="tagspat", is_admin=False)
     cluster_id, team_id, poolid = await _seed_cluster_and_token(session_factory, team_id=46)
@@ -244,7 +242,7 @@ async def test_put_tags_pat_auth_bypasses_csrf(client, session_factory, app):
     cookies = await login_as(client, username="tagspat", password="testpass12345")
     csrf = cookies.get("csrf_token", "")
     mint_resp = await client.post(
-        "/api/v1/me/tokens",
+        "/api/v1/me/tokens/",
         json={"name": "test-pat"},
         cookies=cookies,
         headers={"X-CSRF-Token": csrf},
@@ -280,8 +278,8 @@ async def test_put_tags_cross_tenant_returns_403(client, session_factory):
     cluster_id, team_id, poolid = await _seed_cluster_and_token(session_factory, team_id=42)
     await _add_user_to_team(session_factory, user_id=user_owner.id, team_id=team_id)
 
-    # User 2: has no membership on this cluster
-    user_other = await make_user(session_factory, username="other99", is_admin=False)
+    # User 2: has no membership on this cluster (create but don't bind to any team token)
+    await make_user(session_factory, username="other99", is_admin=False)
 
     fake = _make_fake_for_vm100()
 

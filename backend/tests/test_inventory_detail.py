@@ -12,11 +12,10 @@ import pytest
 from tests.fixtures.pve_responses import (
     CLUSTER_RESOURCES_LXC,
     CLUSTER_RESOURCES_VM,
-    FakeProxmox,
     VM_CONFIG,
     VM_STATUS_RUNNING,
+    FakeProxmox,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers

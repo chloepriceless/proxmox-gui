@@ -11,10 +11,9 @@ import pytest
 
 from tests.fixtures.pve_responses import (
     CLUSTER_RESOURCES_VM,
-    FakeProxmox,
     RRD_HOUR,
+    FakeProxmox,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers

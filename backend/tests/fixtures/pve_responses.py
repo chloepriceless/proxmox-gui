@@ -265,6 +265,11 @@ RRD_HOUR = {"data": [
      "disk": 50, "maxdisk": 53687091200, "netin": 110, "netout": 210,
      "diskread": 55, "diskwrite": 65},
 ]}
+VM_STATUS_STOPPED = {"data": {"status": "stopped", "uptime": 0, "cpu": 0,
+                              "mem": 0, "maxmem": 4294967296, "netin": 0, "netout": 0,
+                              "diskread": 0, "diskwrite": 0}}
+CONFIG_PUT_OK = {"data": None}  # PVE config.put returns null on success
+
 POOL_GUI_TEAM_42 = {"data": {"comment": "team 42 pool",
     "members": [
         {"vmid": 100, "node": "pve-01", "type": "qemu", "id": "qemu/100"},

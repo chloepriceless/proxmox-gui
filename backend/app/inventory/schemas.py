@@ -32,7 +32,7 @@ class VMInventoryItem(BaseModel):
     @classmethod
     def from_pve(
         cls, item: dict, *, cluster_id: int, is_stale: bool = False
-    ) -> "VMInventoryItem":
+    ) -> VMInventoryItem:
         raw_tags = item.get("tags") or ""
         # PVE writes ";"-joined but tolerates "," and " " on read (Pitfall 6 in
         # 02-RESEARCH.md). Accept all three separators.

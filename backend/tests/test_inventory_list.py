@@ -10,12 +10,9 @@ from unittest.mock import patch
 import pytest
 
 from tests.fixtures.pve_responses import (
-    CLUSTER_RESOURCES_LXC,
     CLUSTER_RESOURCES_VM,
     FakeProxmox,
-    connection_error,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -167,7 +164,6 @@ async def test_list_inventory_for_principal_aggregates_clusters(session_factory)
         session.add(token2)
         await session.commit()
         await session.refresh(cluster2)
-        cluster_id_2 = cluster2.id
 
     registry = PVEConnectorRegistry(cipher=None, session_factory=session_factory)
     fake = FakeProxmox(responses={"cluster.resources.get": CLUSTER_RESOURCES_VM})

@@ -220,8 +220,9 @@ async def update_vm_tags(
     correlation_id: str | None = None,
 ) -> VMDetail:
     """Replace PVE tag set; audit before+after; commit-before-raise on failure."""
-    from app.inventory.schemas import PVE_TAG_RE
     from fastapi import HTTPException, status
+
+    from app.inventory.schemas import PVE_TAG_RE
 
     # Defense-in-depth: schema already validated; assert again to keep service
     # honest if someone bypasses the route (admin script, future caller).

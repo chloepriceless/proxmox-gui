@@ -164,6 +164,7 @@ def create_app() -> FastAPI:
     from app.audit.routes import router as audit_router
     from app.auth.routes import router as auth_router
     from app.clusters.routes import router as clusters_router
+    from app.inventory.routes import router as inventory_router
     from app.me.routes import router as me_router
     from app.pats.routes import router as pats_router
     from app.setup.routes import router as setup_router
@@ -195,6 +196,8 @@ def create_app() -> FastAPI:
     )
     # Plan 02-02: audit log read routes (AUDIT-03, AUDIT-04, AUDIT-05).
     app.include_router(audit_router, prefix="/api/v1/audit", tags=["audit"])
+    # Plan 02-03: inventory read + tag/notes write routes (INV-01..08, TENT-06, API-05).
+    app.include_router(inventory_router, prefix="/api/v1", tags=["inventory"])
 
     return app
 
