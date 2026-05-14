@@ -6,7 +6,7 @@ app/inventory/access.py is created.
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -39,8 +39,9 @@ async def _seed(
 
     async with session_factory() as session:
         user = User(
+            username=f"user{team_id}",
             email=f"user{team_id}@example.com",
-            hashed_password="x",
+            password_hash="x",
             is_active=True,
             is_admin=False,
         )
@@ -174,8 +175,13 @@ async def test_resolve_resource_403_when_user_has_no_membership_on_cluster(sessi
     from app.models import Cluster, Team, TeamMembership, User
 
     async with session_factory() as session:
-        user = User(email="nomatch@example.com", hashed_password="x",
-                    is_active=True, is_admin=False)
+        user = User(
+            username="nomatch",
+            email="nomatch@example.com",
+            password_hash="x",
+            is_active=True,
+            is_admin=False,
+        )
         session.add(user)
         await session.flush()
 
@@ -229,8 +235,13 @@ async def test_resolve_resource_404_when_cluster_missing(session_factory):
     from app.models import User
 
     async with session_factory() as session:
-        user = User(email="miss@example.com", hashed_password="x",
-                    is_active=True, is_admin=False)
+        user = User(
+            username="miss",
+            email="miss@example.com",
+            password_hash="x",
+            is_active=True,
+            is_admin=False,
+        )
         session.add(user)
         await session.commit()
         await session.refresh(user)
@@ -312,8 +323,13 @@ async def test_resolve_resource_admin_still_requires_team_token(session_factory)
     from app.models import Cluster, Team, TeamMembership, User
 
     async with session_factory() as session:
-        admin = User(email="admin@example.com", hashed_password="x",
-                     is_active=True, is_admin=True)
+        admin = User(
+            username="admin-ntoken",
+            email="admin@example.com",
+            password_hash="x",
+            is_active=True,
+            is_admin=True,
+        )
         session.add(admin)
         await session.flush()
 

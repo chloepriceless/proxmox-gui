@@ -26,8 +26,9 @@ async def _seed_full(session_factory, *, team_id: int = 50, poolid: str = "gui-t
 
     async with session_factory() as session:
         user = User(
+            username=f"rrd-u{team_id}",
             email=f"rrd-user-{team_id}@example.com",
-            hashed_password="x",
+            password_hash="x",
             is_active=True,
             is_admin=False,
         )

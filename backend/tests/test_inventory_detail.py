@@ -19,7 +19,7 @@ from tests.fixtures.pve_responses import (
 
 
 # ---------------------------------------------------------------------------
-# Helpers (shared with test_inventory_list.py style)
+# Helpers
 # ---------------------------------------------------------------------------
 
 
@@ -33,8 +33,9 @@ async def _seed_full(
 
     async with session_factory() as session:
         user = User(
+            username=f"detail-u{team_id}",
             email=f"detail-user-{team_id}@example.com",
-            hashed_password="x",
+            password_hash="x",
             is_active=True,
             is_admin=False,
         )

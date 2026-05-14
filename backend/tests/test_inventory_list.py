@@ -35,7 +35,13 @@ async def _seed_full(
 
     async with session_factory() as session:
         email = user_email or f"user-{team_id}@example.com"
-        user = User(email=email, hashed_password="x", is_active=True, is_admin=False)
+        user = User(
+            username=f"usr{team_id}",
+            email=email,
+            password_hash="x",
+            is_active=True,
+            is_admin=False,
+        )
         session.add(user)
         await session.flush()
 
@@ -97,8 +103,10 @@ async def test_list_inventory_for_cluster_filters_by_pool(session_factory):
     principal = _make_principal(user)
     registry = PVEConnectorRegistry(cipher=None, session_factory=session_factory)
 
-    # One VM with matching pool, one with wrong pool
-    resources = [
+    # One VM with matching pool, one with wrong pool.
+    # list_resources calls cluster.resources.get twice: once for type=vm, once for type=lxc.
+    # Use queue_response so each call gets the right slice (vm call gets both VMs, lxc call empty).
+    vm_resources = [
         {"vmid": 100, "name": "mine", "type": "qemu", "node": "pve-01",
          "status": "running", "maxcpu": 4, "maxmem": 4294967296, "maxdisk": 53687091200,
          "tags": "prod", "pool": "gui-team-42"},
@@ -106,7 +114,9 @@ async def test_list_inventory_for_cluster_filters_by_pool(session_factory):
          "status": "running", "maxcpu": 1, "maxmem": 1073741824, "maxdisk": 10737418240,
          "tags": "", "pool": "gui-team-99"},
     ]
-    fake = FakeProxmox(responses={"cluster.resources.get": resources})
+    fake = FakeProxmox()
+    fake.queue_response("cluster.resources.get", vm_resources)  # type=vm call
+    fake.queue_response("cluster.resources.get", [])             # type=lxc call
 
     with patch("app.clusters.connector.ProxmoxAPI", return_value=fake):
         async with session_factory() as db:
@@ -219,8 +229,13 @@ async def test_list_inventory_empty_when_no_team_memberships(session_factory):
     from app.models import User
 
     async with session_factory() as session:
-        user = User(email="loner@example.com", hashed_password="x",
-                    is_active=True, is_admin=False)
+        user = User(
+            username="loner",
+            email="loner@example.com",
+            password_hash="x",
+            is_active=True,
+            is_admin=False,
+        )
         session.add(user)
         await session.commit()
         await session.refresh(user)
@@ -248,12 +263,14 @@ async def test_list_inventory_tag_string_parsed_into_list(session_factory):
     principal = _make_principal(user)
     registry = PVEConnectorRegistry(cipher=None, session_factory=session_factory)
 
-    resources = [
+    vm_resources = [
         {"vmid": 100, "name": "tagged-vm", "type": "qemu", "node": "pve-01",
          "status": "running", "maxcpu": 2, "maxmem": 2147483648, "maxdisk": 10737418240,
          "tags": "prod;web,db ops", "pool": "gui-team-45"},
     ]
-    fake = FakeProxmox(responses={"cluster.resources.get": resources})
+    fake = FakeProxmox()
+    fake.queue_response("cluster.resources.get", vm_resources)  # type=vm call
+    fake.queue_response("cluster.resources.get", [])             # type=lxc call
 
     with patch("app.clusters.connector.ProxmoxAPI", return_value=fake):
         async with session_factory() as db:
