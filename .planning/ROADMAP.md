@@ -31,7 +31,7 @@ Users can self-provision and manage VMs/LXCs on Proxmox through a polished, opin
   5. The REST API exposes every shipped capability with auto-generated OpenAPI 3.1 served at a documented path, with Personal Access Token auth working alongside session cookies; the SvelteKit UI consumes the same API.
 **Plans**: 10 plans
 - [x] 01-01-backend-scaffold-PLAN.md — FastAPI app factory, core primitives (cipher/JWT/passwords/CSRF/db), pyproject, tests *(completed 2026-05-14, 25 files, 33 tests green; SUMMARY: .planning/phases/01-foundation/01-01-backend-scaffold-SUMMARY.md)*
-- [ ] 01-02-db-schema-PLAN.md — SQLAlchemy 2.0 ORM models for 11 tables + Alembic 0001_initial + schema invariants
+- [x] 01-02-db-schema-PLAN.md — SQLAlchemy 2.0 ORM models for 11 tables + Alembic 0001_initial + schema invariants *(completed 2026-05-14, 19 files, 56 tests green; SUMMARY: .planning/phases/01-foundation/01-02-db-schema-SUMMARY.md)*
 - [ ] 01-03-frontend-scaffold-PLAN.md — SvelteKit 2 + Svelte 5 + Tailwind v4 + shadcn-svelte init + app shell skeleton + theme store
 - [ ] 01-04-deployment-skeleton-PLAN.md — install.sh + bootstrap.sh + systemd units + Caddyfile + key generators (master.key 0400)
 - [ ] 01-05-auth-subsystem-PLAN.md — Login/refresh-rotation/logout/password change/CSRF/PATs/SSH keys (Argon2id + JWT + dual-mode auth)
@@ -101,7 +101,7 @@ Users can self-provision and manage VMs/LXCs on Proxmox through a polished, opin
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation | 0/TBD | Not started | - |
+| 1. Foundation | 2/10 | Executing | - |
 | 2. Multi-Cluster Inventory, Quotas & Audit | 0/TBD | Not started | - |
 | 3. Job Queue & Lifecycle | 0/TBD | Not started | - |
 | 4. Provisioning, Networking & Console | 0/TBD | Not started | - |
