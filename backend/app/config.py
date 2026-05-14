@@ -19,7 +19,7 @@ import secrets
 import warnings
 from pathlib import Path
 
-from pydantic import Field, model_validator
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -73,7 +73,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
 
     @model_validator(mode="after")
-    def _populate_secrets_from_files(self) -> "Settings":
+    def _populate_secrets_from_files(self) -> Settings:
         """If a secret is empty but the matching ``*_file`` is readable, load it.
 
         Falls back to ephemeral ``secrets.token_urlsafe(48)`` with a ``UserWarning``
