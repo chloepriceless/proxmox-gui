@@ -4,7 +4,7 @@
 # deploy/install.sh — Proxmox GUI one-line helper-script installer (DEPLOY-01)
 #
 # Usage (on a Proxmox VE 8.x host):
-#   bash -c "$(curl -fsSL https://raw.githubusercontent.com/<owner>/proxmox-gui/main/deploy/install.sh)"
+#   bash -c "$(curl -fsSL https://raw.githubusercontent.com/chloepriceless/proxmox-gui/master/deploy/install.sh)"
 #
 # This script:
 #   1. Verifies it is running on a Proxmox VE host (pct must be present).
@@ -32,7 +32,7 @@ set -euo pipefail
 cat <<'BANNER'
 ============================================================
   Proxmox Self-Service GUI — installer
-  https://github.com/<owner>/proxmox-gui  (replace pre-release)
+  https://github.com/chloepriceless/proxmox-gui
 ============================================================
 BANNER
 
@@ -57,8 +57,8 @@ trap 'echo "ERROR: install.sh failed at line $LINENO (exit $?)" >&2; exit 1' ERR
 # ----------------------------------------------------------------------------
 # Defaults (overridable via env or flags)
 # ----------------------------------------------------------------------------
-REPO_URL="${REPO_URL:-https://github.com/chrissi/proxmox-gui}"
-RELEASE="${RELEASE:-main}"
+REPO_URL="${REPO_URL:-https://github.com/chloepriceless/proxmox-gui}"
+RELEASE="${RELEASE:-master}"
 
 CTID_DEFAULT="$(pvesh get /cluster/nextid)"
 CTID="${CTID:-$CTID_DEFAULT}"
@@ -95,7 +95,7 @@ Flags (all optional; defaults shown):
   --disk     GB    rootfs size in GB (default: 8)
   --storage  S     PVE storage ID (default: local-lvm)
   --bridge   B     network bridge (default: vmbr0)
-  --repo-url URL   git repo URL  (default: https://github.com/chrissi/proxmox-gui)
+  --repo-url URL   git repo URL  (default: https://github.com/chloepriceless/proxmox-gui)
   --release  REF   git branch/tag (default: main)
 
 Environment variables (CTID, HOSTNAME, CPU, RAM_MB, DISK_GB, STORAGE,

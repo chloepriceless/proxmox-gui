@@ -16,16 +16,16 @@
 #     ships proper self-update (DEPLOY-04).
 #
 # Required env (set by install.sh; sensible defaults if run manually):
-#   REPO_URL  git remote URL          (default: https://github.com/chrissi/proxmox-gui)
-#   RELEASE   branch / tag / commit   (default: main)
+#   REPO_URL  git remote URL          (default: https://github.com/chloepriceless/proxmox-gui)
+#   RELEASE   branch / tag / commit   (default: master)
 
 set -euo pipefail
 
 trap 'echo "ERROR: bootstrap.sh failed at line $LINENO (exit $?)" >&2; exit 1' ERR
 
 # Inputs (env-driven; install.sh exports both).
-REPO_URL="${REPO_URL:-https://github.com/chrissi/proxmox-gui}"
-RELEASE="${RELEASE:-main}"
+REPO_URL="${REPO_URL:-https://github.com/chloepriceless/proxmox-gui}"
+RELEASE="${RELEASE:-master}"
 
 # Layout (Pitfall A6: 0400/0700 perms on /etc/proxmox-gui).
 APP_USER="proxmox-gui"

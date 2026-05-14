@@ -5,19 +5,21 @@ An operator runs a single curl|bash on their Proxmox VE 8.x host and arrives at
 a freshly-provisioned LXC running the FastAPI backend + SvelteKit UI behind
 Caddy with auto-HTTPS (self-signed for LAN; Let's Encrypt-ready for public).
 
-> **Status:** Phase 1 of 5 (Foundation). The skeleton ships here; helper-script
-> polish, GPG-signed releases, and self-update land in Phase 5 (DEPLOY-04).
+> **Status:** Phase 2 of 5 (Multi-Cluster Inventory). Read-only inventory, audit,
+> and quotas surfaces are live; provisioning (Phase 4), power/snapshots (Phase 3),
+> and self-update polish (Phase 5) are still to come.
 
 ## One-line install
 
 Run **on the Proxmox VE 8.x host** (NOT inside an LXC):
 
 ```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/chrissi/proxmox-gui/main/deploy/install.sh)"
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/chloepriceless/proxmox-gui/master/deploy/install.sh)"
 ```
 
-> The `chrissi/proxmox-gui` slug is a placeholder pre-publication. Replace
-> with your actual fork/repo until the project is published.
+> If the repo is private, replace the raw-content URL with a
+> token-authenticated curl or override `REPO_URL` to point at a
+> reachable mirror.
 
 This will:
 
@@ -45,14 +47,14 @@ All settings have sensible defaults. Override via env vars **or** flags
 | Disk (GB)   | `DISK_GB`    | `--disk`       | `8`                                  |
 | Storage     | `STORAGE`    | `--storage`    | `local-lvm`                          |
 | Bridge      | `BRIDGE`     | `--bridge`     | `vmbr0`                              |
-| Repo URL    | `REPO_URL`   | `--repo-url`   | `https://github.com/chrissi/proxmox-gui` |
-| Git ref     | `RELEASE`    | `--release`    | `main`                               |
+| Repo URL    | `REPO_URL`   | `--repo-url`   | `https://github.com/chloepriceless/proxmox-gui` |
+| Git ref     | `RELEASE`    | `--release`    | `master`                             |
 
 Example with a few overrides:
 
 ```bash
 CPU=4 RAM_MB=4096 STORAGE=local-zfs \
-  bash -c "$(curl -fsSL https://raw.githubusercontent.com/chrissi/proxmox-gui/main/deploy/install.sh)"
+  bash -c "$(curl -fsSL https://raw.githubusercontent.com/chloepriceless/proxmox-gui/master/deploy/install.sh)"
 ```
 
 ## Post-install

@@ -10,22 +10,41 @@ LXC installed via a one-line helper-script.
 
 ## Status
 
-**Phase 1 of 5 (Foundation)** — see [`.planning/STATE.md`](./.planning/STATE.md).
+**Phase 2 of 5 complete (smoke-test pending)** — see [`.planning/STATE.md`](./.planning/STATE.md).
 
-| Phase | Name                                          | Status      |
-|-------|-----------------------------------------------|-------------|
-| 1     | Foundation                                    | In progress |
-| 2     | Multi-Cluster Inventory, Quotas & Audit       | Planned     |
-| 3     | Job Queue & Lifecycle                         | Planned     |
-| 4     | Provisioning, Networking & Console            | Planned     |
-| 5     | Polish & Operational Hardening                | Planned     |
+| Phase | Name                                          | Status        |
+|-------|-----------------------------------------------|---------------|
+| 1     | Foundation                                    | Complete      |
+| 2     | Multi-Cluster Inventory, Quotas & Audit       | Smoke pending |
+| 3     | Job Queue & Lifecycle                         | Planned       |
+| 4     | Provisioning, Networking & Console            | Planned       |
+| 5     | Polish & Operational Hardening                | Planned       |
+
+### What works today
+
+- One-line installer creates an unprivileged LXC on a Proxmox VE 8.x host
+- First-run setup wizard: admin account + first cluster registration
+- Account: profile, password change, SSH keys, Personal Access Tokens
+- Admin: user CRUD, cluster CRUD with PVE-side pool/user/token bootstrap
+- Inventory **read-only**: cross-cluster list, VM/LXC detail with RRD sparklines, tags + notes
+- Per-team quotas with admin admin-side editor + admission preview
+- Audit log with CSV export (RFC 4180 + BOM + formula-injection safe)
+- Multi-tenant via Proxmox pools + privilege-separated per-tenant tokens
+
+### Not yet built (next phases)
+
+- VM/LXC **provisioning** (Phase 4)
+- Power actions, snapshots, backups, resize, clone, migrate (Phase 3)
+- Embedded noVNC console (Phase 4)
+- Cloud-Init editor, SDN picker, community-scripts templates (Phase 4)
+- Mobile polish, self-update, idle timeout (Phase 5)
 
 ## Install (one-liner)
 
 Run **on your Proxmox VE 8.x host** (NOT inside an LXC):
 
 ```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/chrissi/proxmox-gui/main/deploy/install.sh)"
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/chloepriceless/proxmox-gui/master/deploy/install.sh)"
 ```
 
 Then open `https://<lxc-ip>/setup` in your browser. Full installer
