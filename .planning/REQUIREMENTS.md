@@ -31,7 +31,8 @@ Requirements for initial release. Each maps to roadmap phases via the Traceabili
 - [ ] **TENT-03**: User sees own quota usage as progress bars in app header
 - [ ] **TENT-04**: User sees live quota delta in the create wizard (e.g., "+2 vCPU, +4 GB RAM")
 - [ ] **TENT-05**: System blocks creation when it would exceed quota (admission control, not post-hoc)
-- [ ] **TENT-06**: User sees only their own (and their team's) VMs/LXCs in the list; admin sees all
+- [x] **TENT-06
+**: User sees only their own (and their team's) VMs/LXCs in the list; admin sees all
 
 ### Multi-Cluster Management
 
@@ -47,14 +48,20 @@ Requirements for initial release. Each maps to roadmap phases via the Traceabili
 
 ### Inventory & Search
 
-- [ ] **INV-01**: User sees a list of all their VMs and LXCs with status indicators
+- [x] **INV-01
+**: User sees a list of all their VMs and LXCs with status indicators
 - [ ] **INV-02**: User can search/filter by name, tag, status, node
 - [ ] **INV-03**: User can sort the list by name, status, node, created date
-- [ ] **INV-04**: User can view a detail page per VM/LXC (status, vCPU, RAM, disk, IPs, uptime, OS, node, cluster, tags)
-- [ ] **INV-05**: User sees live metrics (CPU, RAM, disk I/O, network) on the detail page using Proxmox RRD data
-- [ ] **INV-06**: User can tag VMs/LXCs with multi-tag, color-coded labels
-- [ ] **INV-07**: User can edit a markdown notes field on each VM/LXC (PVE `description`)
-- [ ] **INV-08**: User can view a per-VM activity/task log (recent PVE tasks)
+- [x] **INV-04
+**: User can view a detail page per VM/LXC (status, vCPU, RAM, disk, IPs, uptime, OS, node, cluster, tags)
+- [x] **INV-05
+**: User sees live metrics (CPU, RAM, disk I/O, network) on the detail page using Proxmox RRD data
+- [x] **INV-06
+**: User can tag VMs/LXCs with multi-tag, color-coded labels
+- [x] **INV-07
+**: User can edit a markdown notes field on each VM/LXC (PVE `description`)
+- [x] **INV-08
+**: User can view a per-VM activity/task log (recent PVE tasks)
 
 ### LXC Provisioning
 
@@ -116,7 +123,8 @@ Requirements for initial release. Each maps to roadmap phases via the Traceabili
 **: API auth via per-user Personal Access Tokens
 - [x] **API-03**: OpenAPI spec auto-generated from code and served at a documented path
 - [ ] **API-04**: Mutating endpoints return `202 Accepted` with a job ID; clients poll job status
-- [ ] **API-05**: API enforces the same quotas and tenancy as the UI
+- [x] **API-05
+**: API enforces the same quotas and tenancy as the UI
 
 ### Audit Log
 
