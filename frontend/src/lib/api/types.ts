@@ -97,3 +97,58 @@ export interface ClusterResponse {
   host: string;
   port: number;
 }
+
+// ---------------------------------------------------------------------------
+// Account self-service (Plan 01-09): SSH keys + Personal Access Tokens
+// ---------------------------------------------------------------------------
+
+/** Mirrors `app.ssh_keys.schemas.SshKeyResponse` (list/post — no public_key). */
+export interface SshKey {
+  id: number;
+  name: string;
+  fingerprint: string;
+  created_at: string;
+}
+
+/** Mirrors `app.ssh_keys.schemas.SshKeyCreate` (write-only). */
+export interface SshKeyCreateRequest {
+  name: string;
+  public_key: string;
+}
+
+/** Mirrors `app.pats.schemas.PATListItem` — never carries the plaintext. */
+export interface PATListItem {
+  id: number;
+  name: string;
+  /** "pat_<first-8-chars-of-prefix>..." — non-secret disambiguator. */
+  prefix_preview: string;
+  expires_at: string | null;
+  last_used_at: string | null;
+  revoked_at: string | null;
+  created_at: string;
+}
+
+/**
+ * Mirrors `app.pats.schemas.PATMintResponse`. Carries the plaintext exactly
+ * once; UI MUST surface it via SecretRevealDialog and clear on dismiss.
+ */
+export interface PATMintResponse {
+  id: number;
+  name: string;
+  expires_at: string | null;
+  /** "pat_..." — only place this ever appears. T-01-09-01 mitigation. */
+  plaintext: string;
+  created_at: string;
+}
+
+/** Mirrors `app.pats.schemas.PATCreate` (write-only). */
+export interface PATCreateRequest {
+  name: string;
+  expires_at?: string | null;
+}
+
+/** Mirrors `app.auth.schemas.PasswordChangeRequest` (write-only). */
+export interface PasswordChangeRequest {
+  current_password: string;
+  new_password: string;
+}

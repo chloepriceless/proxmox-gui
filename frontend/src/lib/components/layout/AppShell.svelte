@@ -11,6 +11,7 @@
   import type { Snippet } from 'svelte';
   import Sidebar from '$lib/components/layout/Sidebar.svelte';
   import Topbar from '$lib/components/layout/Topbar.svelte';
+  import { Toaster } from '$lib/components/ui/sonner';
   import type { CurrentUser } from '$lib/stores/user.svelte';
 
   let { user, children }: { user: CurrentUser; children: Snippet } = $props();
@@ -34,3 +35,7 @@
     </main>
   </div>
 </div>
+
+<!-- Sonner toast portal — mounted once per shell so any auth'd page can toast.
+     Per UI-SPEC §Component States: bottom-right, success/error/info/warning. -->
+<Toaster position="bottom-right" richColors closeButton />
