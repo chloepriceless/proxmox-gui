@@ -1,0 +1,238 @@
+"""``/api/v1/auth/{login,refresh,logout}`` HTTP routes.
+
+The router is mounted by :func:`app.main.create_app` with ``prefix="/api/v1/auth"``
+and ``tags=["auth"]``. Cookies follow D-09 / D-13:
+
+- ``access_token``: httpOnly, Secure (when ``cookie_secure=True``), SameSite=Lax,
+  ``max_age = access_token_ttl_seconds``, ``path="/"`` so every route sees it.
+- ``refresh_token``: same flags, ``max_age = refresh_token_ttl_seconds``,
+  ``path="/api/v1/auth"`` — scoped so unrelated routes never even receive it.
+- ``csrf_token``: ``httpOnly=False`` (the SPA's JS must read it), Secure,
+  SameSite=Lax, ``max_age = refresh_token_ttl_seconds``, ``path="/"``.
+
+The refresh route is exempt from the project's CSRF dependency because the
+``refresh_token`` cookie is itself httpOnly — presence is sufficient and a
+forged cross-site request can't read it back to fake a header. Documented
+inline.
+"""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime
+
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.auth import service
+from app.auth.rate_limit import check_login_rate
+from app.auth.refresh import InvalidRefresh, ReplayDetected
+from app.auth.schemas import (
+    LoginRequest,
+    LoginResponse,
+    LogoutResponse,
+    RefreshResponse,
+)
+from app.config import settings
+from app.core.db import get_db
+
+router = APIRouter()
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _client_ip(request: Request) -> str:
+    """Best-effort client IP, preferring the first ``X-Forwarded-For`` hop.
+
+    In production the LXC ships behind Caddy which sets ``X-Forwarded-For``;
+    in dev the header is absent and we fall back to ``request.client.host``.
+    Take only the FIRST value (left-most) per RFC 7239 / common reverse-proxy
+    convention — the rest are downstream proxies.
+    """
+    fwd = request.headers.get("X-Forwarded-For")
+    if fwd:
+        return fwd.split(",")[0].strip()
+    if request.client is not None:
+        return request.client.host
+    return "unknown"
+
+
+def _set_session_cookies(
+    response: Response, *, access: str, refresh: str, csrf: str
+) -> None:
+    """Set the three session cookies per D-09 + D-13."""
+    # Cookie attrs shared by access + refresh (both httpOnly).
+    secure = settings.cookie_secure
+    samesite = settings.cookie_samesite
+
+    response.set_cookie(
+        "access_token",
+        access,
+        max_age=settings.access_token_ttl_seconds,
+        httponly=True,
+        secure=secure,
+        samesite=samesite,
+        path="/",
+    )
+    response.set_cookie(
+        "refresh_token",
+        refresh,
+        max_age=settings.refresh_token_ttl_seconds,
+        httponly=True,
+        secure=secure,
+        samesite=samesite,
+        path="/api/v1/auth",
+    )
+    # CSRF cookie is JS-readable (D-13) — httpOnly=False so the SPA can copy
+    # it into the X-CSRF-Token header on state-changing requests.
+    response.set_cookie(
+        settings.csrf_cookie_name,
+        csrf,
+        max_age=settings.refresh_token_ttl_seconds,
+        httponly=False,
+        secure=secure,
+        samesite=samesite,
+        path="/",
+    )
+
+
+def _clear_session_cookies(response: Response) -> None:
+    """Clear all three cookies with ``Max-Age=0`` (browser-side deletion)."""
+    # Path on each cookie must match what was set, otherwise the browser will
+    # ignore the deletion (subtle bug — see RFC 6265 §5.4).
+    response.delete_cookie("access_token", path="/")
+    response.delete_cookie("refresh_token", path="/api/v1/auth")
+    response.delete_cookie(settings.csrf_cookie_name, path="/")
+
+
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/login",
+    response_model=LoginResponse,
+    summary="Authenticate with username + password",
+    operation_id="auth_login",
+)
+async def login_route(
+    payload: LoginRequest,
+    request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+) -> LoginResponse:
+    ip = _client_ip(request)
+    if not check_login_rate(ip):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many login attempts; please wait and retry",
+        )
+
+    user_agent = request.headers.get("User-Agent")
+
+    result = await service.login(
+        db,
+        username=payload.username,
+        password=payload.password,
+        user_agent=user_agent,
+        ip=ip,
+    )
+    _set_session_cookies(
+        response,
+        access=result.access_token,
+        refresh=result.refresh_token,
+        csrf=result.csrf_token,
+    )
+    return LoginResponse(
+        user_id=result.user.id,
+        username=result.user.username,
+        email=result.user.email,
+        is_admin=result.user.is_admin,
+    )
+
+
+@router.post(
+    "/refresh",
+    response_model=RefreshResponse,
+    summary="Rotate the session — issue a fresh access + refresh pair",
+    operation_id="auth_refresh",
+)
+async def refresh_route(
+    request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+) -> RefreshResponse:
+    """Refresh route exemptions:
+
+    - **No CSRF dependency.** The ``refresh_token`` cookie is itself httpOnly
+      so a cross-site forged request can submit it but cannot READ it back to
+      fake an ``X-CSRF-Token`` header. The cookie's mere presence + sameSite=Lax
+      is the gate. (CSRF Q4 resolution: rotate CSRF on every successful refresh —
+      which this route DOES via ``_set_session_cookies``.)
+    - **No rate limit gate.** Refresh is implicit (browser-driven); user-visible
+      retries are bounded by the access token TTL anyway.
+    """
+    refresh_cookie = request.cookies.get("refresh_token")
+    if not refresh_cookie:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing refresh token",
+        )
+
+    user_agent = request.headers.get("User-Agent")
+    ip = _client_ip(request)
+
+    try:
+        result = await service.refresh(
+            db,
+            refresh_secret=refresh_cookie,
+            user_agent=user_agent,
+            ip=ip,
+        )
+    except ReplayDetected:
+        # T-01-05-02: cascade-revoke happened in consume_refresh. Clear the
+        # client's cookies and tell them in plain language.
+        _clear_session_cookies(response)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session compromised — log in again.",
+        ) from None
+    except InvalidRefresh:
+        _clear_session_cookies(response)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh token invalid or expired",
+        ) from None
+
+    _set_session_cookies(
+        response,
+        access=result.access_token,
+        refresh=result.refresh_token,
+        csrf=result.csrf_token,
+    )
+    return RefreshResponse(refreshed_at=datetime.now(UTC))
+
+
+@router.post(
+    "/logout",
+    response_model=LogoutResponse,
+    summary="Log out — revoke the refresh row and clear cookies",
+    operation_id="auth_logout",
+)
+async def logout_route(
+    request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+) -> LogoutResponse:
+    """Idempotent: an unauthenticated client hitting this route still gets 200.
+
+    Plan 07 will compose this with the audit-log writer once Phase-2 ships
+    it; for now we just revoke + clear.
+    """
+    refresh_cookie = request.cookies.get("refresh_token")
+    await service.logout(db, refresh_secret=refresh_cookie)
+    _clear_session_cookies(response)
+    return LogoutResponse()

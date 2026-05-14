@@ -169,7 +169,7 @@ async def test_login_rate_limit_returns_429_after_threshold(
     headers = {"X-Forwarded-For": "203.0.113.42"}
 
     last_status = None
-    for i in range(11):
+    for _ in range(11):
         # Vary password so all attempts fail (or use right one — failure is
         # cheaper, lets us check the limiter applies regardless of result).
         response = await client.post(

@@ -73,13 +73,27 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    # TODO(Plan 05): TrustedHostMiddleware once we know the deployed hostname
+    # TODO(Plan 06+): TrustedHostMiddleware once we know the deployed hostname
     # (Caddy upstream-only). Not active in dev.
 
     @app.get("/api/v1/health", tags=["health"], summary="Liveness probe")
     async def health() -> dict[str, str]:
         """Unauthenticated. Returns 200 if the process is up."""
         return {"status": "ok", "version": "0.1.0"}
+
+    # Plan 01-05: auth + me + ssh-keys + tokens routers. Imports kept local to
+    # the factory so test runs that don't need them aren't import-cycle penalised.
+    from app.auth.routes import router as auth_router
+    from app.me.routes import router as me_router
+    from app.pats.routes import router as pats_router
+    from app.ssh_keys.routes import router as ssh_keys_router
+
+    app.include_router(auth_router, prefix="/api/v1/auth", tags=["auth"])
+    app.include_router(me_router, prefix="/api/v1/me", tags=["me"])
+    app.include_router(
+        ssh_keys_router, prefix="/api/v1/me/ssh-keys", tags=["ssh-keys"]
+    )
+    app.include_router(pats_router, prefix="/api/v1/me/tokens", tags=["tokens"])
 
     return app
 
