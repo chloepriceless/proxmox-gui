@@ -1797,32 +1797,37 @@ The worker unit is identical with `ExecStart=.venv/bin/arq app.worker.WorkerSett
 
 The planner should treat A6 as the highest-risk assumption — Phase 1 hinges on tenant bootstrap working with the admin-level token from D-03. **Recommendation:** spike a 30-minute manual check against a dev PVE before starting the team-create task.
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Backports vs pyenv for Python 3.12 on Debian 12**
    - What we know: Debian 12 default is 3.11; backports may have 3.12, but I haven't probed `apt-cache policy python3.12` on a real Debian 12 LXC.
    - What's unclear: stability of backports python3.12 vs maintenance burden of pyenv.
    - Recommendation: planner spawns a 10-min task "probe Debian 12 backports for python3.12; if absent, use deadsnakes equivalent or pyenv." Pick one in the install script. Phase 5 (self-update) revisits.
+   - **Resolution:** Plan 04 Task 1 `bootstrap.sh` tries `python3.12` from debian-backports first, falls back to pyenv if unavailable. Documented inline in the script comment.
 
 2. **Bootstrap token in installer**
    - What we know: D-18 says "lenient validation" — only admin is mandatory. D-19 says stepper UX.
    - What's unclear: whether the first-run flow should require a one-shot bootstrap token (printed by installer, consumed once) or rely purely on the "no admin yet" predicate.
    - Recommendation: ship without bootstrap token in v1 to keep the wizard frictionless. Add a Phase 5 hardening option to require it. Document in CONTEXT addendum.
+   - **Resolution:** Per CONTEXT D-18 (lenient first-run), the `no_admin_yet` predicate alone gates `/api/v1/setup/*`. No sidecar token in v1. Accepted v1 design.
 
 3. **Login rate limiting in Phase 1 vs Phase 5**
    - What we know: CONTEXT marks "in-memory bucket for v1" as Claude's discretion.
    - What's unclear: required to ship Phase 1, or carry to a polish phase?
    - Recommendation: simple in-memory per-IP+username bucket from the start (5 attempts / 15min, exponential backoff). ~30 lines of code; saves a v1 security debt item.
+   - **Resolution:** Plan 05 Task 1 uses an in-memory token bucket (`backend/app/security/rate_limit.py`) keyed by `(client_ip, route)`. Sufficient for single-LXC v1; Redis-backed limiter deferred to Phase 5 when arq is fully wired.
 
 4. **CSRF token rotation**
    - What we know: D-13 says double-submit cookie.
    - What's unclear: does the CSRF cookie rotate on each refresh, or stay stable per session?
    - Recommendation: rotate on every refresh (tied to refresh-token rotation chain). Trivial to implement; future-proofs against token-pinning attacks.
+   - **Resolution:** Plan 05 Task 1 rotates the CSRF cookie on every successful `POST /auth/refresh` and on `POST /auth/login`. Documented in `backend/app/auth/csrf.py` docstring.
 
 5. **OpenAPI tag / operationId conventions**
    - What we know: API-03 requires auto-generated OpenAPI; UI consumes via openapi-ts.
    - What's unclear: explicit naming convention.
    - Recommendation: per-router tag (`auth`, `users`, `teams`, `clusters`, `setup`, `me`); explicit `operation_id="login"` etc. on every route so the generated TS client has stable method names. **Locks the contract** — renames are breaking changes.
+   - **Resolution:** Plan 01 Task 1 sets `app.openapi(...).operationId` per router using `{router_tag}_{verb}_{resource}` (e.g., `auth_post_login`). Documented in `backend/app/main.py` factory.
 
 ## Environment Availability
 

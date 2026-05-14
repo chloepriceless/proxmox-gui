@@ -29,7 +29,17 @@ Users can self-provision and manage VMs/LXCs on Proxmox through a polished, opin
   3. An admin can create, edit, disable, and delete users, and assign them to teams.
   4. An admin can register one or more Proxmox clusters (standalone or clustered, PVE 8.x) with URL + per-cluster API token; tokens are stored encrypted; cluster-context appears in every resource URL.
   5. The REST API exposes every shipped capability with auto-generated OpenAPI 3.1 served at a documented path, with Personal Access Token auth working alongside session cookies; the SvelteKit UI consumes the same API.
-**Plans**: TBD
+**Plans**: 10 plans
+- [ ] 01-01-backend-scaffold-PLAN.md — FastAPI app factory, core primitives (cipher/JWT/passwords/CSRF/db), pyproject, tests
+- [ ] 01-02-db-schema-PLAN.md — SQLAlchemy 2.0 ORM models for 11 tables + Alembic 0001_initial + schema invariants
+- [ ] 01-03-frontend-scaffold-PLAN.md — SvelteKit 2 + Svelte 5 + Tailwind v4 + shadcn-svelte init + app shell skeleton + theme store
+- [ ] 01-04-deployment-skeleton-PLAN.md — install.sh + bootstrap.sh + systemd units + Caddyfile + key generators (master.key 0400)
+- [ ] 01-05-auth-subsystem-PLAN.md — Login/refresh-rotation/logout/password change/CSRF/PATs/SSH keys (Argon2id + JWT + dual-mode auth)
+- [ ] 01-06-clusters-tenant-bootstrap-PLAN.md — PVE connector + cluster CRUD (incl. POST /clusters/test dry-run) + D-02 transactional tenant bootstrap + team CRUD (DELETE returns 409 when bindings exist per D-04)
+- [ ] 01-07-users-admin-setup-PLAN.md — Admin user CRUD (AUTH-07/08) + first-run setup wizard backend (DEPLOY-05)
+- [ ] 01-08-frontend-auth-shell-PLAN.md — Auth shell: API client core, route auth gate, login page, 4-step setup wizard (D-19), shared form components (ConfirmByNameDialog, SecretRevealDialog, PasswordInput, FormSummaryAlert)
+- [ ] 01-09-frontend-account-PLAN.md — Account self-service: profile (change password + appearance), SSH keys, Personal Access Tokens (show-once dialog)
+- [ ] 01-10-frontend-admin-PLAN.md — Admin pages: Users (CRUD + team assignment), Clusters (registration with SEPARATE Test + Register buttons), ClusterStatusPill component + end-to-end operator smoke checkpoint
 **UI hint**: yes
 **Notes**: Multi-tenancy data model (users, teams, quotas FK columns, per-cluster API token storage) must be in the schema from row one — Pitfall 5 says retrofitting is near-rewrite territory. Decide token-per-cluster vs. per-tenant-token approach via ADR before shipping. Helper-script + LXC template can be a skeleton here; full polish lands in Phase 5.
 
