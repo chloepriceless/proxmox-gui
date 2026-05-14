@@ -343,3 +343,115 @@ export interface RRDSample {
 
 /** Distinguishes between QEMU VM and LXC container at the API call level. */
 export type ResourceKind = 'vm' | 'lxc';
+
+// ---------------------------------------------------------------------------
+// Phase 2 Audit types (Plan 02-06)
+// ---------------------------------------------------------------------------
+
+/** Mirrors `app.audit.schemas.AuditEntry`. */
+export interface AuditEntry {
+  id: number;
+  occurred_at: string;       // ISO 8601
+  actor_username: string | null;
+  actor_pat_prefix: string | null;
+  team_name: string | null;
+  cluster_name: string | null;
+  action: string;            // e.g. "vm.tag.update"
+  target_type: string | null;
+  target_id: string | null;
+  result: string;            // "success" | "failure" | "pending"
+  source_ip: string | null;
+  correlation_id: string | null;
+  payload_before: string | null;   // JSON string
+  payload_after: string | null;
+  error: string | null;
+}
+
+/** Mirrors `app.audit.schemas.AuditPage`. */
+export interface AuditPage {
+  rows: AuditEntry[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+/** Filter parameters for the audit list + export endpoints. */
+export interface AuditFilterParams {
+  from?: string;            // ISO date
+  to?: string;
+  action?: string[];        // server expects comma-joined; client sends list, joined in api client
+  user_id?: number;
+  target_type?: string[];
+  vmid?: number;
+  cluster_id?: number;
+  show_team_actions?: boolean;
+  page?: number;
+  page_size?: number;
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2 Quotas types (Plan 02-06)
+// ---------------------------------------------------------------------------
+
+/** Per-cluster quota limit inputs for PUT /teams/{id}/quotas. */
+export interface QuotaLimitInput {
+  cluster_id: number;
+  cpu_cores: number | null;
+  ram_gb: number | null;
+  disk_gb: number | null;
+  vm_count: number | null;
+}
+
+/** Read-only usage snapshot per cluster. */
+export interface QuotaUsagePresentable {
+  cpu_cores: number;
+  ram_gb: number;
+  disk_gb: number;
+  vm_count: number;
+  lxc_count: number;
+}
+
+/** One row per cluster in a team quota response. */
+export interface ClusterQuotaRow {
+  cluster_id: number;
+  cluster_name: string;
+  limit: QuotaLimitInput;
+  usage: QuotaUsagePresentable;
+}
+
+/** Full team quota page returned by GET/PUT /teams/{id}/quotas. */
+export interface TeamQuotaPage {
+  team_id: number;
+  team_name: string;
+  rows: ClusterQuotaRow[];
+}
+
+/** Per-team quota block in MyQuotasResponse. */
+export interface MyTeamQuota {
+  team_id: number;
+  team_name: string;
+  clusters: ClusterQuotaRow[];
+  aggregate_limit: QuotaLimitInput;     // cluster_id=0 sentinel
+  aggregate_usage: QuotaUsagePresentable;
+}
+
+/** Returned by GET /api/v1/me/quotas. */
+export interface MyQuotasResponse {
+  teams: MyTeamQuota[];
+}
+
+/** One dimension in a quota preview. */
+export interface QuotaDimension {
+  name: string;
+  current: number;
+  requested: number;
+  limit: number | null;
+  headroom: number | null;
+  would_exceed: boolean;
+}
+
+/** Returned by POST /api/v1/quotas/preview. */
+export interface QuotaPreview {
+  would_exceed: boolean;
+  dimensions: QuotaDimension[];
+}

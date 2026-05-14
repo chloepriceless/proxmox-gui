@@ -14,6 +14,7 @@
   import { api } from '$lib/api/client';
   import type { PageData } from './$types';
   import type { RRDSample, ResourceKind } from '$lib/api/types';
+  import AuditTable from '$lib/components/audit/AuditTable.svelte';
 
   let { data }: { data: PageData } = $props();
 
@@ -291,22 +292,31 @@
       </div>
     </Tabs.Content>
 
-    <!-- Activity tab (stub — Plan 02-06 mounts AuditTable here) -->
+    <!-- Activity tab — AuditTable with locked filters (Plan 02-06) -->
     <Tabs.Content value="activity">
       <div class="mt-6">
-        <div class="flex items-center justify-between mb-4">
-          <h2 class="text-[18px] font-semibold">Activity</h2>
+        <div class="flex items-center justify-end mb-3">
           <a
             href={`/audit?cluster_id=${detail.cluster_id}&vmid=${detail.vmid}`}
             class="text-primary hover:underline text-[14px]"
-          >
-            View in global audit log →
-          </a>
+          >View in global audit log →</a>
         </div>
-        <p class="text-muted-foreground text-[14px]">
-          Per-VM activity feed integrates with the audit log — Plan 02-06 mounts the AuditTable
-          here with locked filters (cluster_id={detail.cluster_id}, vmid={detail.vmid}).
-        </p>
+        {#await api.audit.list({ filters: { cluster_id: detail.cluster_id, vmid: detail.vmid, page: 1, page_size: 50 } })}
+          <AuditTable rows={[]} total={0} page={1} pageSize={50} loading={true}
+            lockedFilters={{ cluster_id: detail.cluster_id, vmid: detail.vmid }} />
+        {:then result}
+          <AuditTable
+            rows={result.rows}
+            total={result.total}
+            page={result.page}
+            pageSize={result.page_size}
+            lockedFilters={{ cluster_id: detail.cluster_id, vmid: detail.vmid }}
+          />
+        {:catch}
+          <AuditTable rows={[]} total={0} page={1} pageSize={50}
+            error="Couldn't load activity."
+            lockedFilters={{ cluster_id: detail.cluster_id, vmid: detail.vmid }} />
+        {/await}
       </div>
     </Tabs.Content>
   </Tabs.Root>
