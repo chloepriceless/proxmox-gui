@@ -38,7 +38,7 @@ Users can self-provision and manage VMs/LXCs on Proxmox through a polished, opin
 - [x] 01-06-clusters-tenant-bootstrap-PLAN.md — PVE connector + cluster CRUD (incl. POST /clusters/test dry-run) + D-02 transactional tenant bootstrap + team CRUD (DELETE returns 409 when bindings exist per D-04) *(completed 2026-05-14, 19 files, 132 tests green; CLUST-01 + CLUST-05 + CLUST-06 + AUTH-08 shipped; SUMMARY: .planning/phases/01-foundation/01-06-clusters-tenant-bootstrap-SUMMARY.md)*
 - [x] 01-07-users-admin-setup-PLAN.md — Admin user CRUD with self-guard + disable revocation + first-run setup wizard backend (D-18 lenient first-run) *(completed 2026-05-14, 13 files, 166 tests green; AUTH-07 + AUTH-08 + DEPLOY-05 shipped; SUMMARY: .planning/phases/01-foundation/01-07-users-admin-setup-SUMMARY.md)*
 - [x] 01-08-frontend-auth-shell-PLAN.md — Auth shell: API client core, route auth gate, login page, 4-step setup wizard (D-19), shared form components (ConfirmByNameDialog, SecretRevealDialog, PasswordInput, FormSummaryAlert) *(completed 2026-05-14, 27 files, 26 tests green; AUTH-01, AUTH-02, UI-01, UI-02, DEPLOY-05 frontend-completed; SUMMARY: .planning/phases/01-foundation/01-08-frontend-auth-shell-SUMMARY.md)*
-- [ ] 01-09-frontend-account-PLAN.md — Account self-service: profile (change password + appearance), SSH keys, Personal Access Tokens (show-once dialog)
+- [x] 01-09-frontend-account-PLAN.md — Account self-service: profile (change password + appearance), SSH keys (list/add/delete with ConfirmByNameDialog), Personal Access Tokens (mint via SecretRevealDialog show-once, list with active/revoked/expired status, revoke); api.me extended additively; AppShell sonner Toaster mounted; per-page +page.server.ts defence-in-depth auth gates *(completed 2026-05-14, 11 files, 26 tests green; AUTH-03 + AUTH-04 + AUTH-05 + API-02 frontend-completed; SUMMARY: .planning/phases/01-foundation/01-09-frontend-account-SUMMARY.md)*
 - [ ] 01-10-frontend-admin-PLAN.md — Admin pages: Users (CRUD + team assignment), Clusters (registration with SEPARATE Test + Register buttons), ClusterStatusPill component + end-to-end operator smoke checkpoint
 **UI hint**: yes
 **Notes**: Multi-tenancy data model (users, teams, quotas FK columns, per-cluster API token storage) must be in the schema from row one — Pitfall 5 says retrofitting is near-rewrite territory. Decide token-per-cluster vs. per-tenant-token approach via ADR before shipping. Helper-script + LXC template can be a skeleton here; full polish lands in Phase 5.
@@ -101,7 +101,7 @@ Users can self-provision and manage VMs/LXCs on Proxmox through a polished, opin
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation | 4/10 | Executing | - |
+| 1. Foundation | 9/10 | Executing | - |
 | 2. Multi-Cluster Inventory, Quotas & Audit | 0/TBD | Not started | - |
 | 3. Job Queue & Lifecycle | 0/TBD | Not started | - |
 | 4. Provisioning, Networking & Console | 0/TBD | Not started | - |
