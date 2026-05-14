@@ -14,8 +14,9 @@ __pycache__/
 venv/
 env/
 
-# Local config / secrets — must never be committed
+# Local config — must never be committed
 .env
+.env.local
 *.local
 
 # SQLite databases (dev only; production lives at /var/lib/proxmox-gui/app.db)
@@ -24,13 +25,20 @@ env/
 *.db-wal
 *.db-shm
 
-# Master key dev file (production lives at /etc/proxmox-gui/master.key, never in repo)
+# Secrets — defense-in-depth (these belong in /etc/proxmox-gui, never in repo)
 master.key
 jwt.secret
 pat.pepper
+*.key
+*.secret
+*.pepper
+
+# LXC + Proxmox artifacts (templates, dumps)
+*.tar.zst
 
 # IDE
 .vscode/
+.vscode/settings.json
 .idea/
 *.swp
 
@@ -38,7 +46,7 @@ pat.pepper
 .DS_Store
 Thumbs.db
 
-# Node (Phase 1 frontend lands later)
+# Node (frontend)
 node_modules/
 .svelte-kit/
 build/

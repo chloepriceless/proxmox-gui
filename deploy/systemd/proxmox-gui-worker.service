@@ -1,0 +1,35 @@
+# /etc/systemd/system/proxmox-gui-worker.service
+# Phase 1: this unit is installed but NOT enabled by bootstrap.sh. Phase 3 wires arq.
+# D-17 — three systemd units inside the LXC; this is the worker placeholder.
+# When Phase 3 lands, replace ExecStart with the arq invocation
+# (e.g. /opt/proxmox-gui/.venv/bin/arq app.worker.WorkerSettings) and
+# `systemctl enable --now proxmox-gui-worker`.
+
+[Unit]
+Description=Proxmox GUI Worker (arq) — Phase 3 wires this
+After=network-online.target proxmox-gui-api.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=proxmox-gui
+Group=proxmox-gui
+WorkingDirectory=/opt/proxmox-gui/backend
+Environment=PROXMOX_GUI_MASTER_KEY_PATH=/etc/proxmox-gui/master.key
+Environment=PROXMOX_GUI_DATABASE_URL=sqlite+aiosqlite:////var/lib/proxmox-gui/app.db
+# Phase 1 no-op: idle until Phase 3 wires arq.
+ExecStart=/bin/sh -c 'echo "worker placeholder — phase 3 wires arq"; sleep infinity'
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# hardening (ASVS V14.1) — matches the api unit
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/var/lib/proxmox-gui /var/log/proxmox-gui
+
+[Install]
+WantedBy=multi-user.target

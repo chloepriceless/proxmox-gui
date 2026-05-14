@@ -1,0 +1,38 @@
+# /etc/systemd/system/proxmox-gui-api.service
+# Phase 1 (Foundation): uvicorn-served FastAPI on 127.0.0.1:8000.
+# D-17 — three systemd units inside the LXC; this is the API unit.
+# Hardening (ASVS V14.1): NoNewPrivileges, PrivateTmp, ProtectSystem=full,
+# ProtectHome, and a tight ReadWritePaths confined to the data + log dirs.
+# Logs flow to journald (`journalctl -u proxmox-gui-api`).
+
+[Unit]
+Description=Proxmox GUI API (FastAPI)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=proxmox-gui
+Group=proxmox-gui
+WorkingDirectory=/opt/proxmox-gui/backend
+Environment=PROXMOX_GUI_MASTER_KEY_PATH=/etc/proxmox-gui/master.key
+Environment=PROXMOX_GUI_DATABASE_URL=sqlite+aiosqlite:////var/lib/proxmox-gui/app.db
+Environment=PROXMOX_GUI_JWT_SECRET_FILE=/etc/proxmox-gui/jwt.secret
+Environment=PROXMOX_GUI_PAT_PEPPER_FILE=/etc/proxmox-gui/pat.pepper
+Environment=PROXMOX_GUI_COOKIE_SECURE=true
+Environment=PROXMOX_GUI_LOG_LEVEL=INFO
+ExecStart=/opt/proxmox-gui/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --no-access-log
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# hardening (ASVS V14.1)
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/var/lib/proxmox-gui /var/log/proxmox-gui
+
+[Install]
+WantedBy=multi-user.target

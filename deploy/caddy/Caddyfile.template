@@ -1,0 +1,64 @@
+# /etc/caddy/Caddyfile — Proxmox GUI (Phase 1 default: LAN / self-signed)
+#
+# This file is installed verbatim by deploy/lxc/bootstrap.sh.
+#
+# Architecture (research/ARCHITECTURE.md + Pattern 11):
+#   - Single origin. Browser hits Caddy on :443. Caddy reverse-proxies
+#     `/api/*` to FastAPI on 127.0.0.1:8000, and `/*` to SvelteKit's
+#     adapter-node listening on 127.0.0.1:3000.
+#   - No CORS. Cookies are first-party. CSRF token (D-13) is a JS-readable
+#     cookie echoed in `X-CSRF-Token` for state-changing cookie-session calls.
+#
+# For a PUBLIC install with auto-HTTPS (Let's Encrypt), replace the `:443`
+# block header with `{$PUBLIC_HOSTNAME}` (env-substituted at install time)
+# and ensure ports 80 + 443 are reachable from the internet plus DNS A/AAAA
+# records point at the LXC. Caddy then handles cert issuance + renewal.
+#
+# For LAN installs (Phase 1 default) we use `:443 { tls internal }` so a
+# fresh LXC works with no DNS configured (Pitfall A9). Caddy's internal
+# CA issues a self-signed cert; the operator accepts it once in the browser.
+{
+	# Global options
+	admin off
+	auto_https disable_redirects
+}
+
+:443 {
+	tls internal
+
+	encode zstd gzip
+
+	# Security headers (ASVS V14.4 — see threat_model in 01-04 PLAN)
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		# noVNC iframe in Phase 4 is same-origin; SAMEORIGIN is compatible.
+		# Phase 5 polishes to `frame-ancestors 'self'` via CSP.
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# CSP intentionally omitted in Phase 1; Phase 5 polish hardens (T-01-04-06).
+		-Server
+	}
+
+	# FastAPI (REST + WebSocket in later phases).
+	# Caddy automatically sets X-Forwarded-For + X-Forwarded-Proto on the
+	# upstream request; we only need to add X-Real-IP explicitly.
+	handle /api/* {
+		reverse_proxy 127.0.0.1:8000 {
+			header_up Host {host}
+			header_up X-Real-IP {remote_host}
+		}
+	}
+
+	# SvelteKit adapter-node (single origin, see Pattern 11)
+	handle {
+		reverse_proxy 127.0.0.1:3000 {
+			header_up Host {host}
+			header_up X-Real-IP {remote_host}
+		}
+	}
+}
+
+# Optional :80 → :443 redirect (off by default for LAN/internal CA installs;
+# uncomment when switching to public-hostname auto-HTTPS).
+# :80 { redir https://{host}{uri} }
