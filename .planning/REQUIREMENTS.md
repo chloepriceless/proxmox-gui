@@ -269,8 +269,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | AUDIT-04 | Phase 2 | Pending |
 | AUDIT-05 | Phase 2 | Pending |
 | AUDIT-06 | Phase 5 | Pending |
-| UI-01 | Phase 1 | Pending |
-| UI-02 | Phase 1 | Pending |
+| UI-01 | Phase 1 | Complete (Plan 01-03 shell + Plan 01-08 auth gate / login / setup wizard) |
+| UI-02 | Phase 1 | Complete (Plan 01-03 theme tokens + Plan 01-08 unauth chrome respects theme) |
 | UI-03 | Phase 5 | Pending |
 | UI-04 | Phase 4 | Pending |
 | UI-05 | Phase 4 | Pending |
@@ -280,7 +280,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DEPLOY-02 | Phase 1 | Complete (Plan 01-04) |
 | DEPLOY-03 | Phase 1 | Complete (Plan 01-04) |
 | DEPLOY-04 | Phase 5 | Pending |
-| DEPLOY-05 | Phase 1 | Complete (Plan 01-04 helper-script skeleton, Plan 01-07 setup wizard backend) |
+| DEPLOY-05 | Phase 1 | Complete (Plan 01-04 helper-script skeleton, Plan 01-07 setup wizard backend, Plan 01-08 4-step setup wizard frontend) |
 
 **Coverage:**
 - v1 requirements: 89 total

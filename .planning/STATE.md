@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_plan: 8 of 10 (01-08 frontend-auth-shell is next)
+current_plan: 9 of 10 (01-09 frontend-account is next)
 status: executing
-stopped_at: Completed Plan 01-07; ready for Plan 01-08
-last_updated: "2026-05-14T05:02:22.693Z"
+stopped_at: Completed Plan 01-08 frontend-auth-shell
+last_updated: "2026-05-14T05:27:34.284Z"
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 10
-  completed_plans: 7
-  percent: 70
+  completed_plans: 8
+  percent: 80
 ---
 
 # STATE: Proxmox Self-Service GUI
@@ -29,7 +29,7 @@ progress:
 ## Current Position
 
 Phase: 01 (Foundation) — EXECUTING
-Current Plan: 8 of 10 (01-08 frontend-auth-shell is next)
+Current Plan: 9 of 10 (01-09 frontend-account is next)
 
 - **Milestone:** v1
 - **Phase:** 01 — Foundation (executing)
@@ -40,8 +40,9 @@ Current Plan: 8 of 10 (01-08 frontend-auth-shell is next)
 - **Plan:** 01-05 auth-subsystem ✅ complete
 - **Plan:** 01-06 clusters-tenant-bootstrap ✅ complete
 - **Plan:** 01-07 users-admin-setup ✅ complete
+- **Plan:** 01-08 frontend-auth-shell ✅ complete
 - **Status:** Executing Phase 01
-- **Progress:** [███████░░░] 70%
+- **Progress:** [████████░░] 80%
 
 ## Phases at a Glance
 
@@ -58,8 +59,8 @@ Current Plan: 8 of 10 (01-08 frontend-auth-shell is next)
 ## Performance Metrics
 
 - **Phases complete:** 0/5
-- **Plans complete:** 7/10
-- **Requirements shipped:** 22/89 (API-01, API-03 via Plan 01-01; AUTH-01, AUTH-02, AUTH-05, AUTH-07, AUTH-08, CLUST-01, CLUST-05 schema-landed via Plan 01-02; UI-01, UI-02 frontend-shell via Plan 01-03; DEPLOY-01, DEPLOY-02, DEPLOY-03, DEPLOY-05 helper-script skeleton via Plan 01-04; AUTH-01..05 fully shipped + API-01..03 fully shipped via Plan 01-05; CLUST-01, CLUST-05, CLUST-06, AUTH-08 fully shipped via Plan 01-06; AUTH-07, AUTH-08, DEPLOY-05 fully shipped via Plan 01-07)
+- **Plans complete:** 8/10
+- **Requirements shipped:** 22/89 (API-01, API-03 via Plan 01-01; AUTH-01, AUTH-02, AUTH-05, AUTH-07, AUTH-08, CLUST-01, CLUST-05 schema-landed via Plan 01-02; UI-01, UI-02 frontend-shell via Plan 01-03; DEPLOY-01, DEPLOY-02, DEPLOY-03, DEPLOY-05 helper-script skeleton via Plan 01-04; AUTH-01..05 fully shipped + API-01..03 fully shipped via Plan 01-05; CLUST-01, CLUST-05, CLUST-06, AUTH-08 fully shipped via Plan 01-06; AUTH-07, AUTH-08, DEPLOY-05 fully shipped via Plan 01-07; AUTH-01, AUTH-02 (login surface), UI-01, UI-02 (auth gate + login + setup wizard frontend), DEPLOY-05 (wizard frontend) frontend-completed via Plan 01-08)
 - **Out-of-scope items deferred:** see REQUIREMENTS.md v2 section
 
 ### Plan Metrics
@@ -73,6 +74,7 @@ Current Plan: 8 of 10 (01-08 frontend-auth-shell is next)
 | 01    | 05   | ~14 min  | 2     | 25    | 90 pass  |
 | 01    | 06   | ~21 min  | 2     | 19    | 132 pass |
 | 01    | 07   | ~11 min  | 2     | 13    | 166 pass |
+| 01    | 08   | ~14 min  | 2     | 27    | 26 pass  |
 
 ## Accumulated Context
 
@@ -182,8 +184,8 @@ None.
 - 2026-05-14 — Requirements definition (89 v1 requirements across 13 categories)
 - 2026-05-14 — Roadmap (5-phase structure, 100% coverage)
 
-**Last session:** 2026-05-14T05:02:22.684Z
-**Stopped at:** Completed Plan 01-07; ready for Plan 01-08
+**Last session:** 2026-05-14T05:27:34.276Z
+**Stopped at:** Completed Plan 01-08 frontend-auth-shell
 **Resume file:** None
 
 ---
