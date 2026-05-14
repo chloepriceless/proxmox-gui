@@ -167,6 +167,7 @@ def create_app() -> FastAPI:
     from app.inventory.routes import router as inventory_router
     from app.me.routes import router as me_router
     from app.pats.routes import router as pats_router
+    from app.quotas.routes import router as quotas_router
     from app.setup.routes import router as setup_router
     from app.ssh_keys.routes import router as ssh_keys_router
     from app.teams.routes import router as teams_router
@@ -198,6 +199,8 @@ def create_app() -> FastAPI:
     app.include_router(audit_router, prefix="/api/v1/audit", tags=["audit"])
     # Plan 02-03: inventory read + tag/notes write routes (INV-01..08, TENT-06, API-05).
     app.include_router(inventory_router, prefix="/api/v1", tags=["inventory"])
+    # Plan 02-04: quota CRUD + /me/quotas + admission preview (TENT-01..05 + API-05).
+    app.include_router(quotas_router, prefix="/api/v1", tags=["quotas"])
 
     return app
 

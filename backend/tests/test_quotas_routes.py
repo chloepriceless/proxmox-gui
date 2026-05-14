@@ -147,7 +147,7 @@ async def test_put_team_quotas_admin_writes_and_audits(client, session_factory):
     """Admin PUT /teams/{id}/quotas creates Quota + AuditLog."""
     from sqlalchemy import select
 
-    from app.models import AuditLog, Quota
+    from app.models import AuditLog
 
     user, team_id, cluster_ids = await _seed_full(
         session_factory, username="qr_admin_put", is_admin=True
@@ -208,7 +208,7 @@ async def test_put_team_quotas_lower_below_usage_409(client, session_factory):
 
     from tests.fixtures.pve_responses import FakeProxmox
 
-    poolid = f"gui-team-409-c0"
+    poolid = "gui-team-409-c0"
     fake = FakeProxmox()
     fake.queue_response("cluster.resources.get", [
         {"vmid": 100, "type": "qemu", "node": "n1", "pool": poolid,
