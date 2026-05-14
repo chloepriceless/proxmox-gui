@@ -21,7 +21,7 @@ Requirements for initial release. Each maps to roadmap phases via the Traceabili
 **: User can manage their stored SSH public keys (add, view, delete)
 - [ ] **AUTH-06**: Session expires after configurable idle timeout
 - [ ] **AUTH-07**: Admin can create, edit, disable, and delete user accounts
-- [ ] **AUTH-08**: Admin can assign users to teams (group of users sharing quotas)
+- [x] **AUTH-08**: Admin can assign users to teams (group of users sharing quotas)
 
 ### Tenancy & Quotas
 
@@ -34,12 +34,12 @@ Requirements for initial release. Each maps to roadmap phases via the Traceabili
 
 ### Multi-Cluster Management
 
-- [ ] **CLUST-01**: Admin can register multiple Proxmox clusters (URL + API token per cluster)
+- [x] **CLUST-01**: Admin can register multiple Proxmox clusters (URL + API token per cluster)
 - [ ] **CLUST-02**: User can switch the active cluster context from a header dropdown
 - [ ] **CLUST-03**: Per-cluster reachability indicator visible at all times
 - [ ] **CLUST-04**: When a cluster is unreachable, app degrades to read-only with a clear banner — no hard-fail
-- [ ] **CLUST-05**: Cluster context is part of every resource URL (e.g., `/clusters/{id}/vms/{vmid}`)
-- [ ] **CLUST-06**: Works against single-node and clustered Proxmox installations
+- [x] **CLUST-05**: Cluster context is part of every resource URL (e.g., `/clusters/{id}/vms/{vmid}`)
+- [x] **CLUST-06**: Works against single-node and clustered Proxmox installations
 
 ### Inventory & Search
 
@@ -198,19 +198,19 @@ Which phases cover which requirements. Updated during roadmap creation.
 | AUTH-05 | Phase 1 | Complete (01-05) |
 | AUTH-06 | Phase 5 | Pending |
 | AUTH-07 | Phase 1 | Pending |
-| AUTH-08 | Phase 1 | Pending |
+| AUTH-08 | Phase 1 | Complete (01-06) |
 | TENT-01 | Phase 2 | Pending |
 | TENT-02 | Phase 2 | Pending |
 | TENT-03 | Phase 2 | Pending |
 | TENT-04 | Phase 2 | Pending |
 | TENT-05 | Phase 2 | Pending |
 | TENT-06 | Phase 2 | Pending |
-| CLUST-01 | Phase 1 | Pending |
+| CLUST-01 | Phase 1 | Complete (01-06) |
 | CLUST-02 | Phase 2 | Pending |
 | CLUST-03 | Phase 2 | Pending |
 | CLUST-04 | Phase 2 | Pending |
-| CLUST-05 | Phase 1 | Pending |
-| CLUST-06 | Phase 1 | Pending |
+| CLUST-05 | Phase 1 | Complete (01-06) |
+| CLUST-06 | Phase 1 | Complete (01-06) |
 | INV-01 | Phase 2 | Pending |
 | INV-02 | Phase 2 | Pending |
 | INV-03 | Phase 2 | Pending |
