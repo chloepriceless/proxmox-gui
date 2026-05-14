@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Local config / secrets — must never be committed
+.env
+*.local
+
+# SQLite databases (dev only; production lives at /var/lib/proxmox-gui/app.db)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Master key dev file (production lives at /etc/proxmox-gui/master.key, never in repo)
+master.key
+jwt.secret
+pat.pepper
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node (Phase 1 frontend lands later)
+node_modules/
+.svelte-kit/
+build/
+dist/

@@ -1,0 +1,12 @@
+line-length = 100
+target-version = "py312"
+
+[lint]
+select = ["E", "F", "I", "B", "UP", "ASYNC"]
+ignore = [
+    "E501",  # line-too-long: enforced by formatter
+    "B008",  # function-call-in-default-arg: required for FastAPI Depends() pattern
+]
+
+[lint.per-file-ignores]
+"tests/*" = ["B011"]  # allow assert False in tests
