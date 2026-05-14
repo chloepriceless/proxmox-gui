@@ -9,6 +9,21 @@ Caddy with auto-HTTPS (self-signed for LAN; Let's Encrypt-ready for public).
 > and quotas surfaces are live; provisioning (Phase 4), power/snapshots (Phase 3),
 > and self-update polish (Phase 5) are still to come.
 
+## Prerequisites
+
+- Proxmox VE 8.x host with `pct` and `pvesh` (run as root or with `sudo`)
+- Debian 12 LXC template (installer fetches it if missing)
+- Outbound HTTPS from the host to:
+  - `github.com` + `raw.githubusercontent.com` (source + standalone pnpm)
+  - `deb.debian.org` (apt packages)
+  - `astral.sh` (uv installer)
+  - `pypi.org` (Python wheels)
+  - `registry.npmjs.org` (frontend deps)
+- **IPv4** is sufficient — the bootstrap forces IPv4-first DNS for npm-registry
+  traffic to avoid IPv6 timeouts on hosts without routed IPv6
+- Free LXC ID via `pvesh get /cluster/nextid` (or pass `--ctid` / `CTID=`)
+- Recommended host resources: 2 vCPU, 2 GB RAM, 8 GB disk (defaults below)
+
 ## One-line install
 
 Run **on the Proxmox VE 8.x host** (NOT inside an LXC):

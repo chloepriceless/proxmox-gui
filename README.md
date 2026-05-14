@@ -41,15 +41,32 @@ LXC installed via a one-line helper-script.
 
 ## Install (one-liner)
 
-Run **on your Proxmox VE 8.x host** (NOT inside an LXC):
+### Prerequisites
+
+- **Proxmox VE 8.x host** with `pct` + `pvesh` available
+- **Debian 12 LXC template** (installer downloads it if missing)
+- **Outbound internet** from the host to:
+  `github.com`, `deb.debian.org`, `astral.sh`, `registry.npmjs.org`, `pypi.org`
+- **IPv4 connectivity** — IPv6 is not required
+- **Min. 8 GB disk + 2 GB RAM** for the LXC (defaults; tunable)
+- **~5 min** typical install time
+
+Run **on the Proxmox VE 8.x host** (NOT inside an existing LXC):
 
 ```bash
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/chloepriceless/proxmox-gui/master/deploy/install.sh)"
 ```
 
-Then open `https://<lxc-ip>/setup` in your browser. Full installer
-documentation, configuration flags, and persistent-state backup notes
-live in [`deploy/README.md`](./deploy/README.md).
+The installer creates a fresh unprivileged LXC, drops in a service user,
+materialises secrets, applies migrations, and starts Caddy + the API.
+Then open `https://<lxc-ip>/setup` to run the first-run wizard.
+
+Tune resources via env or flags (full list in [`deploy/README.md`](./deploy/README.md)):
+
+```bash
+CPU=4 RAM_MB=4096 DISK_GB=20 STORAGE=local-zfs \
+  bash -c "$(curl -fsSL https://raw.githubusercontent.com/chloepriceless/proxmox-gui/master/deploy/install.sh)"
+```
 
 ## Local dev
 
