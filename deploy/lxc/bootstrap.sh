@@ -42,9 +42,13 @@ INSTALLED_MARKER="${ETC_DIR}/.installed"
 # This is the operator's "re-run bootstrap to migrate" entry point until
 # Phase 5 self-update lands (DEPLOY-04).
 # ----------------------------------------------------------------------------
+# Drop-privilege helper: use runuser (always present, part of util-linux)
+# instead of sudo (not installed in minimal Debian LXCs by default).
+RUNAS=(runuser -u "$APP_USER" --)
+
 if [[ -f "$INSTALLED_MARKER" ]]; then
     echo "==> $INSTALLED_MARKER present — running alembic upgrade head and exiting."
-    sudo -u "$APP_USER" "${APP_HOME}/.venv/bin/alembic" \
+    "${RUNAS[@]}" "${APP_HOME}/.venv/bin/alembic" \
         -c "${APP_HOME}/backend/alembic.ini" upgrade head
     echo "==> Migrations applied. Bootstrap idempotent-exit OK."
     exit 0
@@ -163,24 +167,34 @@ bash "${APP_HOME}/deploy/scripts/gen-jwt-secret.sh"
 # Step 6: Python venv + backend install + Alembic migrations
 # ----------------------------------------------------------------------------
 echo "==> Creating Python venv and installing backend..."
-sudo -u "$APP_USER" "$PYTHON_BIN" -m venv "${APP_HOME}/.venv"
-sudo -u "$APP_USER" "${APP_HOME}/.venv/bin/pip" install \
+"${RUNAS[@]}" "$PYTHON_BIN" -m venv "${APP_HOME}/.venv"
+"${RUNAS[@]}" "${APP_HOME}/.venv/bin/pip" install \
     --quiet --upgrade pip setuptools wheel
-sudo -u "$APP_USER" "${APP_HOME}/.venv/bin/pip" install \
+"${RUNAS[@]}" "${APP_HOME}/.venv/bin/pip" install \
     --quiet -e "${APP_HOME}/backend"
 
 echo "==> Running alembic upgrade head..."
-sudo -u "$APP_USER" "${APP_HOME}/.venv/bin/alembic" \
+"${RUNAS[@]}" "${APP_HOME}/.venv/bin/alembic" \
     -c "${APP_HOME}/backend/alembic.ini" upgrade head
 
 # ----------------------------------------------------------------------------
 # Step 7: Frontend build (SvelteKit adapter-node -> frontend/build/)
+# The frontend uses pnpm (lockfile is pnpm-lock.yaml, no package-lock.json).
+# `package.json` declares packageManager: pnpm@11.1.1, so corepack will
+# fetch + activate that exact pnpm version on first call.
 # ----------------------------------------------------------------------------
-echo "==> Building frontend (npm ci && npm run build)..."
-sudo -u "$APP_USER" bash -c "
+echo "==> Activating pnpm via corepack..."
+corepack enable
+# Pre-fetch the declared pnpm version under the root context so the
+# APP_USER invocation below doesn't have to download from a HOME it
+# barely owns.
+corepack prepare --activate 2>&1 | tail -3 || true
+
+echo "==> Building frontend (pnpm install --frozen-lockfile && pnpm run build)..."
+"${RUNAS[@]}" bash -c "
     cd '${APP_HOME}/frontend' && \
-    npm ci --no-audit --no-fund --silent && \
-    npm run build
+    pnpm install --frozen-lockfile --reporter=silent && \
+    pnpm run build
 "
 
 # ----------------------------------------------------------------------------
