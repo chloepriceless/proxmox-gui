@@ -219,14 +219,36 @@ echo "    using: /usr/local/bin/pnpm -> ${PNPM_HOME}/pnpm ($(/usr/local/bin/pnpm
 # pnpm stores its content-addressable store under \$HOME/.local/share/pnpm/store
 # by default. APP_USER has \$APP_HOME as home (per useradd -d above) and owns
 # it, so the store + node_modules can be written there without issue.
-# NODE_OPTIONS=--dns-result-order=ipv4first prevents the same IPv6
-# ETIMEDOUT class of failures during `pnpm install` against npm registry.
-echo "==> Building frontend (pnpm install --frozen-lockfile && pnpm run build)..."
+#
+# NODE_OPTIONS=--dns-result-order=ipv4first prevents IPv6 ETIMEDOUTs against
+# registry.npmjs.org (same class as the npm install -g failure above).
+#
+# Why NOT --frozen-lockfile here:
+#   @tailwindcss/oxide (Tailwind v4 Rust backend) uses optionalDependencies
+#   for per-platform native bindings (@tailwindcss/oxide-linux-x64-gnu, ...).
+#   With --frozen-lockfile, pnpm 11.1.1 sometimes fails to install the
+#   platform-matching native binding even though it's in the lockfile —
+#   "Cannot find native binding" at build time.
+#   --prefer-frozen-lockfile: use the lockfile if it matches the manifest,
+#   re-resolve otherwise. Safe because we own the lockfile + manifest.
+#
+# We also drop --reporter=silent so any install warnings (especially around
+# optional deps and platform-skip) surface in the bootstrap output.
+echo "==> Running pnpm install (verbose, --prefer-frozen-lockfile)..."
 "${RUNAS[@]}" bash -c "
+    set -e
     export NODE_OPTIONS='--dns-result-order=ipv4first'
     export PATH=/usr/local/bin:/usr/bin:/bin
     cd '${APP_HOME}/frontend' && \
-    pnpm install --frozen-lockfile --reporter=silent && \
+    pnpm install --prefer-frozen-lockfile
+"
+
+echo "==> Building frontend (pnpm run build)..."
+"${RUNAS[@]}" bash -c "
+    set -e
+    export NODE_OPTIONS='--dns-result-order=ipv4first'
+    export PATH=/usr/local/bin:/usr/bin:/bin
+    cd '${APP_HOME}/frontend' && \
     pnpm run build
 "
 
