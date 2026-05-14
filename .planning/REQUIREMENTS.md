@@ -179,25 +179,108 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| AUTH-01 through AUTH-08 | TBD | Pending |
-| TENT-01 through TENT-06 | TBD | Pending |
-| CLUST-01 through CLUST-06 | TBD | Pending |
-| INV-01 through INV-08 | TBD | Pending |
-| LXC-01 through LXC-07 | TBD | Pending |
-| VM-01 through VM-10 | TBD | Pending |
-| NET-01 through NET-04 | TBD | Pending |
-| LIFE-01 through LIFE-14 | TBD | Pending |
-| CON-01 through CON-03 | TBD | Pending |
-| API-01 through API-05 | TBD | Pending |
-| AUDIT-01 through AUDIT-06 | TBD | Pending |
-| UI-01 through UI-07 | TBD | Pending |
-| DEPLOY-01 through DEPLOY-05 | TBD | Pending |
+| AUTH-01 | Phase 1 | Pending |
+| AUTH-02 | Phase 1 | Pending |
+| AUTH-03 | Phase 1 | Pending |
+| AUTH-04 | Phase 1 | Pending |
+| AUTH-05 | Phase 1 | Pending |
+| AUTH-06 | Phase 5 | Pending |
+| AUTH-07 | Phase 1 | Pending |
+| AUTH-08 | Phase 1 | Pending |
+| TENT-01 | Phase 2 | Pending |
+| TENT-02 | Phase 2 | Pending |
+| TENT-03 | Phase 2 | Pending |
+| TENT-04 | Phase 2 | Pending |
+| TENT-05 | Phase 2 | Pending |
+| TENT-06 | Phase 2 | Pending |
+| CLUST-01 | Phase 1 | Pending |
+| CLUST-02 | Phase 2 | Pending |
+| CLUST-03 | Phase 2 | Pending |
+| CLUST-04 | Phase 2 | Pending |
+| CLUST-05 | Phase 1 | Pending |
+| CLUST-06 | Phase 1 | Pending |
+| INV-01 | Phase 2 | Pending |
+| INV-02 | Phase 2 | Pending |
+| INV-03 | Phase 2 | Pending |
+| INV-04 | Phase 2 | Pending |
+| INV-05 | Phase 2 | Pending |
+| INV-06 | Phase 2 | Pending |
+| INV-07 | Phase 2 | Pending |
+| INV-08 | Phase 2 | Pending |
+| LXC-01 | Phase 4 | Pending |
+| LXC-02 | Phase 4 | Pending |
+| LXC-03 | Phase 4 | Pending |
+| LXC-04 | Phase 4 | Pending |
+| LXC-05 | Phase 4 | Pending |
+| LXC-06 | Phase 4 | Pending |
+| LXC-07 | Phase 4 | Pending |
+| VM-01 | Phase 4 | Pending |
+| VM-02 | Phase 4 | Pending |
+| VM-03 | Phase 4 | Pending |
+| VM-04 | Phase 4 | Pending |
+| VM-05 | Phase 4 | Pending |
+| VM-06 | Phase 4 | Pending |
+| VM-07 | Phase 4 | Pending |
+| VM-08 | Phase 4 | Pending |
+| VM-09 | Phase 4 | Pending |
+| VM-10 | Phase 4 | Pending |
+| NET-01 | Phase 4 | Pending |
+| NET-02 | Phase 4 | Pending |
+| NET-03 | Phase 4 | Pending |
+| NET-04 | Phase 4 | Pending |
+| LIFE-01 | Phase 3 | Pending |
+| LIFE-02 | Phase 3 | Pending |
+| LIFE-03 | Phase 3 | Pending |
+| LIFE-04 | Phase 3 | Pending |
+| LIFE-05 | Phase 3 | Pending |
+| LIFE-06 | Phase 3 | Pending |
+| LIFE-07 | Phase 3 | Pending |
+| LIFE-08 | Phase 3 | Pending |
+| LIFE-09 | Phase 3 | Pending |
+| LIFE-10 | Phase 3 | Pending |
+| LIFE-11 | Phase 3 | Pending |
+| LIFE-12 | Phase 3 | Pending |
+| LIFE-13 | Phase 3 | Pending |
+| LIFE-14 | Phase 3 | Pending |
+| CON-01 | Phase 4 | Pending |
+| CON-02 | Phase 4 | Pending |
+| CON-03 | Phase 4 | Pending |
+| API-01 | Phase 1 | Pending |
+| API-02 | Phase 1 | Pending |
+| API-03 | Phase 1 | Pending |
+| API-04 | Phase 3 | Pending |
+| API-05 | Phase 2 | Pending |
+| AUDIT-01 | Phase 2 | Pending |
+| AUDIT-02 | Phase 2 | Pending |
+| AUDIT-03 | Phase 2 | Pending |
+| AUDIT-04 | Phase 2 | Pending |
+| AUDIT-05 | Phase 2 | Pending |
+| AUDIT-06 | Phase 5 | Pending |
+| UI-01 | Phase 1 | Pending |
+| UI-02 | Phase 1 | Pending |
+| UI-03 | Phase 5 | Pending |
+| UI-04 | Phase 4 | Pending |
+| UI-05 | Phase 4 | Pending |
+| UI-06 | Phase 3 | Pending |
+| UI-07 | Phase 4 | Pending |
+| DEPLOY-01 | Phase 1 | Pending |
+| DEPLOY-02 | Phase 1 | Pending |
+| DEPLOY-03 | Phase 1 | Pending |
+| DEPLOY-04 | Phase 5 | Pending |
+| DEPLOY-05 | Phase 1 | Pending |
 
 **Coverage:**
-- v1 requirements: 76 total
-- Mapped to phases: 0 (pending roadmap)
-- Unmapped: 76 ⚠️ (will be resolved during roadmap creation)
+- v1 requirements: 89 total
+- Mapped to phases: 89
+- Unmapped: 0
+
+**Per-phase totals:**
+- Phase 1 (Foundation): 19
+- Phase 2 (Multi-Cluster Inventory, Quotas & Audit): 23
+- Phase 3 (Job Queue & Lifecycle): 16
+- Phase 4 (Provisioning, Networking & Console): 27
+- Phase 5 (Polish & Operational Hardening): 4
 
 ---
 *Requirements defined: 2026-05-14*
-*Last updated: 2026-05-14 after initial definition*
+*Last updated: 2026-05-14 — roadmap traceability mapped (5 phases, 100% coverage)*
