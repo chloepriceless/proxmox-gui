@@ -181,16 +181,24 @@ echo "==> Running alembic upgrade head..."
 # ----------------------------------------------------------------------------
 # Step 7: Frontend build (SvelteKit adapter-node -> frontend/build/)
 # The frontend uses pnpm (lockfile is pnpm-lock.yaml, no package-lock.json).
-# `package.json` declares packageManager: pnpm@11.1.1, so corepack will
-# fetch + activate that exact pnpm version on first call.
+# `package.json` declares packageManager: pnpm@11.1.1.
+#
+# We can't use corepack: Debian's nodejs package intentionally strips it
+# out (policy: package managers must not download other package managers
+# at runtime). Install pnpm directly via npm install -g instead.
 # ----------------------------------------------------------------------------
-echo "==> Activating pnpm via corepack..."
-corepack enable
-# Pre-fetch the declared pnpm version under the root context so the
-# APP_USER invocation below doesn't have to download from a HOME it
-# barely owns.
-corepack prepare --activate 2>&1 | tail -3 || true
+echo "==> Installing pnpm 11.1.1 globally via npm..."
+npm install -g pnpm@11.1.1
+if ! command -v pnpm >/dev/null 2>&1; then
+    echo "ERROR: npm install -g pnpm reported success but pnpm is not on PATH." >&2
+    echo "       npm root -g: $(npm root -g 2>/dev/null || echo n/a)" >&2
+    exit 1
+fi
+echo "    using: $(command -v pnpm) ($(pnpm --version))"
 
+# pnpm stores its content-addressable store under \$HOME/.local/share/pnpm/store
+# by default. APP_USER has \$APP_HOME as home (per useradd -d above) and owns
+# it, so the store + node_modules can be written there without issue.
 echo "==> Building frontend (pnpm install --frozen-lockfile && pnpm run build)..."
 "${RUNAS[@]}" bash -c "
     cd '${APP_HOME}/frontend' && \
