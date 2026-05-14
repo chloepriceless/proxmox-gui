@@ -431,7 +431,7 @@ The Phase 1 team edit page becomes tabbed. Per D-11:
 | Property | Value |
 |----------|-------|
 | Component path | `frontend/src/lib/components/inventory/FilterChip.svelte` (new) |
-| Shape | `inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md border border-border bg-muted text-foreground text-[13px] font-medium` |
+| Shape | `inline-flex items-center gap-1.5 h-7 px-2 rounded-md border border-border bg-muted text-foreground text-[13px] font-medium` |
 | Status dot prefix | Small 8px filled circle, color from §Color §VM status (when filtering by status); omitted for other filter types |
 | Label | `key: value` format (e.g. `status: running`, `tag: prod`, `cluster: cluster-a`) |
 | Remove button | `X` icon (12px) on the right, button has `aria-label="Remove filter {label}"`; click removes filter from URL params |
