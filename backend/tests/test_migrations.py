@@ -28,8 +28,9 @@ from pathlib import Path
 
 import pytest
 import sqlalchemy as sa
-from alembic import command
 from alembic.config import Config
+
+from alembic import command
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 ALEMBIC_INI = BACKEND_DIR / "alembic.ini"
@@ -166,11 +167,25 @@ def test_env_py_sets_render_as_batch() -> None:
 
 
 def test_revision_file_exists_with_correct_ids() -> None:
+    """Acceptance-criteria grep checks: the revision file must declare the
+    expected revision id, mark itself as the root (``down_revision = None``),
+    and include the named CHECK constraint + indexes the plan calls out."""
+    import re
+
     rev = BACKEND_DIR / "alembic" / "versions" / "0001_initial.py"
     assert rev.exists()
     content = rev.read_text()
-    assert 'revision = "0001_initial"' in content or "revision = '0001_initial'" in content
-    assert "down_revision = None" in content
+    # ``revision`` may carry a type annotation (revision: str = "...") or not.
+    assert re.search(
+        r'^\s*revision(?:\s*:\s*[^=]+)?\s*=\s*["\']0001_initial["\']',
+        content,
+        re.MULTILINE,
+    ), "revision id is not '0001_initial'"
+    assert re.search(
+        r'^\s*down_revision(?:\s*:\s*[^=]+)?\s*=\s*None',
+        content,
+        re.MULTILINE,
+    ), "down_revision is not None — 0001 must be the root"
     assert "ck_quota_team_xor_user" in content
     assert "ix_pats_lookup_prefix" in content
 
