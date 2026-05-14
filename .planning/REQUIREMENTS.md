@@ -26,11 +26,16 @@ Requirements for initial release. Each maps to roadmap phases via the Traceabili
 
 ### Tenancy & Quotas
 
-- [ ] **TENT-01**: Admin can set per-user quotas (CPU, RAM, disk, count of VMs/LXCs)
-- [ ] **TENT-02**: Admin can set per-team quotas (shared across team members)
-- [ ] **TENT-03**: User sees own quota usage as progress bars in app header
-- [ ] **TENT-04**: User sees live quota delta in the create wizard (e.g., "+2 vCPU, +4 GB RAM")
-- [ ] **TENT-05**: System blocks creation when it would exceed quota (admission control, not post-hoc)
+- [x] **TENT-01
+**: Admin can set per-user quotas (CPU, RAM, disk, count of VMs/LXCs)
+- [x] **TENT-02
+**: Admin can set per-team quotas (shared across team members)
+- [x] **TENT-03
+**: User sees own quota usage as progress bars in app header
+- [x] **TENT-04
+**: User sees live quota delta in the create wizard (e.g., "+2 vCPU, +4 GB RAM")
+- [x] **TENT-05
+**: System blocks creation when it would exceed quota (admission control, not post-hoc)
 - [x] **TENT-06
 **: User sees only their own (and their team's) VMs/LXCs in the list; admin sees all
 
