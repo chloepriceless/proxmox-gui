@@ -99,7 +99,7 @@ Inherited verbatim from Phase 1 UI-SPEC §Spacing Scale. No new tokens introduce
 | Tab trigger | 36px tall (`h-9`) | shadcn-svelte default; matches Phase 1 touch target |
 | Filter-chip pill | 28px tall (`h-7`), variable width | Inline-flex; auto-wraps |
 | Inventory section header bar | 48px tall (`h-12`) | Click toggles collapse; cluster name + counter + ClusterStatusPill |
-| Tag pill (inside VM row + Overview card) | 22px tall (`h-[22px]`) | Smaller than filter chips; readability without dominating density |
+| Tag pill (inside VM row + Overview card) | 24px tall (`h-6`) | Smaller than filter chips; readability without dominating density. `h-6` keeps the pill on the standard 4-multiple grid and preserves visual proportion relative to the 28px (`h-7`) FilterChip. |
 | `/audit` row | 44px tall minimum (`min-h-11`) | One step above default to accommodate timestamp + multi-line target paths |
 | Cluster-Context-Picker (Topbar) | 36px tall (`h-9`), 220px wide (Phase 1 stub width) | Replaces the Phase 1 disabled `<Select>` |
 
@@ -109,7 +109,9 @@ Inherited verbatim from Phase 1 UI-SPEC §Spacing Scale. No new tokens introduce
 
 ## Typography (inherited)
 
-Inherited verbatim from Phase 1 UI-SPEC §Typography. Exactly 4 sizes (14px Body, 13px Label, 18px Heading, 28px Display) and 3 weights (400 regular, 500 medium, 600 semibold; 500 reserved for labels/column headers).
+Inherited verbatim from Phase 1 UI-SPEC §Typography.
+
+**Type ramp:** Exactly 4 sizes (14px Body, 13px Label, 18px Heading, 28px Display) and exactly 2 declared weights — 400 (regular) and 600 (semibold). Weight 500 (medium) is permitted as Inter's optical-axis "ui label" weight (an application of the 400→600 ramp at the label size), not a separately declared weight. Treat 500 as the label-specific application of the 2-weight ramp, identical to Phase 1's locked decision.
 
 Phase 2 additions to the type system (extensions, not new sizes):
 
@@ -126,7 +128,7 @@ Phase 2 additions to the type system (extensions, not new sizes):
 | Audit log timestamp | Mono 13/400 (`font-mono tabular-nums`) | First column of `/audit` table |
 | Markdown rendered notes | Body 14/400 inside `.prose` styling (see §Component Contracts §MarkdownNotes) | VM detail Overview tab |
 
-**Rule:** No new sizes, no new weights. The 4-size, 3-weight type ramp is exhausted and complete for v1.
+**Rule:** No new sizes. The 4-size ramp with 2 declared weights (400 + 600), plus 500 as the optical-axis label application, is exhausted and complete for v1.
 
 ---
 
@@ -227,6 +229,8 @@ Full palette table is in §Component Contracts §TagPill. The deliberate constra
 └──────┴────────────────────────────────────────────────────────────────┘
 ```
 
+**Primary visual anchor:** the first cluster section header — users scan top-to-bottom from the page title through the filter strip into the first cluster section, where the cluster-name Heading 18/600 + status pill + counter is the first dense visual element after the filter row. Layout weight (header bar at 48px tall, `bg-muted/40`, full-width) intentionally pulls the eye there before the row table reveals.
+
 **Page-header contract:**
 - Title `Display 28/600`, description `Body 14/400 text-muted-foreground`
 - No primary CTA on this page (creation is Phase 4); rightmost area of header row is empty
@@ -295,7 +299,7 @@ Full palette table is in §Component Contracts §TagPill. The deliberate constra
   - Sparkline = simple SVG line chart, 80px tall, 100% width, `--primary` stroke on idle, no axis labels, hover tooltip showing exact value at point
   - Library: **hand-rolled SVG** (no chart library imported — bundle weight argument; checker validates absence of recharts/uplot/etc.). Acceptable v1 because each sparkline is ~60 SVG path nodes.
 - Third row: **Tags** card (TagPill list + "+ Add tag" button → opens inline `Popover` with `Command` autocomplete per D-14)
-- Fourth row: **Notes** card (MarkdownNotes component — render-mode by default with "Edit" button top-right; edit-mode is a `<Textarea>` with "Cancel" + "Save" footer)
+- Fourth row: **Notes** card (MarkdownNotes component — render-mode by default with "Edit" button top-right; edit-mode is a `<Textarea>` with "Cancel" + "Save notes" footer)
 
 **Activity tab contents (D-18):**
 - A pre-filtered view of the global audit table — same component (`AuditTable`) with `vmid={vmid}&cluster_id={cluster_id}` lock-filters preset and visually un-removable (the cluster + vmid filter chips render with a lock icon and no `×`)
@@ -455,7 +459,7 @@ The Phase 1 team edit page becomes tabbed. Per D-11:
 | Property | Value |
 |----------|-------|
 | Component path | `frontend/src/lib/components/inventory/TagPill.svelte` (new) |
-| Shape | `inline-flex items-center h-[22px] px-2 rounded-md border text-[13px] font-medium` |
+| Shape | `inline-flex items-center h-6 px-2 rounded-md border text-[13px] font-medium` |
 | Color | Auto-derived from `hash(tag) % 12` → one of 12 palette buckets (table below) |
 | Text | Tag string as-is (validated PVE-conform `[a-z0-9_-]+` per D-14) |
 | Tooltip on hover | Full tag string + actor/timestamp if available (Phase 2 best-effort) |
@@ -502,7 +506,7 @@ The Phase 1 team edit page becomes tabbed. Per D-11:
 | Renderer | `marked` v15.x + `DOMPurify` v3 wrapper (allow-list: `p, br, strong, em, h1-h4, ul, ol, li, code, pre, blockquote, a` only) |
 | Default mode | Render — `<div class="prose prose-sm dark:prose-invert max-w-none">` with Tailwind Typography defaults |
 | Edit mode | shadcn-svelte `<Textarea>` 240px tall (h-60), monospace font 13px (`font-mono text-[13px]`) for raw markdown editing |
-| Edit-mode footer | "Cancel" (ghost) + "Save" (primary); Save button shows char-count tooltip when within 200 chars of 8000 cap (PVE limit per D-15) |
+| Edit-mode footer | "Cancel" (ghost) + "Save notes" (primary); Save notes button shows char-count tooltip when within 200 chars of 8000 cap (PVE limit per D-15) |
 | Empty state | "No notes yet." muted body + "+ Add notes" `Button variant="outline"` |
 | Persistence (D-15) | Saves to PVE `description` property via backend `PUT /api/v1/clusters/{id}/vms/{vmid}/config` |
 | Authoring auth (D-16) | Any team-member |
@@ -568,7 +572,7 @@ The Phase 1 mandatory states for Button / Input / Form-field / Data-table-row / 
 | FilterChip | default, hover (muted/80 background), remove-button hover (destructive/10 background on the X), focus-visible (2px primary ring on the chip wrapper) |
 | TagPill (in `/inventory` row, clickable) | default, hover (cursor-pointer + 1-step-deeper bg-X/15), focus-visible (2px primary ring) |
 | TagInput popover | closed (button trigger), open (popover shown, command input focused), validating (red border + inline error below input), submitting (spinner replaces "Add" label) |
-| MarkdownNotes | render-mode (default), edit-mode (textarea + footer), saving (spinner on Save button), error (inline alert "Couldn't save notes. Try again.") |
+| MarkdownNotes | render-mode (default), edit-mode (textarea + footer), saving (spinner on Save notes button), error (inline alert "Couldn't save notes. Try again.") |
 | Sparkline (Overview tab) | default (primary stroke), hover (tooltip with exact value at x-coordinate), loading (skeleton rect at 60% opacity), error (muted text "Metrics unavailable") |
 | QuotaIndicator block | default (<80%), warning (80–94%), critical (≥95%), loading (skeleton text), focused (2px primary ring) |
 | ClusterStatusPill (reused) | ok / failed / untested (Phase 1) + **stale** new state: `bg-warning/10 border-warning/30 text-warning` + `Clock` icon + label "Stale (last seen {time-ago})" |
@@ -613,7 +617,7 @@ All skeletons use `--muted` background, 4px rounded, `animate-pulse` (Phase 1 st
 | `/inventory` | (none — read-only; Phase 4 adds "Create VM" / "Create LXC") | — |
 | `/inventory/{id}/{vmid}` Overview > Tags card | "Add tag" | Opens TagInput popover |
 | `/inventory/{id}/{vmid}` Overview > Notes card (empty) | "Add notes" | Switches MarkdownNotes to edit-mode |
-| `/inventory/{id}/{vmid}` Overview > Notes card (edit-mode) | "Save" | Persists to PVE description |
+| `/inventory/{id}/{vmid}` Overview > Notes card (edit-mode) | "Save notes" | Persists to PVE description |
 | `/audit` | (toolbar) "Export filtered ({N} rows)" | D-19 — verb + count |
 | `/admin/teams/{id}` Quotas tab | "Save changes" | Phase 1 pattern |
 | Apply date-range custom | "Apply" | Inside DateRangePicker popover footer |
