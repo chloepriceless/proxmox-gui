@@ -28,7 +28,6 @@ from datetime import UTC, datetime
 from fastapi import HTTPException, status
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.config import settings
 from app.models import PersonalAccessToken, User
@@ -136,13 +135,15 @@ async def resolve_pat(
         return None
     lookup_prefix = body[:LOOKUP_PREFIX_LEN]
 
+    # HI-02: previously this query branched on ``hasattr(PersonalAccessToken,
+    # "user")`` to attach ``selectinload(PersonalAccessToken.user)`` for the
+    # then-hypothetical relationship. PAT has no ``user`` relationship in
+    # the Phase-1 model (only the ``user_id`` foreign-key column), so the
+    # branch was always dead. The owning user is fetched explicitly via
+    # ``db.get(User, c.user_id)`` after a hash match below.
     candidates = (
         await db.execute(
-            select(PersonalAccessToken)
-            .where(PersonalAccessToken.lookup_prefix == lookup_prefix)
-            .options(selectinload(PersonalAccessToken.user))  # type: ignore[arg-type]
-            if hasattr(PersonalAccessToken, "user")
-            else select(PersonalAccessToken).where(
+            select(PersonalAccessToken).where(
                 PersonalAccessToken.lookup_prefix == lookup_prefix
             )
         )
