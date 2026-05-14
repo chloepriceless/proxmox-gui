@@ -2,14 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
+current_plan: 4 of 10 (01-04 deployment-skeleton is next)
 status: executing
-last_updated: "2026-05-14T03:20:32Z"
+stopped_at: Completed Plan 01-03; ready for Plan 01-04
+last_updated: "2026-05-14T03:38:06.499Z"
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 10
-  completed_plans: 2
-  percent: 20
+  completed_plans: 3
+  percent: 30
 ---
 
 # STATE: Proxmox Self-Service GUI
@@ -27,14 +29,15 @@ progress:
 ## Current Position
 
 Phase: 01 (Foundation) — EXECUTING
-Current Plan: 3 of 10 (01-03 frontend-scaffold is next)
+Current Plan: 4 of 10 (01-04 deployment-skeleton is next)
 
 - **Milestone:** v1
 - **Phase:** 01 — Foundation (executing)
 - **Plan:** 01-01 backend-scaffold ✅ complete
 - **Plan:** 01-02 db-schema ✅ complete
+- **Plan:** 01-03 frontend-scaffold ✅ complete
 - **Status:** Executing Phase 01
-- **Progress:** `[██░░░░░░░░] 2/10 plans, 0/5 phases`
+- **Progress:** [███░░░░░░░] 30%
 
 ## Phases at a Glance
 
@@ -51,8 +54,8 @@ Current Plan: 3 of 10 (01-03 frontend-scaffold is next)
 ## Performance Metrics
 
 - **Phases complete:** 0/5
-- **Plans complete:** 2/10
-- **Requirements shipped:** 9/89 (API-01, API-03 via Plan 01-01; AUTH-01, AUTH-02, AUTH-05, AUTH-07, AUTH-08, CLUST-01, CLUST-05 schema-landed via Plan 01-02)
+- **Plans complete:** 3/10
+- **Requirements shipped:** 11/89 (API-01, API-03 via Plan 01-01; AUTH-01, AUTH-02, AUTH-05, AUTH-07, AUTH-08, CLUST-01, CLUST-05 schema-landed via Plan 01-02; UI-01, UI-02 frontend-shell via Plan 01-03)
 - **Out-of-scope items deferred:** see REQUIREMENTS.md v2 section
 
 ### Plan Metrics
@@ -61,6 +64,7 @@ Current Plan: 3 of 10 (01-03 frontend-scaffold is next)
 |-------|------|----------|-------|-------|---------|
 | 01    | 01   | ~25 min  | 2     | 25    | 33 pass |
 | 01    | 02   | ~9 min   | 2     | 19    | 56 pass |
+| 01    | 03   | ~10 min  | 2     | 162   | 3 pass  |
 
 ## Accumulated Context
 
@@ -87,6 +91,14 @@ Current Plan: 3 of 10 (01-03 frontend-scaffold is next)
 | Schema-invariant test ALLOWLIST documents per-table rationale inline | Pitfall A5 — new tables are NOT team-exempt by default; developer must justify | Plan 01-02 SUMMARY |
 | `prepend_sys_path = .` in alembic.ini | Installer-time CLI invocation (Plan 04) needs to import app.models; pytest already had this via pyproject pythonpath | Plan 01-02 SUMMARY |
 | alembic.ini is ASCII-only (no em-dashes) | Defensive against broken-locale environments where configparser falls back to ASCII codec | Plan 01-02 SUMMARY |
+| shadcn-svelte v1.2.7 auto-migrated style preset from 'default' to 'nova' | Upstream deprecation; baseColor kept at slate per UI-SPEC | Plan 01-03 SUMMARY |
+| vitest pinned to 3.x | vite-plugin-svelte 5 requires vite 6, and vitest 2 ships vite 5 types — incompatible | Plan 01-03 SUMMARY |
+| `$lib/utils.ts` is canonical for shared FE helpers; `$lib/utils/` subdirectory holds feature helpers (csrf.ts, api.ts) | Modern shadcn-svelte primitives import cn + WithElementRef from `$lib/utils.js`; plan-manifest path lives in a re-export shim at `$lib/utils/cn.ts` | Plan 01-03 SUMMARY |
+| Modern shadcn-svelte registry components import from `@lucide/svelte` (scoped), not `lucide-svelte` | Upstream package rename; both kept in deps but registry code uses scoped name | Plan 01-03 SUMMARY |
+| `+layout.server.ts` ships STUB with explicit `// TODO(01-08): replace with real auth probe` comment | Plan 08 (frontend-auth-shell) replaces with `/api/v1/me` + `/api/v1/setup/status` probe | Plan 01-03 SUMMARY |
+| Inter Variable woff2 sourced from rsms/inter master at `docs/font-files/InterVariable.woff2` | Self-hosted air-gap requirement (UI-SPEC §Typography, threat T-01-03-06); 352KB binary committed | Plan 01-03 SUMMARY |
+| `kit.csrf.checkOrigin` removed (deprecated) — relying on default SvelteKit CSRF + API-side `csrf_protect` from Plan 01-01 | Plan 01-01's API CSRF dependency is authoritative; SvelteKit defaults are correct for its form actions | Plan 01-03 SUMMARY |
+| `pnpm-workspace.yaml` with `allowBuilds.esbuild: true` | pnpm 11 refuses install on unapproved build scripts; required for non-interactive CI | Plan 01-03 SUMMARY |
 
 ### Open Questions (resolve before/during named phase)
 
@@ -101,7 +113,8 @@ Current Plan: 3 of 10 (01-03 frontend-scaffold is next)
 - [x] Plan Phase 1 via `/gsd-plan-phase 1`
 - [x] Execute Plan 01-01 backend-scaffold
 - [x] Execute Plan 01-02 db-schema (11 ORM models + Alembic 0001_initial + invariant tests)
-- [ ] Execute Plan 01-03 frontend-scaffold (next — SvelteKit 2 + Svelte 5 + Tailwind v4 + shadcn-svelte + app shell)
+- [x] Execute Plan 01-03 frontend-scaffold (SvelteKit 2 + Svelte 5 + Tailwind v4 + shadcn-svelte app shell)
+- [ ] Execute Plan 01-04 deployment-skeleton (next — helper-script, Caddy, systemd units)
 - [ ] Schedule SDN/noVNC/community-scripts spikes in Phase 4 planning
 
 ### Blockers
@@ -110,21 +123,22 @@ None.
 
 ## Session Continuity
 
-**To resume:** Run `/gsd-execute-phase 1` to continue with Plan 01-03 (frontend-scaffold).
+**To resume:** Run `/gsd-execute-phase 1` to continue with Plan 01-04 (deployment-skeleton).
 
 **Next milestone:** First end-to-end "click → running VM/LXC" lands at the end of Phase 4.
 
 **Recently completed:**
 
+- 2026-05-14 — Plan 01-03 frontend-scaffold (SvelteKit 2 + Tailwind v4 + shadcn-svelte; 20 UI primitives; app shell + theme store + CSRF helper; 3 sanity tests green; production build clean)
 - 2026-05-14 — Plan 01-02 db-schema (11 ORM models, Alembic 0001_initial, 23 new tests; 56 total green)
 - 2026-05-14 — Plan 01-01 backend-scaffold (FastAPI app factory + 7 core primitives, 33 tests green)
 - 2026-05-14 — Project research (STACK.md, ARCHITECTURE.md, PITFALLS.md, SUMMARY.md)
 - 2026-05-14 — Requirements definition (89 v1 requirements across 13 categories)
 - 2026-05-14 — Roadmap (5-phase structure, 100% coverage)
 
-**Last session:** 2026-05-14T03:20:32Z
-**Stopped at:** Completed Plan 01-02; ready for Plan 01-03
-**Resume file:** `.planning/phases/01-foundation/01-03-frontend-scaffold-PLAN.md`
+**Last session:** 2026-05-14T03:35:41Z
+**Stopped at:** Completed Plan 01-03; ready for Plan 01-04
+**Resume file:** `.planning/phases/01-foundation/01-04-deployment-skeleton-PLAN.md`
 
 ---
 *State managed by GSD; do not edit phase counts manually — use `/gsd-transition` and `/gsd-progress`.*

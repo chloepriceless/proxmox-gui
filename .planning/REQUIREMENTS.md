@@ -119,8 +119,10 @@ Requirements for initial release. Each maps to roadmap phases via the Traceabili
 
 ### UI/UX Baseline
 
-- [ ] **UI-01**: Modern Hetzner-Cloud-style aesthetic (clean, whitespace, cards, wizard flows)
-- [ ] **UI-02**: Light + dark mode with system preference detection
+- [x] **UI-01
+**: Modern Hetzner-Cloud-style aesthetic (clean, whitespace, cards, wizard flows)
+- [x] **UI-02
+**: Light + dark mode with system preference detection
 - [ ] **UI-03**: Mobile-responsive (list, detail, and console reflow; wizards may be desktop-only)
 - [ ] **UI-04**: Distinct empty states with CTAs (e.g., "You have no VMs yet — Create one")
 - [ ] **UI-05**: Inline help (`?` icons) for every PVE-specific field with link to docs
