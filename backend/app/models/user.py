@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, String
+from sqlalchemy import Boolean, Index, String, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin
@@ -47,6 +47,24 @@ class User(Base, TimestampMixin):
         secondary="team_memberships",
         back_populates="members",
         lazy="selectin",
+    )
+
+    # BL-02: TOCTOU-proof first-run admin creation. A unique *partial* index
+    # over ``is_admin`` filtered to ``is_admin = 1`` allows at most one row
+    # to claim admin status. Two concurrent POST /api/v1/setup/admin requests
+    # can race past ``no_admin_yet``, but only one INSERT can commit; the
+    # other raises ``IntegrityError`` which the service maps to HTTP 409.
+    # Mirrors the DDL in alembic/versions/0002_add_uq_one_admin.py — tests
+    # that build the schema via ``Base.metadata.create_all`` rely on this
+    # table-level declaration to get the same constraint.
+    __table_args__ = (
+        Index(
+            "uq_one_admin",
+            "is_admin",
+            unique=True,
+            sqlite_where=text("is_admin = 1"),
+            postgresql_where=text("is_admin = true"),
+        ),
     )
 
     def __repr__(self) -> str:  # pragma: no cover - debug aid
