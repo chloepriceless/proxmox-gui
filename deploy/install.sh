@@ -189,18 +189,35 @@ fi
 # Step 4: Inner bootstrap
 # Inject REPO_URL + RELEASE into the LXC's env so bootstrap.sh can reuse them
 # when it git-clones the source tree.
-# Pitfall T-01-04-01: we use HTTPS curl + the operator must visually verify
-# the install URL. Phase 5 will add GPG-signed releases (DEPLOY-04).
+#
+# SECURITY (BL-01 fix): pass REPO_URL / RELEASE as env-prefix args to `pct
+# exec` rather than interpolating them into a quoted shell string. The
+# previous form (`bash -c "...export REPO_URL='$REPO_URL'..."`) was
+# vulnerable to single-quote injection: a value like `'; id > /tmp/pwned;
+# echo '` would break out of the quotes and execute arbitrary commands
+# with the privileges of the calling process (typically root on a PVE
+# host). With `pct exec -- env KEY=VAL bash -c '...'` the operator-supplied
+# values land in the inner shell's environment as opaque strings and the
+# heredoc itself is single-quoted (no host-side interpolation at all);
+# the inner shell expands ${REPO_URL} / ${RELEASE} from its own env.
+#
+# Pitfall T-01-04-01: we still use HTTPS curl + the operator must visually
+# verify the install URL. Phase 5 will add GPG-signed releases (DEPLOY-04).
 # ----------------------------------------------------------------------------
 echo "==> Running inner bootstrap.sh inside the LXC..."
-pct exec "$CTID" -- bash -c "
+# shellcheck disable=SC2016
+# SC2016 disabled intentionally: the inner shell string is single-quoted on
+# purpose so the host shell does NOT interpolate REPO_URL/RELEASE. The inner
+# shell expands them from its own env (passed via `pct exec -- env ...`).
+pct exec "$CTID" -- env \
+    REPO_URL="$REPO_URL" \
+    RELEASE="$RELEASE" \
+    bash -c '
     set -euo pipefail
-    export REPO_URL='$REPO_URL'
-    export RELEASE='$RELEASE'
     apt-get update -qq
     apt-get install -y -qq curl ca-certificates
-    curl -fsSL '$REPO_URL/raw/$RELEASE/deploy/lxc/bootstrap.sh' | bash
-"
+    curl -fsSL "${REPO_URL}/raw/${RELEASE}/deploy/lxc/bootstrap.sh" | bash
+'
 
 # ----------------------------------------------------------------------------
 # Step 5: Final banner
