@@ -21,8 +21,14 @@ from unittest.mock import patch
 import pytest
 
 from tests.fixtures.pve_responses import (
+    CLUSTER_RESOURCES_LXC,
+    CLUSTER_RESOURCES_VM,
     CREATE_TOKEN_OK,
     EMPTY_OK,
+    POOL_GUI_TEAM_42,
+    RRD_HOUR,
+    VM_CONFIG,
+    VM_STATUS_RUNNING,
     VERSION_OK,
     FakeProxmox,
     auth_error,
@@ -269,3 +275,152 @@ async def test_tls_fingerprint_without_verify_ssl_raises_not_implemented():
             verify_ssl=False,
             tls_fingerprint="SHA256:aaaa",
         )
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: new read/write methods
+# ---------------------------------------------------------------------------
+
+
+def _make_conn(fake: FakeProxmox):
+    from app.clusters.connector import PVEConnector
+
+    with patch("app.clusters.connector.ProxmoxAPI", return_value=fake):
+        return PVEConnector(
+            host="pve.test", port=8006,
+            token_user="root@pam", token_name="api", token_value="x",
+            verify_ssl=False,
+        )
+
+
+@pytest.mark.asyncio
+async def test_list_resources_happy_path():
+    """list_resources() merges vm + lxc responses and returns (snapshot, False)."""
+    fake = FakeProxmox(responses={})
+    fake.queue_response("cluster.resources.get", CLUSTER_RESOURCES_VM)
+    fake.queue_response("cluster.resources.get", CLUSTER_RESOURCES_LXC)
+    conn = _make_conn(fake)
+
+    snapshot, stale = await conn.list_resources()
+    assert stale is False
+    assert len(snapshot) == 3
+    vm_calls = [c for c in fake.calls if c[0] == "cluster.resources.get"]
+    assert len(vm_calls) == 2
+    # Verify type kwarg was passed for both calls.
+    assert vm_calls[0][2] == {"type": "vm"}
+    assert vm_calls[1][2] == {"type": "lxc"}
+
+
+@pytest.mark.asyncio
+async def test_get_vm_status_qemu_path():
+    """get_vm_status with is_lxc=False calls nodes.{node}.qemu.{vmid}.status.current.get."""
+    fake = FakeProxmox(responses={
+        "nodes.pve-01.qemu.100.status.current.get": VM_STATUS_RUNNING,
+    })
+    conn = _make_conn(fake)
+    result = await conn.get_vm_status(node="pve-01", vmid=100, is_lxc=False)
+    assert result == VM_STATUS_RUNNING["data"]
+    assert fake.calls[0] == ("nodes.pve-01.qemu.100.status.current.get", (), {})
+
+
+@pytest.mark.asyncio
+async def test_get_vm_status_lxc_path():
+    """get_vm_status with is_lxc=True calls nodes.{node}.lxc.{vmid}.status.current.get."""
+    fake = FakeProxmox(responses={
+        "nodes.pve-01.lxc.200.status.current.get": VM_STATUS_RUNNING,
+    })
+    conn = _make_conn(fake)
+    result = await conn.get_vm_status(node="pve-01", vmid=200, is_lxc=True)
+    assert result == VM_STATUS_RUNNING["data"]
+    assert fake.calls[0] == ("nodes.pve-01.lxc.200.status.current.get", (), {})
+
+
+@pytest.mark.asyncio
+async def test_get_vm_config_qemu():
+    """get_vm_config with is_lxc=False calls nodes.{node}.qemu.{vmid}.config.get."""
+    fake = FakeProxmox(responses={
+        "nodes.pve-01.qemu.100.config.get": VM_CONFIG,
+    })
+    conn = _make_conn(fake)
+    result = await conn.get_vm_config(node="pve-01", vmid=100, is_lxc=False)
+    assert result == VM_CONFIG["data"]
+    assert fake.calls[0][0] == "nodes.pve-01.qemu.100.config.get"
+
+
+@pytest.mark.asyncio
+async def test_set_vm_config_invalidates_cache():
+    """set_vm_config writes to PVE and then nulls the resource cache snapshot."""
+    fake = FakeProxmox(responses={
+        "nodes.pve-01.qemu.100.config.put": EMPTY_OK,
+    })
+    conn = _make_conn(fake)
+    # Seed a fake cache snapshot.
+    conn._resource_cache.snapshot = [{"vmid": 100}]
+
+    await conn.set_vm_config(node="pve-01", vmid=100, is_lxc=False, tags="prod;web")
+
+    # Cache must be invalidated.
+    assert conn._resource_cache.snapshot is None
+    # PUT call must have been made.
+    put_calls = [c for c in fake.calls if c[0] == "nodes.pve-01.qemu.100.config.put"]
+    assert len(put_calls) == 1
+    assert put_calls[0][2] == {"tags": "prod;web"}
+
+
+@pytest.mark.asyncio
+async def test_rrddata_valid_timeframe():
+    """rrddata() calls the correct PVE path with timeframe + cf kwargs."""
+    fake = FakeProxmox(responses={
+        "nodes.pve-01.qemu.100.rrddata.get": RRD_HOUR,
+    })
+    conn = _make_conn(fake)
+    result = await conn.rrddata(node="pve-01", vmid=100, is_lxc=False,
+                                timeframe="hour", cf="AVERAGE")
+    assert result == RRD_HOUR["data"]
+    calls = [c for c in fake.calls if "rrddata.get" in c[0]]
+    assert len(calls) == 1
+    assert calls[0][2] == {"timeframe": "hour", "cf": "AVERAGE"}
+
+
+@pytest.mark.asyncio
+async def test_rrddata_invalid_timeframe_raises_value_error():
+    """rrddata() raises ValueError for unsupported timeframe values."""
+    fake = FakeProxmox(responses={})
+    conn = _make_conn(fake)
+    with pytest.raises(ValueError, match="timeframe"):
+        await conn.rrddata(node="pve-01", vmid=100, is_lxc=False, timeframe="minute")
+
+
+@pytest.mark.asyncio
+async def test_rrddata_invalid_cf_raises_value_error():
+    """rrddata() raises ValueError for unsupported cf values."""
+    fake = FakeProxmox(responses={})
+    conn = _make_conn(fake)
+    with pytest.raises(ValueError, match="cf"):
+        await conn.rrddata(node="pve-01", vmid=100, is_lxc=False, cf="MIN")
+
+
+@pytest.mark.asyncio
+async def test_pool_members_returns_members_list():
+    """pool_members() returns the 'members' list from the pool payload."""
+    fake = FakeProxmox(responses={
+        "pools.gui-team-42.get": POOL_GUI_TEAM_42,
+    })
+    conn = _make_conn(fake)
+    members = await conn.pool_members(poolid="gui-team-42")
+    assert len(members) == 3
+    assert members[0]["vmid"] == 100
+    calls = [c for c in fake.calls if "pools" in c[0]]
+    assert len(calls) == 1
+    assert calls[0][0] == "pools.gui-team-42.get"
+
+
+@pytest.mark.asyncio
+async def test_pool_members_empty_when_no_members_key():
+    """pool_members() returns [] when the pool payload has no 'members' key."""
+    fake = FakeProxmox(responses={
+        "pools.empty-pool.get": {"data": {"comment": "no vms"}},
+    })
+    conn = _make_conn(fake)
+    members = await conn.pool_members(poolid="empty-pool")
+    assert members == []

@@ -170,3 +170,104 @@ class FakeProxmox:
     # Convenience for assertions in tests.
     def find_calls(self, dotted_prefix: str) -> list[tuple[str, tuple[Any, ...], dict[str, Any]]]:
         return [c for c in self.calls if c[0] == dotted_prefix or c[0].startswith(dotted_prefix + ".")]
+
+    def queue_error(self, dotted_path: str, exc: BaseException) -> None:
+        """Queue an exception to be raised on the next call to ``dotted_path``.
+
+        If a queue exists, the first queued exception is popped and raised.
+        After all queued errors are consumed, falls back to the static
+        ``responses`` dict (or returns None if absent).
+
+        Uses ``__dict__`` directly to bypass ``__getattr__`` which would
+        otherwise return a ``_Node`` proxy for any attribute access.
+        """
+        if "_error_queues" not in self.__dict__:
+            self.__dict__["_error_queues"] = {}
+        self.__dict__["_error_queues"].setdefault(dotted_path, []).append(exc)
+
+    def queue_response(self, dotted_path: str, value: Any) -> None:
+        """Queue a return value for the next call to ``dotted_path``.
+
+        Queued responses are consumed in FIFO order before falling back to
+        the static ``responses`` dict. Useful when consecutive calls to the
+        same path need different return values (e.g. type=vm vs type=lxc).
+
+        Uses ``__dict__`` directly to bypass ``__getattr__``.
+        """
+        if "_response_queues" not in self.__dict__:
+            self.__dict__["_response_queues"] = {}
+        self.__dict__["_response_queues"].setdefault(dotted_path, []).append(value)
+
+
+# Monkey-patch _Node.__call__ to support queue_error on FakeProxmox.
+_original_node_call = _Node.__call__
+
+
+def _patched_node_call(self, *args: Any, **kwargs: Any) -> Any:
+    if self._path and self._path[-1] not in _Node._HTTP_METHODS:
+        new_path = self._path + tuple(str(a) for a in args)
+        return _Node(self._owner, new_path)
+    dotted = ".".join(self._path)
+    self._owner.calls.append((dotted, args, kwargs))
+    # 1. Check queued errors first (access via __dict__ to avoid __getattr__ proxy).
+    error_queues: dict[str, list[BaseException]] = self._owner.__dict__.get(
+        "_error_queues", {}
+    )
+    if dotted in error_queues and error_queues[dotted]:
+        raise error_queues[dotted].pop(0)
+    # 2. Check queued responses (FIFO; consumed before static dict).
+    response_queues: dict[str, list[Any]] = self._owner.__dict__.get(
+        "_response_queues", {}
+    )
+    if dotted in response_queues and response_queues[dotted]:
+        return response_queues[dotted].pop(0)
+    # 3. Fall back to static responses dict.
+    response = self._owner.responses.get(dotted)
+    if callable(response):
+        return response(*args, **kwargs)
+    if response is None:
+        return None
+    if isinstance(response, dict) and "data" in response and len(response) == 1:
+        return response["data"]
+    return response
+
+
+_Node.__call__ = _patched_node_call  # type: ignore[method-assign]
+
+
+# ----------------------------------------------------------------------------
+# Phase 2 canned response payloads (proxmoxer unwraps "data" -> returns inner)
+# ----------------------------------------------------------------------------
+
+CLUSTER_RESOURCES_VM = [
+    {"vmid": 100, "name": "vm-prod-1", "type": "qemu", "node": "pve-01",
+     "status": "running", "maxcpu": 4, "maxmem": 4294967296, "maxdisk": 53687091200,
+     "tags": "prod;web", "pool": "gui-team-42"},
+    {"vmid": 101, "name": "vm-prod-2", "type": "qemu", "node": "pve-02",
+     "status": "stopped", "maxcpu": 2, "maxmem": 2147483648, "maxdisk": 21474836480,
+     "tags": "", "pool": "gui-team-42"},
+]
+CLUSTER_RESOURCES_LXC = [
+    {"vmid": 200, "name": "lxc-a", "type": "lxc", "node": "pve-01",
+     "status": "running", "maxcpu": 1, "maxmem": 1073741824, "maxdisk": 10737418240,
+     "tags": "infra", "pool": "gui-team-42"},
+]
+VM_STATUS_RUNNING = {"data": {"status": "running", "uptime": 12345, "cpu": 0.12,
+                              "mem": 1234567890, "maxmem": 4294967296,
+                              "netin": 100, "netout": 200, "diskread": 50, "diskwrite": 60}}
+VM_CONFIG = {"data": {"name": "vm-prod-1", "cores": 4, "memory": 4096,
+                      "tags": "prod;web", "description": "test VM"}}
+RRD_HOUR = {"data": [
+    {"time": 1700000000, "cpu": 0.12, "mem": 1234567890, "maxmem": 4294967296,
+     "disk": 50, "maxdisk": 53687091200, "netin": 100, "netout": 200,
+     "diskread": 50, "diskwrite": 60},
+    {"time": 1700000060, "cpu": 0.15, "mem": 1300000000, "maxmem": 4294967296,
+     "disk": 50, "maxdisk": 53687091200, "netin": 110, "netout": 210,
+     "diskread": 55, "diskwrite": 65},
+]}
+POOL_GUI_TEAM_42 = {"data": {"comment": "team 42 pool",
+    "members": [
+        {"vmid": 100, "node": "pve-01", "type": "qemu", "id": "qemu/100"},
+        {"vmid": 101, "node": "pve-02", "type": "qemu", "id": "qemu/101"},
+        {"vmid": 200, "node": "pve-01", "type": "lxc",  "id": "lxc/200"},
+    ]}}

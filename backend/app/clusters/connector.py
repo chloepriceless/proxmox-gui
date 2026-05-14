@@ -16,17 +16,53 @@ introduce; this Phase-1 class is bootstrap-only.
 Authorization format: ``Authorization: PVEAPIToken=USER@REALM!TOKENID=UUID``
 — proxmoxer builds this automatically from ``user=``, ``token_name=``,
 ``token_value=``.
+
+Phase 2 additions (Plan 02-01):
+- ``ResourceCache`` dataclass with 30s TTL and asyncio.Lock for thundering-herd
+  protection.
+- ``pybreaker.CircuitBreaker`` per connector (3 failures → open, 30s reset).
+  Auth errors are EXCLUDED from the breaker (config issue, not transient).
+- ``_call_with_breaker`` helper mirrors ``_call`` but routes through the breaker;
+  translates ``pybreaker.CircuitBreakerError`` → ``PVEUnreachable``.
+- Six new read/write methods: ``list_resources``, ``get_vm_status``,
+  ``get_vm_config``, ``set_vm_config``, ``rrddata``, ``pool_members``.
+- Status attributes: ``last_seen_healthy``, ``last_error``, ``status``.
 """
 
 from __future__ import annotations
 
 import asyncio
+import time
+from dataclasses import dataclass, field
 from typing import Any
 
+import pybreaker
 import requests
 from proxmoxer import AuthenticationError, ProxmoxAPI, ResourceException
 
 from app.clusters.errors import PVEAPIError, PVEAuthError, PVEUnreachable
+
+
+@dataclass
+class ResourceCache:
+    """Per-connector 30s in-memory cache for ``/cluster/resources``.
+
+    The ``lock`` serialises refresh so concurrent callers don't produce a
+    thundering herd of PVE calls on cache miss (T-02-01-07).
+    """
+
+    snapshot: list[dict] | None = None
+    fetched_at: float = 0.0
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    ttl: float = 30.0
+
+    @property
+    def is_fresh(self) -> bool:
+        return self.snapshot is not None and (time.monotonic() - self.fetched_at) < self.ttl
+
+    @property
+    def is_stale(self) -> bool:
+        return self.snapshot is not None and not self.is_fresh
 
 
 class PVEConnector:
@@ -68,8 +104,28 @@ class PVEConnector:
             timeout=10,
         )
 
+        # Phase 2: circuit breaker (T-02-01-05). Auth errors do NOT trip the
+        # breaker — they indicate a config problem, not transient reachability.
+        # breaker open is mapped onto PVEUnreachable; see _call_with_breaker.
+        # We exclude BOTH PVEAuthError (our wrapper) AND proxmoxer.AuthenticationError
+        # (the raw exception raised inside asyncio.to_thread before translation)
+        # because pybreaker evaluates the exclude list against the exception raised
+        # *inside* the wrapped function — at that point it's still an AuthenticationError.
+        self._breaker = pybreaker.CircuitBreaker(
+            fail_max=3,
+            reset_timeout=30,
+            exclude=[PVEAuthError, AuthenticationError],
+            name=f"pve-{host}",
+        )
+        self._resource_cache = ResourceCache()
+
+        # Phase 2: health probe attributes (updated by health_probe_loop).
+        self.last_seen_healthy: float | None = None
+        self.last_error: str | None = None
+        self.status: str = "untested"  # 'ok' | 'failed' | 'untested'
+
     # ------------------------------------------------------------------
-    # Private executor bridge
+    # Private executor bridges
     # ------------------------------------------------------------------
 
     async def _call(self, fn: Any, *args: Any, **kwargs: Any) -> Any:
@@ -78,11 +134,39 @@ class PVEConnector:
         Pitfall A3: every PVE call MUST go through this helper. The CI grep
         ``grep -q 'asyncio.to_thread' backend/app/clusters/connector.py``
         documents this in the acceptance criteria.
+
+        Used for Phase-1 bootstrap calls that run outside the circuit breaker
+        (one-time admin ops with their own exception handling at the call site).
         """
         return await asyncio.to_thread(fn, *args, **kwargs)
 
+    async def _call_with_breaker(self, fn: Any, *args: Any, **kwargs: Any) -> Any:
+        """Wrap a sync proxmoxer call with the circuit breaker + asyncio.to_thread.
+
+        pybreaker.call is SYNC: it raises CircuitBreakerError when open. We map
+        that onto PVEUnreachable so callers only need the existing exception
+        surface. PVEAuthError is excluded from the breaker (auth = config, not
+        transient).
+        """
+        def _invoke() -> Any:
+            return self._breaker.call(fn, *args, **kwargs)
+
+        try:
+            return await asyncio.to_thread(_invoke)
+        except pybreaker.CircuitBreakerError as exc:
+            raise PVEUnreachable("breaker open") from exc
+        except AuthenticationError as exc:
+            raise PVEAuthError(str(exc)) from exc
+        except (ConnectionError, requests.ConnectionError) as exc:
+            raise PVEUnreachable(str(exc)) from exc
+        except ResourceException as exc:
+            raise PVEAPIError(
+                getattr(exc, "status_code", 0),
+                getattr(exc, "content", "") or str(exc),
+            ) from exc
+
     # ------------------------------------------------------------------
-    # Read calls
+    # Read calls (Phase 1)
     # ------------------------------------------------------------------
 
     async def version(self) -> dict:
@@ -109,7 +193,106 @@ class PVEConnector:
         await self.version()
 
     # ------------------------------------------------------------------
-    # Pool lifecycle (tenant bootstrap)
+    # Read calls (Phase 2) — go through _call_with_breaker
+    # ------------------------------------------------------------------
+
+    async def list_resources(
+        self, *, force_refresh: bool = False
+    ) -> tuple[list[dict], bool]:
+        """GET /cluster/resources?type=vm + type=lxc — merged, with 30s TTL cache.
+
+        Returns (snapshot, is_stale). On breaker-open + stale cache present:
+        returns (snapshot, True). On breaker-open + NO cache: raises PVEUnreachable.
+        """
+        cache = self._resource_cache
+        async with cache.lock:
+            if cache.is_fresh and not force_refresh:
+                return cache.snapshot, False
+            try:
+                vms = await self._call_with_breaker(
+                    self._client.cluster.resources.get, type="vm",
+                )
+                lxcs = await self._call_with_breaker(
+                    self._client.cluster.resources.get, type="lxc",
+                )
+                cache.snapshot = (vms or []) + (lxcs or [])
+                cache.fetched_at = time.monotonic()
+                return cache.snapshot, False
+            except PVEUnreachable:
+                if cache.snapshot is not None:
+                    return cache.snapshot, True
+                raise
+
+    async def get_vm_status(self, *, node: str, vmid: int, is_lxc: bool) -> dict:
+        """GET /nodes/{node}/{qemu|lxc}/{vmid}/status/current."""
+        fn = (
+            self._client.nodes(node).lxc(vmid).status.current.get
+            if is_lxc
+            else self._client.nodes(node).qemu(vmid).status.current.get
+        )
+        return await self._call_with_breaker(fn)
+
+    async def get_vm_config(self, *, node: str, vmid: int, is_lxc: bool) -> dict:
+        """GET /nodes/{node}/{qemu|lxc}/{vmid}/config."""
+        fn = (
+            self._client.nodes(node).lxc(vmid).config.get
+            if is_lxc
+            else self._client.nodes(node).qemu(vmid).config.get
+        )
+        return await self._call_with_breaker(fn)
+
+    # ------------------------------------------------------------------
+    # Write calls (Phase 2) — go through _call_with_breaker
+    # ------------------------------------------------------------------
+
+    async def set_vm_config(
+        self, *, node: str, vmid: int, is_lxc: bool, **fields: Any
+    ) -> None:
+        """PUT /nodes/{node}/{qemu|lxc}/{vmid}/config — tags + description writes only in Phase 2.
+
+        After a successful write, invalidate the resource cache so the next
+        list_resources() shows the post-write state.
+        """
+        fn = (
+            self._client.nodes(node).lxc(vmid).config.put
+            if is_lxc
+            else self._client.nodes(node).qemu(vmid).config.put
+        )
+        await self._call_with_breaker(fn, **fields)
+        # Cache invalidate happens via direct assignment (no separate lock pass —
+        # the next list_resources() will lock + refresh).
+        self._resource_cache.snapshot = None
+
+    async def rrddata(
+        self,
+        *,
+        node: str,
+        vmid: int,
+        is_lxc: bool,
+        timeframe: str = "hour",
+        cf: str = "AVERAGE",
+    ) -> list[dict]:
+        """GET /nodes/{node}/{qemu|lxc}/{vmid}/rrddata?timeframe=&cf= ."""
+        if timeframe not in {"hour", "day", "week", "month", "year"}:
+            raise ValueError(
+                f"timeframe must be one of hour/day/week/month/year, got {timeframe!r}"
+            )
+        if cf not in {"AVERAGE", "MAX"}:
+            raise ValueError(f"cf must be AVERAGE or MAX, got {cf!r}")
+        fn = (
+            self._client.nodes(node).lxc(vmid).rrddata.get
+            if is_lxc
+            else self._client.nodes(node).qemu(vmid).rrddata.get
+        )
+        return await self._call_with_breaker(fn, timeframe=timeframe, cf=cf)
+
+    async def pool_members(self, *, poolid: str) -> list[dict]:
+        """GET /pools/{poolid} — returns the 'members' array (empty list if absent)."""
+        payload = await self._call_with_breaker(self._client.pools(poolid).get)
+        return list(payload.get("members", [])) if isinstance(payload, dict) else []
+
+    # ------------------------------------------------------------------
+    # Pool lifecycle (tenant bootstrap — Phase 1, keep unchanged)
     # ------------------------------------------------------------------
 
     async def create_pool(self, poolid: str, comment: str = "") -> None:
@@ -121,7 +304,7 @@ class PVEConnector:
         await self._call(self._client.pools(poolid).delete)
 
     # ------------------------------------------------------------------
-    # User + token lifecycle (per-tenant privsep)
+    # User + token lifecycle (per-tenant privsep — Phase 1, keep unchanged)
     # ------------------------------------------------------------------
 
     async def create_user(self, userid: str, comment: str = "") -> None:
