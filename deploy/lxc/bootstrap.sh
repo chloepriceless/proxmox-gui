@@ -69,26 +69,36 @@ apt-get install -y -qq \
     openssl gnupg
 
 echo "==> Locating Python 3.12..."
-PYTHON_BIN="python3"
-if ! python3 --version 2>/dev/null | grep -qE 'Python 3\.1[2-9]'; then
-    echo "    Debian default python3 is < 3.12; enabling bookworm-backports."
-    cat >/etc/apt/sources.list.d/bookworm-backports.list <<'BACKPORTS'
-deb http://deb.debian.org/debian bookworm-backports main
-BACKPORTS
-    apt-get update -qq
-    if apt-get install -y -qq -t bookworm-backports \
-            python3.12 python3.12-venv python3.12-dev; then
-        PYTHON_BIN="python3.12"
-        echo "    installed python3.12 from bookworm-backports."
-    else
-        # TODO(phase-5): pyenv fallback (build from source). Track in DEPLOY-04.
-        echo "ERROR: bookworm-backports does not ship python3.12 yet." >&2
-        echo "       Phase 5 will add pyenv fallback (DEPLOY-04). For now, abort." >&2
-        exit 1
-    fi
+# Debian reality check (verified against deb.debian.org/debian/pool/main/p/):
+#   - bookworm  ships python3.11 only
+#   - trixie    ships python3.13 only
+#   - bookworm-backports does NOT carry python3.12 (skipped release)
+# Strategy: prefer system python3.12 if some flavor of Debian/Ubuntu happens to
+# carry it, else download a python-build-standalone via uv (Astral). The latter
+# is a statically-linked ~30 MB tarball that works on any glibc Linux, has
+# zero apt deps, and is what pyenv-without-the-build-time would look like.
+PYTHON_BIN=""
+if python3.12 --version 2>/dev/null | grep -qE '^Python 3\.12\.'; then
+    PYTHON_BIN="$(command -v python3.12)"
+    echo "    found system python3.12: $($PYTHON_BIN --version)"
+elif python3 --version 2>/dev/null | grep -qE '^Python 3\.12\.'; then
+    PYTHON_BIN="$(command -v python3)"
+    echo "    found system python3 == 3.12: $($PYTHON_BIN --version)"
 else
-    # System python3 is already >= 3.12 — ensure venv module is present.
-    apt-get install -y -qq python3-venv python3-dev
+    if ! command -v uv >/dev/null 2>&1; then
+        echo "    installing uv (Astral python-build-standalone manager)..."
+        curl -LsSf https://astral.sh/uv/install.sh \
+            | env UV_INSTALL_DIR=/usr/local/bin UV_NO_MODIFY_PATH=1 sh
+    fi
+    export UV_PYTHON_INSTALL_DIR=/opt/python
+    mkdir -p "$UV_PYTHON_INSTALL_DIR"
+    chmod 0755 "$UV_PYTHON_INSTALL_DIR"
+    echo "    downloading Python 3.12 via uv (python-build-standalone, ~30 MB)..."
+    uv python install 3.12
+    PYTHON_BIN="$(uv python find 3.12)"
+    # $APP_USER must be able to read+execute the managed interpreter
+    chmod -R o+rX "$UV_PYTHON_INSTALL_DIR"
+    echo "    installed: $PYTHON_BIN"
 fi
 
 echo "    using: $PYTHON_BIN ($($PYTHON_BIN --version))"
