@@ -27,6 +27,7 @@ though the application uses an async engine at runtime. That is fine:
 
 from __future__ import annotations
 
+import os
 from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config, pool
@@ -45,6 +46,26 @@ config = context.config
 # Interpret the config file for Python logging.
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
+
+# Honour PROXMOX_GUI_DATABASE_URL when present AND the current sqlalchemy.url
+# is still the alembic.ini placeholder. Keep alembic + app on the same
+# database (Plan 01-04 follow-up: prior versions of this file silently
+# fell back to ``sqlite:///./app.db`` from alembic.ini, which put migrations
+# in /opt/proxmox-gui/backend/app.db while the app read /var/lib/proxmox-gui/app.db,
+# leaving the live DB schemaless. Operator smoke-test caught this.)
+#
+# The placeholder gate matters: tests that build their own Config object
+# with command.upgrade(cfg, "head") set a file-based sqlalchemy.url before
+# this module is imported, and that explicit choice must win over the
+# in-memory PROXMOX_GUI_DATABASE_URL set in conftest.py.
+#
+# Alembic is sync, so strip the ``+aiosqlite`` driver suffix the app uses.
+_ALEMBIC_INI_PLACEHOLDER = "sqlite:///./app.db"
+_env_db_url = os.environ.get("PROXMOX_GUI_DATABASE_URL")
+_current_url = config.get_main_option("sqlalchemy.url")
+if _env_db_url and _current_url == _ALEMBIC_INI_PLACEHOLDER:
+    _sync_db_url = _env_db_url.replace("sqlite+aiosqlite://", "sqlite://")
+    config.set_main_option("sqlalchemy.url", _sync_db_url)
 
 # Target metadata used by autogenerate diffs.
 target_metadata = Base.metadata
