@@ -5,7 +5,7 @@ Written BEFORE implementation — expected to fail until app/quotas/usage.py is 
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -90,8 +90,8 @@ async def test_compute_team_usage_filters_by_pool(session_factory):
     fake.queue_response("cluster.resources.get", [])  # type=lxc call returns empty
 
     with patch("app.clusters.connector.ProxmoxAPI", return_value=fake):
+
         from app.clusters.registry import PVEConnectorRegistry
-        from sqlalchemy.ext.asyncio import async_sessionmaker
 
         registry = PVEConnectorRegistry(None, session_factory)
 

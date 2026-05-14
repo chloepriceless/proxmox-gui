@@ -5,7 +5,7 @@ Written BEFORE implementation — expected to fail until app/quotas/admission.py
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -198,7 +198,6 @@ async def test_check_and_preview_within_limit_returns_headroom(session_factory):
 @pytest.mark.asyncio
 async def test_check_and_preview_uses_begin_immediate(session_factory):
     """check_and_preview must execute BEGIN IMMEDIATE."""
-    from unittest.mock import MagicMock
 
     from app.clusters.registry import PVEConnectorRegistry
     from app.quotas.admission import check_and_preview
@@ -220,9 +219,6 @@ async def test_check_and_preview_uses_begin_immediate(session_factory):
 
         # Intercept all SQL statement strings
         from sqlalchemy import event
-        from sqlalchemy.ext.asyncio import create_async_engine
-
-        eng = None
 
         async with session_factory() as db:
             # Use SQLAlchemy event to capture executed statements
@@ -266,8 +262,8 @@ async def test_check_and_preview_user_scoped_quota_ignored_in_phase2(session_fac
     """User-scoped Quota rows must NOT be honored in Phase 2 team-based preview."""
     from datetime import datetime
 
-    from app.models import Quota, Team, TeamClusterToken, TeamMembership, User, Cluster
     from app.clusters.registry import PVEConnectorRegistry
+    from app.models import Quota
     from app.quotas.admission import check_and_preview
     from app.quotas.schemas import QuotaPreviewRequest
 

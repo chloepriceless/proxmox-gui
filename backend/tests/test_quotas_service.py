@@ -94,7 +94,7 @@ def _fake_for(poolids: list[str], per_cluster_resources=None):
 def _make_admin_principal(user):
     from app.auth.dependencies import Principal
 
-    return Principal(user=user, via_pat=False)
+    return Principal(user=user, mode="session")
 
 
 # ---------------------------------------------------------------------------
@@ -140,6 +140,7 @@ async def test_list_team_quotas_returns_one_row_per_bound_cluster(session_factor
 async def test_list_team_quotas_team_not_found_raises_404(session_factory):
     """team_id=9999 raises HTTPException(404)."""
     from fastapi import HTTPException
+
     from app.clusters.registry import PVEConnectorRegistry
     from app.quotas.service import list_team_quotas
 
@@ -174,7 +175,7 @@ async def test_set_team_quotas_upserts_and_audits(session_factory):
     with patch("app.clusters.connector.ProxmoxAPI", return_value=fake):
         registry = PVEConnectorRegistry(None, session_factory)
         async with session_factory() as db:
-            page = await set_team_quotas(
+            await set_team_quotas(
                 db, registry, principal=principal, team_id=team_id,
                 payload=payload, source_ip="127.0.0.1",
             )
@@ -204,6 +205,7 @@ async def test_set_team_quotas_upserts_and_audits(session_factory):
 async def test_set_team_quotas_lowering_below_usage_returns_409(session_factory):
     """Setting cpu_cores=10 when usage=20 (allow_over=False) → 409."""
     from fastapi import HTTPException
+
     from app.clusters.registry import PVEConnectorRegistry
     from app.quotas.schemas import QuotaLimit, QuotaLimitsUpdate
     from app.quotas.service import set_team_quotas
@@ -295,6 +297,7 @@ async def test_set_team_quotas_allow_over_bypasses_409(session_factory):
 async def test_set_team_quotas_rejects_unbound_cluster_422(session_factory):
     """PUT rows includes cluster_id not bound to team → 422."""
     from fastapi import HTTPException
+
     from app.clusters.registry import PVEConnectorRegistry
     from app.quotas.schemas import QuotaLimit, QuotaLimitsUpdate
     from app.quotas.service import set_team_quotas
@@ -323,6 +326,7 @@ async def test_set_team_quotas_rejects_unbound_cluster_422(session_factory):
 async def test_set_team_quotas_team_not_found_404(session_factory):
     """team_id=9999 → 404."""
     from fastapi import HTTPException
+
     from app.clusters.registry import PVEConnectorRegistry
     from app.quotas.schemas import QuotaLimit, QuotaLimitsUpdate
     from app.quotas.service import set_team_quotas
