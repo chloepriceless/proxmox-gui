@@ -1,0 +1,203 @@
+# Requirements: Proxmox Self-Service GUI
+
+**Defined:** 2026-05-14
+**Core Value:** Users can self-provision and manage VMs/LXCs on Proxmox through a polished, opinionated UI — without ever needing to open the Proxmox web interface.
+
+## v1 Requirements
+
+Requirements for initial release. Each maps to roadmap phases via the Traceability section.
+
+### Authentication & Sessions
+
+- [ ] **AUTH-01**: User can log in with username and password (Argon2id hashed)
+- [ ] **AUTH-02**: User session persists across browser refresh (secure cookie)
+- [ ] **AUTH-03**: User can log out from any page
+- [ ] **AUTH-04**: User can change their own password from a profile page
+- [ ] **AUTH-05**: User can manage their stored SSH public keys (add, view, delete)
+- [ ] **AUTH-06**: Session expires after configurable idle timeout
+- [ ] **AUTH-07**: Admin can create, edit, disable, and delete user accounts
+- [ ] **AUTH-08**: Admin can assign users to teams (group of users sharing quotas)
+
+### Tenancy & Quotas
+
+- [ ] **TENT-01**: Admin can set per-user quotas (CPU, RAM, disk, count of VMs/LXCs)
+- [ ] **TENT-02**: Admin can set per-team quotas (shared across team members)
+- [ ] **TENT-03**: User sees own quota usage as progress bars in app header
+- [ ] **TENT-04**: User sees live quota delta in the create wizard (e.g., "+2 vCPU, +4 GB RAM")
+- [ ] **TENT-05**: System blocks creation when it would exceed quota (admission control, not post-hoc)
+- [ ] **TENT-06**: User sees only their own (and their team's) VMs/LXCs in the list; admin sees all
+
+### Multi-Cluster Management
+
+- [ ] **CLUST-01**: Admin can register multiple Proxmox clusters (URL + API token per cluster)
+- [ ] **CLUST-02**: User can switch the active cluster context from a header dropdown
+- [ ] **CLUST-03**: Per-cluster reachability indicator visible at all times
+- [ ] **CLUST-04**: When a cluster is unreachable, app degrades to read-only with a clear banner — no hard-fail
+- [ ] **CLUST-05**: Cluster context is part of every resource URL (e.g., `/clusters/{id}/vms/{vmid}`)
+- [ ] **CLUST-06**: Works against single-node and clustered Proxmox installations
+
+### Inventory & Search
+
+- [ ] **INV-01**: User sees a list of all their VMs and LXCs with status indicators
+- [ ] **INV-02**: User can search/filter by name, tag, status, node
+- [ ] **INV-03**: User can sort the list by name, status, node, created date
+- [ ] **INV-04**: User can view a detail page per VM/LXC (status, vCPU, RAM, disk, IPs, uptime, OS, node, cluster, tags)
+- [ ] **INV-05**: User sees live metrics (CPU, RAM, disk I/O, network) on the detail page using Proxmox RRD data
+- [ ] **INV-06**: User can tag VMs/LXCs with multi-tag, color-coded labels
+- [ ] **INV-07**: User can edit a markdown notes field on each VM/LXC (PVE `description`)
+- [ ] **INV-08**: User can view a per-VM activity/task log (recent PVE tasks)
+
+### LXC Provisioning
+
+- [ ] **LXC-01**: User can browse a curated list of community-scripts (`community-scripts/ProxmoxVE`)
+- [ ] **LXC-02**: User can browse the full community-scripts catalog with search and category filters
+- [ ] **LXC-03**: User can one-click deploy from a community-script (non-interactive mode)
+- [ ] **LXC-04**: Script source, version (commit hash), and last-reviewed-date are surfaced before deploy
+- [ ] **LXC-05**: User can deploy a plain LXC from a vztmpl template
+- [ ] **LXC-06**: User can pick target host, storage, network, CPU, RAM, disk in the LXC wizard
+- [ ] **LXC-07**: User can toggle unprivileged container / nesting / features
+
+### VM Provisioning
+
+- [ ] **VM-01**: User can deploy a VM from a Cloud-Init image (Ubuntu, Debian, Rocky, etc.)
+- [ ] **VM-02**: User can deploy a VM from an existing PVE template (linked or full clone)
+- [ ] **VM-03**: User can deploy a blank VM with a mounted ISO
+- [ ] **VM-04**: User can clone an existing VM (linked or full)
+- [ ] **VM-05**: User can edit Cloud-Init config in a two-pane editor (form + live YAML preview)
+- [ ] **VM-06**: Cloud-Init editor surfaces all derived values (PVE-injected included) so user knows exactly what gets set
+- [ ] **VM-07**: Cloud-Init schema validation runs before submit
+- [ ] **VM-08**: User can browse an ISO library across storages (with URL-download for new ISOs)
+- [ ] **VM-09**: User can pick target host, storage, network, CPU, RAM, disk in the VM wizard
+- [ ] **VM-10**: Wizard shows real-time quota delta and node fit hints (e.g., "won't fit on node-1")
+
+### Networking (SDN)
+
+- [ ] **NET-01**: System lists Proxmox SDN zones, VNets, and subnets in the network picker
+- [ ] **NET-02**: Admin can scope which SDN zones/VNets a team can see and use
+- [ ] **NET-03**: Network picker auto-picks a free IP from IPAM where available
+- [ ] **NET-04**: Fallback: legacy bridge selection still works for non-SDN setups
+
+### Lifecycle Management
+
+- [ ] **LIFE-01**: User can Start, Stop (graceful), Reboot, Shutdown (hard), and Delete VMs and LXCs
+- [ ] **LIFE-02**: Destructive actions require typed-name confirmation (Delete) or OK/Cancel (Force-Stop)
+- [ ] **LIFE-03**: User can bulk Start/Stop/Reboot from list (bulk Delete deliberately excluded)
+- [ ] **LIFE-04**: User can create, restore, and delete manual snapshots; snapshot tree visible
+- [ ] **LIFE-05**: User can create a manual backup (vzdump or PBS target)
+- [ ] **LIFE-06**: User can create scheduled backup jobs (systemd-calendar) and view retention
+- [ ] **LIFE-07**: User can restore a VM/LXC from a backup
+- [ ] **LIFE-08**: User can resize CPU and RAM (warn when reboot required based on hotplug)
+- [ ] **LIFE-09**: User can grow disk online (shrink explicitly unsupported, warn user)
+- [ ] **LIFE-10**: User can clone a VM (linked or full, pick target node) and convert a VM to template
+- [ ] **LIFE-11**: User can migrate a VM between cluster nodes (live or offline, surface bwlimit)
+- [ ] **LIFE-12**: Long-running tasks show progress via a Tasks drawer (poll UPID, surface stderr)
+- [ ] **LIFE-13**: Failed tasks offer a one-click retry where safe
+- [ ] **LIFE-14**: Orphaned tasks (UPIDs from before a restart) are re-attached on app boot
+
+### Console
+
+- [ ] **CON-01**: User can open an embedded noVNC console in an iframe for any VM/LXC they own
+- [ ] **CON-02**: vncticket is generated on user click (not page load) and refreshed before expiry
+- [ ] **CON-03**: Console works through the GUI's reverse-proxied WebSocket (no direct Proxmox exposure required to the browser)
+
+### REST API
+
+- [ ] **API-01**: REST API exposes every UI capability (UI consumes the same API — no UI-only backdoors)
+- [ ] **API-02**: API auth via per-user Personal Access Tokens
+- [ ] **API-03**: OpenAPI spec auto-generated from code and served at a documented path
+- [ ] **API-04**: Mutating endpoints return `202 Accepted` with a job ID; clients poll job status
+- [ ] **API-05**: API enforces the same quotas and tenancy as the UI
+
+### Audit Log
+
+- [ ] **AUDIT-01**: Every API mutation writes an audit entry (timestamp, actor, action, target, result, source IP)
+- [ ] **AUDIT-02**: Config changes record a before/after diff in the audit log
+- [ ] **AUDIT-03**: Admin can view the full audit log with date-range and filter controls
+- [ ] **AUDIT-04**: User can view their own audit entries
+- [ ] **AUDIT-05**: Audit log supports CSV export
+- [ ] **AUDIT-06**: Audit log has retention/rotation policy (configurable, default 1 year)
+
+### UI/UX Baseline
+
+- [ ] **UI-01**: Modern Hetzner-Cloud-style aesthetic (clean, whitespace, cards, wizard flows)
+- [ ] **UI-02**: Light + dark mode with system preference detection
+- [ ] **UI-03**: Mobile-responsive (list, detail, and console reflow; wizards may be desktop-only)
+- [ ] **UI-04**: Distinct empty states with CTAs (e.g., "You have no VMs yet — Create one")
+- [ ] **UI-05**: Inline help (`?` icons) for every PVE-specific field with link to docs
+- [ ] **UI-06**: Error messages map PVE errors to human-readable text (no raw "operation failed")
+- [ ] **UI-07**: In-app notification bell shows task completions
+
+### Deployment
+
+- [ ] **DEPLOY-01**: One-line helper-script install: `bash -c "$(curl -fsSL …/install.sh)"`
+- [ ] **DEPLOY-02**: Installer is idempotent (re-running it does not corrupt state)
+- [ ] **DEPLOY-03**: Helper-script provisions a single LXC running the full stack (backend, frontend, DB, job worker)
+- [ ] **DEPLOY-04**: Self-update path from inside the app (or via helper-script flag)
+- [ ] **DEPLOY-05**: First-run wizard collects the first admin user and the first cluster connection
+
+## v2 Requirements
+
+Deferred to a future release. Tracked but not in current roadmap.
+
+### Authentication
+
+- **AUTH2-01**: OIDC/SSO login (Authentik, Keycloak, Google)
+- **AUTH2-02**: 2FA / WebAuthn for local users
+
+### Features
+
+- **V2-01**: Firewall rule management (currently read-only via Proxmox UI)
+- **V2-02**: Billing / cost tracking (currently substituted by quota visualization)
+- **V2-03**: Custom console implementation (WebSocket + xterm.js) replacing iframe noVNC
+- **V2-04**: Templated multi-VM "stacks" (CloudFormation-style)
+- **V2-05**: In-browser SSH terminal
+- **V2-06**: Built-in monitoring / alerting rules
+- **V2-07**: Plugin / extension system
+- **V2-08**: Multi-region replication / disaster recovery orchestration
+- **V2-09**: Built-in image building (Packer-like)
+- **V2-10**: Email notifications
+
+## Out of Scope
+
+Explicitly excluded. Documented to prevent scope creep.
+
+| Feature | Reason |
+|---------|--------|
+| Storage pool / ZFS / LVM management | Admin-level, dangerous, Proxmox UI handles it well |
+| Cluster formation / node join | Proxmox cluster setup is one-time admin work — out of scope |
+| ZFS pool / RAID / disk-level operations | Same as storage management — PVE UI |
+| Per-tenant private SDN zone provisioning | SDN topology is admin-defined in PVE; portal consumes it |
+| Multi-hypervisor support (VMware, XCP-ng, Hyper-V) | Proxmox-only by design — abstraction is the rabbit hole |
+| Kubernetes / container-orchestration abstraction | Pets, not cattle — different product |
+| Provisioning new Proxmox nodes | The GUI consumes a cluster, it doesn't build one |
+| Bulk Delete | Catastrophic error surface; one misclick destroys a fleet |
+| Live-edit of VM hardware beyond PVE's support | Don't fight the platform; surface reboot requirement instead |
+
+## Traceability
+
+Which phases cover which requirements. Updated during roadmap creation.
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| AUTH-01 through AUTH-08 | TBD | Pending |
+| TENT-01 through TENT-06 | TBD | Pending |
+| CLUST-01 through CLUST-06 | TBD | Pending |
+| INV-01 through INV-08 | TBD | Pending |
+| LXC-01 through LXC-07 | TBD | Pending |
+| VM-01 through VM-10 | TBD | Pending |
+| NET-01 through NET-04 | TBD | Pending |
+| LIFE-01 through LIFE-14 | TBD | Pending |
+| CON-01 through CON-03 | TBD | Pending |
+| API-01 through API-05 | TBD | Pending |
+| AUDIT-01 through AUDIT-06 | TBD | Pending |
+| UI-01 through UI-07 | TBD | Pending |
+| DEPLOY-01 through DEPLOY-05 | TBD | Pending |
+
+**Coverage:**
+- v1 requirements: 76 total
+- Mapped to phases: 0 (pending roadmap)
+- Unmapped: 76 ⚠️ (will be resolved during roadmap creation)
+
+---
+*Requirements defined: 2026-05-14*
+*Last updated: 2026-05-14 after initial definition*
