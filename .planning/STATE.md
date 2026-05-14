@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_plan: 7 of 10 (01-07 users-admin-setup is next)
+current_plan: 8 of 10 (01-08 frontend-auth-shell is next)
 status: executing
-stopped_at: Completed Plan 01-06; ready for Plan 01-07
-last_updated: "2026-05-14T04:36:05Z"
+stopped_at: Completed Plan 01-07; ready for Plan 01-08
+last_updated: "2026-05-14T05:02:22.693Z"
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 10
-  completed_plans: 6
-  percent: 60
+  completed_plans: 7
+  percent: 70
 ---
 
 # STATE: Proxmox Self-Service GUI
@@ -29,7 +29,7 @@ progress:
 ## Current Position
 
 Phase: 01 (Foundation) — EXECUTING
-Current Plan: 7 of 10 (01-07 users-admin-setup is next)
+Current Plan: 8 of 10 (01-08 frontend-auth-shell is next)
 
 - **Milestone:** v1
 - **Phase:** 01 — Foundation (executing)
@@ -39,8 +39,9 @@ Current Plan: 7 of 10 (01-07 users-admin-setup is next)
 - **Plan:** 01-04 deployment-skeleton ✅ complete
 - **Plan:** 01-05 auth-subsystem ✅ complete
 - **Plan:** 01-06 clusters-tenant-bootstrap ✅ complete
+- **Plan:** 01-07 users-admin-setup ✅ complete
 - **Status:** Executing Phase 01
-- **Progress:** [██████░░░░] 60%
+- **Progress:** [███████░░░] 70%
 
 ## Phases at a Glance
 
@@ -57,8 +58,8 @@ Current Plan: 7 of 10 (01-07 users-admin-setup is next)
 ## Performance Metrics
 
 - **Phases complete:** 0/5
-- **Plans complete:** 6/10
-- **Requirements shipped:** 22/89 (API-01, API-03 via Plan 01-01; AUTH-01, AUTH-02, AUTH-05, AUTH-07, AUTH-08, CLUST-01, CLUST-05 schema-landed via Plan 01-02; UI-01, UI-02 frontend-shell via Plan 01-03; DEPLOY-01, DEPLOY-02, DEPLOY-03, DEPLOY-05 helper-script skeleton via Plan 01-04; AUTH-01..05 fully shipped + API-01..03 fully shipped via Plan 01-05; CLUST-01, CLUST-05, CLUST-06, AUTH-08 fully shipped via Plan 01-06)
+- **Plans complete:** 7/10
+- **Requirements shipped:** 22/89 (API-01, API-03 via Plan 01-01; AUTH-01, AUTH-02, AUTH-05, AUTH-07, AUTH-08, CLUST-01, CLUST-05 schema-landed via Plan 01-02; UI-01, UI-02 frontend-shell via Plan 01-03; DEPLOY-01, DEPLOY-02, DEPLOY-03, DEPLOY-05 helper-script skeleton via Plan 01-04; AUTH-01..05 fully shipped + API-01..03 fully shipped via Plan 01-05; CLUST-01, CLUST-05, CLUST-06, AUTH-08 fully shipped via Plan 01-06; AUTH-07, AUTH-08, DEPLOY-05 fully shipped via Plan 01-07)
 - **Out-of-scope items deferred:** see REQUIREMENTS.md v2 section
 
 ### Plan Metrics
@@ -71,6 +72,7 @@ Current Plan: 7 of 10 (01-07 users-admin-setup is next)
 | 01    | 04   | ~7 min   | 2     | 10    | n/a (no test phase — shellcheck-clean + caddy validate ok) |
 | 01    | 05   | ~14 min  | 2     | 25    | 90 pass  |
 | 01    | 06   | ~21 min  | 2     | 19    | 132 pass |
+| 01    | 07   | ~11 min  | 2     | 13    | 166 pass |
 
 ## Accumulated Context
 
@@ -126,6 +128,14 @@ Current Plan: 7 of 10 (01-07 users-admin-setup is next)
 | `delete_team` does NOT call `teardown_tenant_on_clusters` (D-04 option-a) | Operator must explicitly unbind via Phase-2 endpoint first; `teardown_tenant_on_clusters` shipped for Phase 2 use, never invoked from Plan 06 | Plan 01-06 SUMMARY |
 | `create_team(registry: ConnectorRegistry | None = None, ...)` signature | Plan-07-friendly: first-run admin's personal team is created without a registry when zero clusters exist; service raises if registry=None AND clusters present AND auto_bootstrap=True | Plan 01-06 SUMMARY |
 | `TeamCreate` uses `ConfigDict(extra="forbid")` | D-05 personal-immutability defense-in-depth: schema layer rejects `personal=True` before the service-layer 422 ever fires | Plan 01-06 SUMMARY |
+| Disable-revocation transaction sequencing in `update_user` | Detect is_active True→False BEFORE applying; setattr+flush; revoke_user_sessions commits the user UPDATE in same tx as token revocations — no window where is_active=False is committed but tokens still live | Plan 01-07 SUMMARY |
+| `team_ids` on PATCH /users/{id} has REPLACE semantics on non-personal teams only | Personal-team membership row never touched; PATCH with team_ids=[] correctly leaves user with only their personal team | Plan 01-07 SUMMARY |
+| Admin self-modification guards live at service layer with `current_admin_user_id` from principal | Direct callers (admin CLI, tests) get same protection as HTTP routes; T-01-07-03/04/05 mitigation | Plan 01-07 SUMMARY |
+| Setup endpoints are CSRF-free; admin-creation is one-shot gated on `no_admin_yet` predicate inside insert tx | T-01-07-01 race mitigation; CSRF requires a session which doesn't exist yet | Plan 01-07 SUMMARY |
+| Admin password reset bypasses old-password check (T-01-07-08 accept-by-design) | Recovery flow; sessions revoked so user must log in with new password; audit log Phase 2 records who-reset-whom | Plan 01-07 SUMMARY |
+| There is intentionally NO `/api/v1/setup/cluster` route — wizard cluster registration goes through authenticated `/api/v1/clusters` | CONTEXT D-18 lenient first-run; Plan 08 UI auto-logs-in after admin step | Plan 01-07 SUMMARY |
+| `email-validator==2.3.0` added to pyproject.toml (was missing from Plan 01) | pydantic.EmailStr requires it; tests use @example.com (email-validator rejects @example.test per RFC 6761) | Plan 01-07 SUMMARY |
+| Personal team auto-creation pattern: any User-mint code path MUST also create `personal-<user_id>` team via `teams.service.create_team(registry=None, _internal=True, auto_bootstrap=False)` and insert membership row | D-05 + Plan 06's WARNING-6 signature; setup.create_initial_admin and users.create_user both follow | Plan 01-07 SUMMARY |
 
 ### Open Questions (resolve before/during named phase)
 
@@ -144,7 +154,8 @@ Current Plan: 7 of 10 (01-07 users-admin-setup is next)
 - [x] Execute Plan 01-04 deployment-skeleton (install.sh + bootstrap.sh + systemd units + Caddyfile + key generators)
 - [x] Execute Plan 01-05 auth-subsystem (Argon2id login + 3-cookie sessions + refresh rotation with replay detection + CSRF + PAT + SSH-key + /me; 90 tests passing)
 - [x] Execute Plan 01-06 clusters-tenant-bootstrap (PVEConnector + registry + cluster CRUD with validate-before-persist + dry-run /test + D-02 tenant bootstrap with PVE rollback + team CRUD with D-04 option-a delete gate + membership routes; 132 tests passing)
-- [ ] Execute Plan 01-07 users-admin-setup (next — admin create/edit/disable/delete users; first-run admin wizard backend)
+- [x] Execute Plan 01-07 users-admin-setup (admin user CRUD with self-guard + disable revocation; first-run setup wizard backend; AUTH-07 + AUTH-08 + DEPLOY-05 fully shipped; 166 tests passing)
+- [ ] Execute Plan 01-08 frontend-auth-shell (next — login UI + setup wizard + auth probe replacement in +layout.server.ts)
 - [ ] Schedule SDN/noVNC/community-scripts spikes in Phase 4 planning
 - [ ] Manual A6 verification: bootstrap-token PVE permissions (User.Modify, Pool.Allocate, Realm.Allocate, Sys.Audit at /) — required before Phase 2 starts consuming per-tenant tokens
 
@@ -154,12 +165,13 @@ None.
 
 ## Session Continuity
 
-**To resume:** Run `/gsd-execute-phase 1` to continue with Plan 01-07 (users-admin-setup).
+**To resume:** Run `/gsd-execute-phase 1` to continue with Plan 01-08 (frontend-auth-shell).
 
 **Next milestone:** First end-to-end "click → running VM/LXC" lands at the end of Phase 4.
 
 **Recently completed:**
 
+- 2026-05-14 — Plan 01-07 users-admin-setup (first-run wizard backend GET /setup/status + POST /setup/admin per CONTEXT D-18 lenient first-run; admin user CRUD on /api/v1/users with auto-personal-team D-05; self-guard preventing admin lockout T-01-07-03/04/05; team_ids REPLACE semantics on PATCH preserving personal-team membership; synchronous session revocation on disable via revoke_user_sessions hook AUTH-07 / T-01-07-06; admin password reset that revokes all sessions; end-to-end test verifying disabled user's refresh cookie AND PAT both return 401; 34 new tests; total 166 passing; ruff clean; OpenAPI 25 paths; AUTH-07, AUTH-08, DEPLOY-05 marked complete)
 - 2026-05-14 — Plan 01-06 clusters-tenant-bootstrap (PVEConnector wrapping proxmoxer with asyncio.to_thread per Pitfall A3; PVEConnectorRegistry lazy per-cluster cache with invalidate(id); cluster CRUD with validate-before-persist per Pitfall A4 + dry-run POST /clusters/test for the admin Test button; D-02 tenant bootstrap minting PVE pool/user/privsep token + PVEVMUser ACL on every active cluster, with best-effort delete_user+delete_pool rollback on partial failure per T-01-06-04; team CRUD + membership routes; D-04 option-a delete-team gate returning 409 on active cluster bindings; D-05 personal-team immutability via ConfigDict(extra=forbid) + service guard; create_team(registry=None) signature for Plan 07 first-run admin; 42 new tests; total 132 passing; ruff clean; CLUST-01, CLUST-05, CLUST-06, AUTH-08 marked complete)
 - 2026-05-14 — Plan 01-05 auth-subsystem (login/refresh/logout with 3-cookie sessions per D-09; refresh rotation with replay-detection chain-revoke per Pitfall 22 / T-01-05-02; dual-mode get_current_principal cookie OR Bearer pat_*; double-submit CSRF dependency per D-13; per-IP login rate limiter; /me + SSH-key CRUD with cryptography-validated parse + SHA256 fingerprint; PAT CRUD with show-once plaintext + prefix_preview metadata; revoke_user_sessions hook for Plan 07; 34 new tests; total 90 passing; ruff clean; AUTH-01..05 + API-01..03 marked complete)
 - 2026-05-14 — Plan 01-04 deployment-skeleton (one-line helper-script installer, idempotent bootstrap.sh, three systemd units, Caddyfile + tls internal, master.key + jwt.secret + pat.pepper generators at mode 0400; shellcheck-clean; caddy validate Valid configuration; DEPLOY-01/02/03/05 marked complete)
@@ -170,8 +182,8 @@ None.
 - 2026-05-14 — Requirements definition (89 v1 requirements across 13 categories)
 - 2026-05-14 — Roadmap (5-phase structure, 100% coverage)
 
-**Last session:** 2026-05-14T04:36:05Z
-**Stopped at:** Completed Plan 01-06; ready for Plan 01-07
+**Last session:** 2026-05-14T05:02:22.684Z
+**Stopped at:** Completed Plan 01-07; ready for Plan 01-08
 **Resume file:** None
 
 ---

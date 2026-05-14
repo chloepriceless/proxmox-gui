@@ -20,7 +20,8 @@ Requirements for initial release. Each maps to roadmap phases via the Traceabili
 - [x] **AUTH-05
 **: User can manage their stored SSH public keys (add, view, delete)
 - [ ] **AUTH-06**: Session expires after configurable idle timeout
-- [ ] **AUTH-07**: Admin can create, edit, disable, and delete user accounts
+- [x] **AUTH-07
+**: Admin can create, edit, disable, and delete user accounts
 - [x] **AUTH-08**: Admin can assign users to teams (group of users sharing quotas)
 
 ### Tenancy & Quotas
@@ -197,8 +198,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | AUTH-04 | Phase 1 | Complete (01-05) |
 | AUTH-05 | Phase 1 | Complete (01-05) |
 | AUTH-06 | Phase 5 | Pending |
-| AUTH-07 | Phase 1 | Pending |
-| AUTH-08 | Phase 1 | Complete (01-06) |
+| AUTH-07 | Phase 1 | Complete (01-07) |
+| AUTH-08 | Phase 1 | Complete (01-06, 01-07) |
 | TENT-01 | Phase 2 | Pending |
 | TENT-02 | Phase 2 | Pending |
 | TENT-03 | Phase 2 | Pending |
@@ -279,7 +280,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DEPLOY-02 | Phase 1 | Complete (Plan 01-04) |
 | DEPLOY-03 | Phase 1 | Complete (Plan 01-04) |
 | DEPLOY-04 | Phase 5 | Pending |
-| DEPLOY-05 | Phase 1 | Complete (Plan 01-04) |
+| DEPLOY-05 | Phase 1 | Complete (Plan 01-04 helper-script skeleton, Plan 01-07 setup wizard backend) |
 
 **Coverage:**
 - v1 requirements: 89 total
