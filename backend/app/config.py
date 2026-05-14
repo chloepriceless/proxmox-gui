@@ -112,6 +112,29 @@ class Settings(BaseSettings):
 
         return self
 
+    def __repr__(self) -> str:
+        """Redacted repr — never include ``jwt_secret`` / ``pat_pepper`` values.
+
+        Defense-in-depth for T-01-01-07: if a logger ever binds the entire
+        ``settings`` object (against the documented prohibition), the secrets
+        are still masked. Tests rely on the *attribute* (``settings.jwt_secret``)
+        being a plain ``str`` — only the textual representation is redacted.
+        """
+        public_fields = {
+            name: value
+            for name, value in self.__dict__.items()
+            if name not in {"jwt_secret", "pat_pepper"}
+        }
+        masked = {
+            "jwt_secret": "***REDACTED***" if self.jwt_secret else "<unset>",
+            "pat_pepper": "***REDACTED***" if self.pat_pepper else "<unset>",
+        }
+        merged = {**public_fields, **masked}
+        body = ", ".join(f"{k}={v!r}" for k, v in merged.items())
+        return f"Settings({body})"
+
+    __str__ = __repr__
+
 
 # Module-level singleton. Tests can monkeypatch attributes via
 # ``monkeypatch.setattr(settings, ..., ...)`` or rebind the singleton wholesale.
