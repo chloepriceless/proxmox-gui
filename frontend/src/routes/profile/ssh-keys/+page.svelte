@@ -81,9 +81,14 @@
   function mapAddError(err: unknown): { field?: string; message?: string; summary?: string } {
     if (err instanceof ApiError) {
       if (err.status === 422) {
+        const detail =
+          typeof err.body === 'object' && err.body !== null && 'detail' in err.body
+            ? String((err.body as { detail: unknown }).detail)
+            : null;
         return {
           field: 'ssh-add-public-key',
           message:
+            detail ??
             "That doesn't look like an SSH public key. Paste the contents of a `.pub` file."
         };
       }
@@ -248,7 +253,7 @@
 
 <!-- Add SSH key dialog -->
 <Dialog.Root bind:open={addOpen}>
-  <Dialog.Content>
+  <Dialog.Content class="sm:max-w-2xl">
     <Dialog.Header>
       <Dialog.Title>Add an SSH public key</Dialog.Title>
       <Dialog.Description>
@@ -291,11 +296,12 @@
           id="ssh-add-public-key"
           bind:value={newPublicKey}
           rows={5}
+          wrap="soft"
           spellcheck={false}
           placeholder={"ssh-ed25519 AAAA... user@host"}
           disabled={addSubmitting}
           required
-          class="font-mono text-[13px]"
+          class="font-mono text-[13px] break-all whitespace-pre-wrap [field-sizing:fixed] w-full max-w-full"
           aria-invalid={addFieldErrors['ssh-add-public-key'] ? 'true' : undefined}
         />
         {#if addFieldErrors['ssh-add-public-key']}

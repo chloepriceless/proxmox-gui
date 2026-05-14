@@ -9,7 +9,28 @@
 
 import type { Handle } from '@sveltejs/kit';
 
+// Dev/preview convenience: when the Node server runs without a real reverse
+// proxy in front of it (e.g. `node build/index.js` for smoke-testing without
+// Caddy), forward /api/* requests to the FastAPI backend. In production this
+// path is unreachable because Caddy terminates /api/* upstream of Node.
+const BACKEND_URL = process.env.PROXMOX_GUI_BACKEND_URL ?? 'http://127.0.0.1:8000';
+
 export const handle: Handle = async ({ event, resolve }) => {
+  if (event.url.pathname.startsWith('/api/')) {
+    const upstream = `${BACKEND_URL}${event.url.pathname}${event.url.search}`;
+    const headers = new Headers(event.request.headers);
+    headers.delete('host');
+    const init: RequestInit = {
+      method: event.request.method,
+      headers,
+      redirect: 'manual'
+    };
+    if (event.request.method !== 'GET' && event.request.method !== 'HEAD') {
+      init.body = await event.request.arrayBuffer();
+    }
+    return fetch(upstream, init);
+  }
+
   event.locals.user = null;
   try {
     const res = await event.fetch('/api/v1/me/');
