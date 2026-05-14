@@ -18,6 +18,7 @@
   import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
   import ThemeToggle from '$lib/components/layout/ThemeToggle.svelte';
   import ClusterContextPicker from '$lib/components/inventory/ClusterContextPicker.svelte';
+  import QuotaIndicator from '$lib/components/quotas/QuotaIndicator.svelte';
   import { api } from '$lib/api/client';
   import type { CurrentUser } from '$lib/stores/user.svelte';
 
@@ -70,7 +71,7 @@
   </div>
 
   <div class="flex items-center gap-2">
-    <!-- QuotaIndicator: mounted by Plan 02-06 -->
+    <QuotaIndicator />
     <ThemeToggle />
     <DropdownMenu.Root>
       <DropdownMenu.Trigger>
