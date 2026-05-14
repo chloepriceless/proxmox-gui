@@ -25,7 +25,8 @@ register a callable that raises.
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from proxmoxer import AuthenticationError, ResourceException
 

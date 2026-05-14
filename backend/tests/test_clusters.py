@@ -16,14 +16,12 @@ Covers:
 
 from __future__ import annotations
 
-from typing import Any
 from unittest.mock import patch
 
 import pytest
 
 from tests.factories import login_as, make_user
 from tests.fixtures.pve_responses import (
-    EMPTY_OK,
     VERSION_OK,
     FakeProxmox,
     auth_error,
@@ -128,8 +126,9 @@ async def test_post_with_failing_token_validation_returns_422_and_no_row(
         )
     assert response.status_code == 422
     # Verify NO row was persisted.
+    from sqlalchemy import func, select
+
     from app.models import Cluster
-    from sqlalchemy import select, func
     async with session_factory() as session:
         n = await session.scalar(select(func.count()).select_from(Cluster))
     assert n == 0
@@ -200,8 +199,9 @@ async def test_get_clusters_never_returns_decrypted_token(
 
 
 async def _count_clusters(session_factory):
+    from sqlalchemy import func, select
+
     from app.models import Cluster
-    from sqlalchemy import select, func
     async with session_factory() as session:
         return await session.scalar(select(func.count()).select_from(Cluster))
 
@@ -417,14 +417,13 @@ async def test_delete_invalidates_registry(client, session_factory):
 
     # Reach into app.state.registry, prime its cache, then DELETE and assert
     # the cache entry is gone.
-    from app.clusters.registry import PVEConnectorRegistry  # noqa: F401
     # The app fixture's app exposes the registry on app.state via the
     # lifespan; in tests we have to do this manually since the lifespan
     # may not have run. Use a fresh registry to assert invalidate is called.
     # Easier: monkeypatch the global delete_cluster service to spy on
     # registry.invalidate.
-
     from app.clusters import service as cluster_service
+    from app.clusters.registry import PVEConnectorRegistry  # noqa: F401
 
     real_delete = cluster_service.delete_cluster
     seen = {"invalidated": None}
@@ -448,8 +447,8 @@ async def test_delete_invalidates_registry(client, session_factory):
 async def test_service_delete_cluster_invalidates_registry(session_factory):
     """Unit-level: delete_cluster service call invalidates the registry cache."""
     from app.clusters.registry import PVEConnectorRegistry
-    from app.clusters.service import delete_cluster, register_cluster
     from app.clusters.schemas import ClusterCreate
+    from app.clusters.service import delete_cluster, register_cluster
     from app.models import User
 
     # Insert an admin user to satisfy any audit references (not strictly
@@ -459,7 +458,6 @@ async def test_service_delete_cluster_invalidates_registry(session_factory):
                      is_admin=True, is_active=True)
         session.add(admin)
         await session.commit()
-        admin_id = admin.id
 
     # Register a cluster with a passing token validation.
     fake = FakeProxmox(responses={"version.get": VERSION_OK})

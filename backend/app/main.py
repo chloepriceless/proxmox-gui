@@ -25,8 +25,12 @@ import warnings
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, status
+from fastapi.responses import JSONResponse
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from app.clusters.errors import PVEAPIError, PVEAuthError, PVEUnreachable
+from app.clusters.registry import PVEConnectorRegistry
 from app.config import settings
 from app.core.cipher import SecretCipher
 from app.core.db import engine, run_migrations
@@ -54,11 +58,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # 3. Bring DB to head (no-op until Plan 02 lands alembic.ini).
     await run_migrations()
 
-    # 4. Serve.
+    # 4. Plan 06: per-cluster connector registry, lazy + invalidated on
+    #    cluster edit/delete. Built lazily, lives on app.state.
+    app.state.registry = PVEConnectorRegistry(
+        cipher,
+        async_sessionmaker(engine, expire_on_commit=False),
+    )
+
+    # 5. Serve.
     try:
         yield
     finally:
-        # 5. Drain pool.
+        # 6. Drain pool.
         await engine.dispose()
 
 
@@ -81,9 +92,34 @@ def create_app() -> FastAPI:
         """Unauthenticated. Returns 200 if the process is up."""
         return {"status": "ok", "version": "0.1.0"}
 
+    # Plan 06: PVE exception handlers — translate connector exceptions into
+    # uniform HTTP responses. Service layer typically catches these locally
+    # (e.g. test_cluster), but a stray bubble-up still gets a clean shape.
+    @app.exception_handler(PVEUnreachable)
+    async def _pve_unreachable_handler(_: Request, exc: PVEUnreachable) -> JSONResponse:
+        return JSONResponse(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            content={"detail": "Couldn't reach that Proxmox URL."},
+        )
+
+    @app.exception_handler(PVEAuthError)
+    async def _pve_auth_handler(_: Request, exc: PVEAuthError) -> JSONResponse:
+        return JSONResponse(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            content={"detail": "Proxmox rejected that token."},
+        )
+
+    @app.exception_handler(PVEAPIError)
+    async def _pve_api_handler(_: Request, exc: PVEAPIError) -> JSONResponse:
+        return JSONResponse(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            content={"detail": "Proxmox returned an unexpected error."},
+        )
+
     # Plan 01-05: auth + me + ssh-keys + tokens routers. Imports kept local to
     # the factory so test runs that don't need them aren't import-cycle penalised.
     from app.auth.routes import router as auth_router
+    from app.clusters.routes import router as clusters_router
     from app.me.routes import router as me_router
     from app.pats.routes import router as pats_router
     from app.ssh_keys.routes import router as ssh_keys_router
@@ -94,6 +130,10 @@ def create_app() -> FastAPI:
         ssh_keys_router, prefix="/api/v1/me/ssh-keys", tags=["ssh-keys"]
     )
     app.include_router(pats_router, prefix="/api/v1/me/tokens", tags=["tokens"])
+    # Plan 06: cluster admin routes.
+    app.include_router(
+        clusters_router, prefix="/api/v1/clusters", tags=["clusters"]
+    )
 
     return app
 
