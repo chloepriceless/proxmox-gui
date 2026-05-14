@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="%sveltekit.assets%/favicon.svg" />
+    <script>
+      // FOUC mitigation: read persisted theme preference (or fall back to the
+      // user's OS preference) and set the `dark` class on <html> BEFORE any
+      // stylesheet loads. UI-SPEC §Theme Toggle Contract explicitly allows
+      // this single inline script; see threat T-01-03-04.
+      (function () {
+        try {
+          var t = localStorage.getItem('theme');
+          var d =
+            t === 'dark' ||
+            ((!t || t === 'system') &&
+              window.matchMedia('(prefers-color-scheme: dark)').matches);
+          if (d) document.documentElement.classList.add('dark');
+        } catch (e) {
+          // localStorage may be unavailable (private mode, etc.); fall through
+          // to light mode by default.
+        }
+      })();
+    </script>
+    %sveltekit.head%
+  </head>
+  <body data-sveltekit-preload-data="hover">
+    <div style="display: contents">%sveltekit.body%</div>
+  </body>
+</html>
