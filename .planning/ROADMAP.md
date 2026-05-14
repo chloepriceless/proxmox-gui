@@ -95,7 +95,30 @@ Users can self-provision and manage VMs/LXCs on Proxmox through a polished, opin
   3. The audit log retention/rotation policy is configurable (default 1 year) and old entries are rolled to compressed files without manual intervention.
   4. An operator can self-update the GUI from inside the app (or via the helper-script flag) without manual file edits, and the helper-script install produces a clean, ready-to-deploy LXC on first run and every subsequent run (idempotent).
 **Plans**: TBD
-**Notes**: This phase is intentionally small under coarse granularity — it absorbs the last loose UX/operational requirements and lets earlier phases ship without polish overhead. If feedback from earlier phases adds requirements, they land here.
+
+**Carryover from Phase 1 review/verification (must address):**
+
+| Source | ID | Item | File / location |
+|--------|-----|------|-----------------|
+| 01-REVIEW.md | ME-01 | `create_initial_admin` multi-commit atomicity gap — wrap user+team creation in single transaction like `delete_user` fix (HI-03) | `backend/app/setup/service.py` |
+| 01-REVIEW.md | ME-02 | In-memory rate limiter has multi-worker blind spot — token bucket state isn't shared across uvicorn workers; switch to arq/Redis when wired in Phase 3 OR document that production must run single-worker uvicorn | `backend/app/security/rate_limit.py` |
+| 01-REVIEW.md | ME-03 | `install.sh` pipe-to-bash without integrity check — add SHA256 verification of the pulled `install.sh` from a published manifest before exec | `deploy/install.sh` |
+| 01-REVIEW.md | ME-04 | `requests.Timeout` not caught in PVE connector — currently bubbles as 500; map to 504 with helpful detail | `backend/app/clusters/connector.py` |
+| 01-REVIEW.md | ME-05 | PATCH endpoints cannot clear nullable fields — pydantic-treats-omitted-as-unset semantics need `Field(default=Unset)` pattern across user/team/cluster PATCHes | `backend/app/{users,teams,clusters}/schemas.py` |
+| 01-REVIEW.md | LO-01 | Timing leak on disabled-user login — disabled-user path skips Argon2id verify, leaks state via response-time delta | `backend/app/auth/service.py` |
+| 01-REVIEW.md | LO-02 | `bootstrap.sh` uses `apt-get -y --no-audit` — `--no-audit` is not a real apt flag; drop it | `deploy/lxc/bootstrap.sh` |
+| 01-REVIEW.md | LO-03 | Login route comment claims CSRF rotates on refresh but the cookie set in login should be explicit about that for future maintainers | `backend/app/auth/routes.py` |
+| 01-REVIEW.md | LO-04 | Dev-proxy in `hooks.server.ts` missing `duplex: 'half'` for streaming bodies — fine for JSON, fails for upload streams that Phase 3+ might add | `frontend/src/hooks.server.ts` |
+| 01-REVIEW.md | IN-01 | PAT audit gap: when user is disabled, existing PATs still resolve until next call — write audit log entry on first rejection | `backend/app/pats/service.py` |
+| 01-REVIEW.md | IN-02 | `_internal=True` flag on `create_team` is a fragile boundary — refactor to two distinct functions (`create_team_for_admin_bootstrap` vs public `create_team`) | `backend/app/teams/service.py` |
+| 01-REVIEW.md | IN-03 | PATCH cluster mismatch: changing `token_user` alone but not `token_secret` is allowed; tighten schema validation | `backend/app/clusters/schemas.py` |
+| Backlog 999.1 | — | `ssh-rsa` keys rejected by validator despite Plan 01-05 declaring support — investigate `cryptography` SHA-1 hardening / options-prefix / line-endings | `backend/app/ssh_keys/service.py` |
+| Phase-1 deploy gaps | — | Document `PROXMOX_GUI_COOKIE_SECURE=false` is **dev-only** in deploy/README; ensure production .env template has `=true` AND emit a startup warning if `COOKIE_SECURE=false` AND not `localhost` | `deploy/README.md` + `backend/app/config.py` |
+| Phase-1 verification | — | TLS fingerprint pinning (was explicitly deferred from Phase 1) — implement cluster-side fingerprint validation as alternative to `verify_ssl=False` for self-signed PVE | `backend/app/clusters/connector.py` |
+| Phase-1 verification | — | CSP header (explicitly deferred from Phase 1) — add Caddy CSP directives compatible with SvelteKit + shadcn | `deploy/caddy/Caddyfile.template` |
+| Phase-1 verification | — | Periodic cluster health probe (CLUST-06 wired but not scheduled) — arq job that probes each cluster on a configurable interval and updates `clusters.status` | `backend/app/clusters/probe.py` (new) |
+
+**Notes**: This phase is intentionally small under coarse granularity — it absorbs the last loose UX/operational requirements and lets earlier phases ship without polish overhead. If feedback from earlier phases adds requirements, they land here. Phase 1 carryover above must be triaged at discuss-phase-5 — items may be (a) implemented inline, (b) split into a dedicated 5.X plan, or (c) explicitly accepted-as-debt with rationale.
 
 ## Progress
 
