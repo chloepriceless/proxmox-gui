@@ -102,9 +102,9 @@ Requirements for initial release. Each maps to roadmap phases via the Traceabili
 
 ### REST API
 
-- [ ] **API-01**: REST API exposes every UI capability (UI consumes the same API — no UI-only backdoors)
+- [x] **API-01**: REST API exposes every UI capability (UI consumes the same API — no UI-only backdoors)
 - [ ] **API-02**: API auth via per-user Personal Access Tokens
-- [ ] **API-03**: OpenAPI spec auto-generated from code and served at a documented path
+- [x] **API-03**: OpenAPI spec auto-generated from code and served at a documented path
 - [ ] **API-04**: Mutating endpoints return `202 Accepted` with a job ID; clients poll job status
 - [ ] **API-05**: API enforces the same quotas and tenancy as the UI
 
@@ -245,9 +245,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CON-01 | Phase 4 | Pending |
 | CON-02 | Phase 4 | Pending |
 | CON-03 | Phase 4 | Pending |
-| API-01 | Phase 1 | Pending |
+| API-01 | Phase 1 | Complete (01-01) |
 | API-02 | Phase 1 | Pending |
-| API-03 | Phase 1 | Pending |
+| API-03 | Phase 1 | Complete (01-01) |
 | API-04 | Phase 3 | Pending |
 | API-05 | Phase 2 | Pending |
 | AUDIT-01 | Phase 2 | Pending |

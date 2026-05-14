@@ -30,7 +30,7 @@ Users can self-provision and manage VMs/LXCs on Proxmox through a polished, opin
   4. An admin can register one or more Proxmox clusters (standalone or clustered, PVE 8.x) with URL + per-cluster API token; tokens are stored encrypted; cluster-context appears in every resource URL.
   5. The REST API exposes every shipped capability with auto-generated OpenAPI 3.1 served at a documented path, with Personal Access Token auth working alongside session cookies; the SvelteKit UI consumes the same API.
 **Plans**: 10 plans
-- [ ] 01-01-backend-scaffold-PLAN.md — FastAPI app factory, core primitives (cipher/JWT/passwords/CSRF/db), pyproject, tests
+- [x] 01-01-backend-scaffold-PLAN.md — FastAPI app factory, core primitives (cipher/JWT/passwords/CSRF/db), pyproject, tests *(completed 2026-05-14, 25 files, 33 tests green; SUMMARY: .planning/phases/01-foundation/01-01-backend-scaffold-SUMMARY.md)*
 - [ ] 01-02-db-schema-PLAN.md — SQLAlchemy 2.0 ORM models for 11 tables + Alembic 0001_initial + schema invariants
 - [ ] 01-03-frontend-scaffold-PLAN.md — SvelteKit 2 + Svelte 5 + Tailwind v4 + shadcn-svelte init + app shell skeleton + theme store
 - [ ] 01-04-deployment-skeleton-PLAN.md — install.sh + bootstrap.sh + systemd units + Caddyfile + key generators (master.key 0400)

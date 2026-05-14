@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: completed
-last_updated: "2026-05-14T02:54:17.739Z"
+status: executing
+last_updated: "2026-05-14T03:25:00Z"
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 10
-  completed_plans: 0
-  percent: 0
+  completed_plans: 1
+  percent: 10
 ---
 
 # STATE: Proxmox Self-Service GUI
@@ -22,15 +22,18 @@ progress:
 
 **Core value:** Users can self-provision and manage VMs/LXCs on Proxmox through a polished, opinionated UI — without ever needing to open the Proxmox web interface.
 
-**Current focus:** Roadmap defined; ready to plan Phase 1 (Foundation).
+**Current focus:** Phase 01 — Foundation
 
 ## Current Position
 
+Phase: 01 (Foundation) — EXECUTING
+Current Plan: 2 of 10 (01-02 db-schema is next)
+
 - **Milestone:** v1
-- **Phase:** Not started (next: Phase 1 — Foundation)
-- **Plan:** None
-- **Status:** Roadmap complete, awaiting `/gsd-plan-phase 1`
-- **Progress:** `[░░░░░░░░░░] 0/5 phases`
+- **Phase:** 01 — Foundation (executing)
+- **Plan:** 01-01 backend-scaffold ✅ complete
+- **Status:** Executing Phase 01
+- **Progress:** `[█░░░░░░░░░] 1/10 plans, 0/5 phases`
 
 ## Phases at a Glance
 
@@ -47,9 +50,15 @@ progress:
 ## Performance Metrics
 
 - **Phases complete:** 0/5
-- **Plans complete:** 0/?
-- **Requirements shipped:** 0/89
+- **Plans complete:** 1/10
+- **Requirements shipped:** 2/89 (API-01, API-03 via Plan 01-01)
 - **Out-of-scope items deferred:** see REQUIREMENTS.md v2 section
+
+### Plan Metrics
+
+| Phase | Plan | Duration | Tasks | Files | Tests   |
+|-------|------|----------|-------|-------|---------|
+| 01    | 01   | ~25 min  | 2     | 25    | 33 pass |
 
 ## Accumulated Context
 
@@ -66,6 +75,10 @@ progress:
 | Tech stack: Python 3.12 + FastAPI + SvelteKit + SQLite (WAL) + arq | Single mature Proxmox client (proxmoxer); single-LXC fit | research/STACK.md |
 | Per-cluster API token (not user-ticket forwarding) | Tokens are stateless, no 2h expiry, no CSRF dance | research/PITFALLS.md (Pitfall 9) |
 | Cluster ID in URL path (`/clusters/{id}/...`) from day one | Cannot retrofit; prevents ambient-context bugs | research/ARCHITECTURE.md |
+| Plan 01 owns app/main.py + app/core/*; Plan 02 owns app/models/__init__.py | Ownership split keeps the foundation isolated from concrete model imports | Plan 01-01 |
+| Settings.__repr__ redacts jwt_secret/pat_pepper as defense-in-depth | T-01-01-07 mitigation beyond the docstring prohibition; attribute stays plain str so jwt.encode/sha256 contracts hold | Plan 01-01 SUMMARY |
+| run_migrations tolerates missing alembic.ini until Plan 02 lands the migrations directory | Lets Plan 01 ship the lifespan call without coupling to Plan 02's timing | Plan 01-01 SUMMARY |
+| EncryptedSecret reads its cipher via module-level install_cipher / _get_cipher singleton | SQLAlchemy TypeDecorator runs outside FastAPI request context — request.app.state is unreachable | Plan 01-01 (RESEARCH §Pattern 3) |
 
 ### Open Questions (resolve before/during named phase)
 
@@ -77,7 +90,9 @@ progress:
 
 ### Todos
 
-- [ ] Plan Phase 1 via `/gsd-plan-phase 1`
+- [x] Plan Phase 1 via `/gsd-plan-phase 1`
+- [x] Execute Plan 01-01 backend-scaffold
+- [ ] Execute Plan 01-02 db-schema (next — adds app/models/__init__.py + alembic + initial migration)
 - [ ] Schedule SDN/noVNC/community-scripts spikes in Phase 4 planning
 
 ### Blockers
@@ -86,15 +101,20 @@ None.
 
 ## Session Continuity
 
-**To resume:** Run `/gsd-plan-phase 1` to begin planning Phase 1 (Foundation).
+**To resume:** Run `/gsd-execute-phase 1` to continue with Plan 01-02 (db-schema).
 
 **Next milestone:** First end-to-end "click → running VM/LXC" lands at the end of Phase 4.
 
 **Recently completed:**
 
+- 2026-05-14 — Plan 01-01 backend-scaffold (FastAPI app factory + 7 core primitives, 33 tests green)
 - 2026-05-14 — Project research (STACK.md, ARCHITECTURE.md, PITFALLS.md, SUMMARY.md)
 - 2026-05-14 — Requirements definition (89 v1 requirements across 13 categories)
 - 2026-05-14 — Roadmap (5-phase structure, 100% coverage)
+
+**Last session:** 2026-05-14T03:25:00Z
+**Stopped at:** Completed Plan 01-01; ready for Plan 01-02
+**Resume file:** `.planning/phases/01-foundation/01-02-db-schema-PLAN.md`
 
 ---
 *State managed by GSD; do not edit phase counts manually — use `/gsd-transition` and `/gsd-progress`.*
