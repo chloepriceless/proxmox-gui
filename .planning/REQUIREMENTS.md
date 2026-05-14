@@ -120,11 +120,16 @@ Requirements for initial release. Each maps to roadmap phases via the Traceabili
 
 ### Audit Log
 
-- [ ] **AUDIT-01**: Every API mutation writes an audit entry (timestamp, actor, action, target, result, source IP)
-- [ ] **AUDIT-02**: Config changes record a before/after diff in the audit log
-- [ ] **AUDIT-03**: Admin can view the full audit log with date-range and filter controls
-- [ ] **AUDIT-04**: User can view their own audit entries
-- [ ] **AUDIT-05**: Audit log supports CSV export
+- [x] **AUDIT-01
+**: Every API mutation writes an audit entry (timestamp, actor, action, target, result, source IP)
+- [x] **AUDIT-02
+**: Config changes record a before/after diff in the audit log
+- [x] **AUDIT-03
+**: Admin can view the full audit log with date-range and filter controls
+- [x] **AUDIT-04
+**: User can view their own audit entries
+- [x] **AUDIT-05
+**: Audit log supports CSV export
 - [ ] **AUDIT-06**: Audit log has retention/rotation policy (configurable, default 1 year)
 
 ### UI/UX Baseline

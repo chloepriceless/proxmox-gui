@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_plan: 1
+current_plan: 2
 status: executing
-stopped_at: Completed Phase 02 Plan 02-01-connector-extension
-last_updated: "2026-05-14T16:38:13.019Z"
+stopped_at: Completed Phase 02 Plan 02-02-audit-schema-writer
+last_updated: "2026-05-14T16:53:27Z"
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 17
-  completed_plans: 11
-  percent: 65
+  completed_plans: 13
+  percent: 76
 ---
 
 # STATE: Proxmox Self-Service GUI
@@ -29,8 +29,8 @@ progress:
 ## Current Position
 
 Phase: 02 (multi-cluster-inventory-quotas-audit) — EXECUTING
-Plan: 1 of 7
-Current Plan: 1
+Plan: 2 of 7
+Current Plan: 2
 
 - **Milestone:** v1
 - **Phase:** 01 — Foundation (executing)
@@ -78,7 +78,8 @@ Current Plan: 1
 | 01    | 07   | ~11 min  | 2     | 13    | 166 pass |
 | 01    | 08   | ~14 min  | 2     | 27    | 26 pass  |
 | 01    | 09   | ~10 min  | 2     | 11    | 26 pass  |
-| Phase 02 P02-01-connector-extension | ~9 min | 2 tasks | 10 files |
+| 02    | 01   | ~9 min   | 2     | 10    | 221 pass |
+| 02    | 02   | ~90 min  | 2     | 16    | 221 pass |
 
 ## Accumulated Context
 
@@ -149,6 +150,10 @@ Current Plan: 1
 | Re-fetch list after every destructive PAT/SSH-key mutate (revoke, delete) before clearing the dialog | Backend is the source of truth for status badges (T-01-09-04); never derive `revoked` purely from client-side timestamps | Plan 01-09 SUMMARY |
 | PasswordChange 403 (current password incorrect) maps to inline error on the current_password field, not the summary alert | UI-SPEC §Form Patterns: offending field gets the inline error; user keeps typed new password and retypes only the current one | Plan 01-09 SUMMARY |
 | Domain-named modules `api/ssh-keys.ts` + `api/tokens.ts` ship as thin re-exports of `api.me.{...}` | Plan 04 (Phase 4 SSH-key VM wiring) and any future code-gen step can import from a domain-named module without touching the canonical `me.ts` surface | Plan 01-09 SUMMARY |
+| audit_write FLUSHES not COMMITS: the writer never calls db.commit(); caller owns the transaction and MUST commit before raising HTTPException so the audit row survives the rollback | get_db rolls back on exception — commit-before-raise is the only safe pattern; matches Plan 01-05's service-layer commit-before-raise decision | Plan 02-02 SUMMARY |
+| Composite partial UNIQUE indices replace flat UniqueConstraints on quotas.team_id / quotas.user_id | Enables per-cluster quota rows (one quota per team+cluster pair); SQLite batch_alter_table drops old named constraints and creates new index | Plan 02-02 SUMMARY |
+| Static code inspection for FLUSH-not-COMMIT test: inspect.getsource(audit_write) asserts 'await db.commit()' absent | SQLite in-memory DB shares state across aiosqlite sessions making transaction isolation untestable; static analysis is the only reliable gate | Plan 02-02 SUMMARY |
+| PersonalAccessToken exposes lookup_prefix (not prefix_preview) for PAT actor attribution in audit reader | Confirmed field name from Phase 1 PAT model; reader LEFT JOINs PAT table on actor_pat_id and surfaces as actor_pat_prefix in AuditEntry | Plan 02-02 SUMMARY |
 
 ### Open Questions (resolve before/during named phase)
 
@@ -180,12 +185,14 @@ None.
 
 ## Session Continuity
 
-**To resume:** Run `/gsd-execute-phase 1` to continue with Plan 01-10 (frontend-admin).
+**To resume:** Run `/gsd-execute-phase 2` to continue with Plan 02-03 (inventory-backend).
 
 **Next milestone:** First end-to-end "click → running VM/LXC" lands at the end of Phase 4.
 
 **Recently completed:**
 
+- 2026-05-14 — Plan 02-02 audit-schema-writer (Alembic 0003_phase2 migration with per-cluster quota columns and composite partial UNIQUE indices; full audit subsystem: audit_write FLUSH-not-COMMIT writer, RBAC reader list_audit/count_export, streaming CSV exporter with UTF-8 BOM and OWASP CSV-injection mitigation, GET /api/v1/audit + GET /api/v1/audit/export.csv with 409 hard-limit guard, csv_safe.escape_cell, extract_source_ip X-Forwarded-For trust; 4 TDD commits; 221 tests passing; AUDIT-01..05 marked complete)
+- 2026-05-14 — Plan 02-01 connector-extension
 - 2026-05-14 — Plan 01-09 frontend-account (account self-service surface: /profile change-password + appearance theme picker; /profile/ssh-keys list/add/delete with ConfirmByNameDialog; /profile/tokens list/create/revoke with SecretRevealDialog show-once + active/revoked/expired status badges; api.me extended additively with changePassword + listSshKeys + addSshKey + deleteSshKey + listTokens + mintToken + revokeToken; AppShell mounts sonner Toaster; per-page +page.server.ts defence-in-depth auth gates + SSR pre-fetch; $derived(localOverride ?? data.list) pattern for SSR-seeded mutable lists; 26 tests still passing; AUTH-03, AUTH-04, AUTH-05, API-02 marked complete; zero UI-SPEC deviations)
 - 2026-05-14 — Plan 01-08 frontend-auth-shell (login UI + 4-step first-run setup wizard + 4 shared form components — ConfirmByNameDialog + SecretRevealDialog + PasswordInput + FormSummaryAlert; real auth probe in +layout.server.ts replacing the Plan 03 stub via /api/v1/setup/status + /api/v1/me; typed api client with optional SSR fetch injection; open-redirect guard on ?next= post-login; wizard auto-login between step 2 and step 3; 26 tests passing across 4 suites; AUTH-01, AUTH-02 + UI-01, UI-02 + DEPLOY-05 frontend-completed)
 - 2026-05-14 — Plan 01-07 users-admin-setup (first-run wizard backend GET /setup/status + POST /setup/admin per CONTEXT D-18 lenient first-run; admin user CRUD on /api/v1/users with auto-personal-team D-05; self-guard preventing admin lockout T-01-07-03/04/05; team_ids REPLACE semantics on PATCH preserving personal-team membership; synchronous session revocation on disable via revoke_user_sessions hook AUTH-07 / T-01-07-06; admin password reset that revokes all sessions; end-to-end test verifying disabled user's refresh cookie AND PAT both return 401; 34 new tests; total 166 passing; ruff clean; OpenAPI 25 paths; AUTH-07, AUTH-08, DEPLOY-05 marked complete)
