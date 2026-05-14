@@ -190,6 +190,81 @@ def test_revision_file_exists_with_correct_ids() -> None:
     assert "ix_pats_lookup_prefix" in content
 
 
+def test_0003_phase2_round_trip(fresh_db: str) -> None:
+    """0001 → 0002 → 0003 upgrade then 0003 downgrade restores Phase-1+2 schema.
+
+    Verifies:
+    - After upgrade head: quotas table has a cluster_id column (PRAGMA table_info)
+    - After upgrade head: uq_quotas_team_cluster index exists
+    - After upgrade head: ix_audit_action_time index exists
+    - After downgrade -1 (reverts 0003): cluster_id column gone from quotas
+    - After downgrade -1: uq_quotas_team_cluster index gone
+    - After downgrade -1: uq_quotas_team_id single-column unique restored
+    """
+    cfg = _make_config(fresh_db)
+
+    # --- Upgrade to head (0001 → 0002 → 0003) ---
+    command.upgrade(cfg, "head")
+
+    engine = sa.create_engine(fresh_db)
+    insp = sa.inspect(engine)
+
+    # quotas.cluster_id column exists
+    col_names = [c["name"] for c in insp.get_columns("quotas")]
+    assert "cluster_id" in col_names, f"cluster_id missing from quotas; got {col_names}"
+
+    # uq_quotas_team_cluster composite unique index exists
+    quota_idx_names = {idx["name"] for idx in insp.get_indexes("quotas")}
+    assert "uq_quotas_team_cluster" in quota_idx_names, (
+        f"uq_quotas_team_cluster missing; got {quota_idx_names}"
+    )
+
+    # ix_audit_action_time filter index exists
+    audit_idx_names = {idx["name"] for idx in insp.get_indexes("audit_log")}
+    assert "ix_audit_action_time" in audit_idx_names, (
+        f"ix_audit_action_time missing; got {audit_idx_names}"
+    )
+
+    # ix_audit_cluster_time filter index exists
+    assert "ix_audit_cluster_time" in audit_idx_names, (
+        f"ix_audit_cluster_time missing; got {audit_idx_names}"
+    )
+
+    engine.dispose()
+
+    # --- Downgrade by 1 (reverts 0003 back to 0002) ---
+    command.downgrade(cfg, "-1")
+
+    engine2 = sa.create_engine(fresh_db)
+    insp2 = sa.inspect(engine2)
+
+    # cluster_id column gone
+    col_names2 = [c["name"] for c in insp2.get_columns("quotas")]
+    assert "cluster_id" not in col_names2, (
+        f"cluster_id should be gone after downgrade; still in {col_names2}"
+    )
+
+    # uq_quotas_team_cluster index gone
+    quota_idx_names2 = {idx["name"] for idx in insp2.get_indexes("quotas")}
+    assert "uq_quotas_team_cluster" not in quota_idx_names2, (
+        f"uq_quotas_team_cluster should be gone; still in {quota_idx_names2}"
+    )
+
+    # Phase-1 single-column unique constraint on team_id restored
+    # SQLite may store it as uq_quotas_team_id or as _unnamed_ constraint.
+    # We verify team_id still has a unique constraint.
+    team_id_unique = any(
+        idx.get("unique") and idx.get("column_names") == ["team_id"]
+        for idx in insp2.get_indexes("quotas")
+    )
+    assert team_id_unique, (
+        f"Phase-1 team_id UNIQUE not restored after downgrade; "
+        f"indexes: {list(insp2.get_indexes('quotas'))}"
+    )
+
+    engine2.dispose()
+
+
 # Tidy: make sure no leftover tmp DBs survive (CI cleanliness).
 def teardown_module(_module) -> None:  # noqa: PT004
     for f in BACKEND_DIR.glob("tmp_test_migrate.db*"):
