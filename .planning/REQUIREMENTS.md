@@ -36,9 +36,12 @@ Requirements for initial release. Each maps to roadmap phases via the Traceabili
 ### Multi-Cluster Management
 
 - [x] **CLUST-01**: Admin can register multiple Proxmox clusters (URL + API token per cluster)
-- [ ] **CLUST-02**: User can switch the active cluster context from a header dropdown
-- [ ] **CLUST-03**: Per-cluster reachability indicator visible at all times
-- [ ] **CLUST-04**: When a cluster is unreachable, app degrades to read-only with a clear banner — no hard-fail
+- [x] **CLUST-02
+**: User can switch the active cluster context from a header dropdown
+- [x] **CLUST-03
+**: Per-cluster reachability indicator visible at all times
+- [x] **CLUST-04
+**: When a cluster is unreachable, app degrades to read-only with a clear banner — no hard-fail
 - [x] **CLUST-05**: Cluster context is part of every resource URL (e.g., `/clusters/{id}/vms/{vmid}`)
 - [x] **CLUST-06**: Works against single-node and clustered Proxmox installations
 
