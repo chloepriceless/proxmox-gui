@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from sqlalchemy.ext.asyncio import async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.clusters.connector import PVEConnector
 from app.models import Cluster
@@ -39,7 +39,8 @@ class PVEConnectorRegistry:
             but we keep the cipher reference so Phase 2's tenant-scoped
             registry variant has a stable injection point.
         session_factory: ``async_sessionmaker`` used to load Cluster rows
-            on demand. The factory's lifetime must outlive the registry.
+            on demand when no caller-supplied session is available. The
+            factory's lifetime must outlive the registry.
     """
 
     def __init__(
@@ -51,8 +52,23 @@ class PVEConnectorRegistry:
         self._session_factory = session_factory
         self._connectors: dict[int, PVEConnector] = {}
 
-    async def get(self, cluster_id: int) -> PVEConnector:
+    async def get(
+        self,
+        cluster_id: int,
+        *,
+        db: AsyncSession | None = None,
+    ) -> PVEConnector:
         """Return the cached connector, building one on first access.
+
+        Args:
+            cluster_id: The cluster row id.
+            db: Optional caller-supplied session. When passed, the registry
+                loads the Cluster row through it instead of opening its own
+                session — important for ``bootstrap_tenant_on_clusters`` where
+                the outer transaction has flushed (but not committed) rows
+                that a separate connection couldn't see (in-memory SQLite +
+                connection-isolation, but also production semantics for any
+                read-your-writes pattern).
 
         Raises:
             LookupError: cluster row not found in DB.
@@ -60,22 +76,25 @@ class PVEConnectorRegistry:
         if cluster_id in self._connectors:
             return self._connectors[cluster_id]
 
-        async with self._session_factory() as session:
-            row = await session.get(Cluster, cluster_id)
-            if row is None:
-                raise LookupError(f"cluster {cluster_id} not found")
-            # EncryptedSecret transparently decrypted ``api_token_secret``
-            # when the row was loaded. We pass the plaintext to the connector.
-            connector = PVEConnector(
-                host=row.host,
-                port=row.port,
-                token_user=row.token_user,
-                token_name=row.token_name,
-                token_value=row.api_token_secret,
-                verify_ssl=row.verify_ssl,
-                tls_fingerprint=row.tls_fingerprint,
-            )
+        if db is not None:
+            row = await db.get(Cluster, cluster_id)
+        else:
+            async with self._session_factory() as session:
+                row = await session.get(Cluster, cluster_id)
+        if row is None:
+            raise LookupError(f"cluster {cluster_id} not found")
 
+        # EncryptedSecret transparently decrypted ``api_token_secret``
+        # when the row was loaded. We pass the plaintext to the connector.
+        connector = PVEConnector(
+            host=row.host,
+            port=row.port,
+            token_user=row.token_user,
+            token_name=row.token_name,
+            token_value=row.api_token_secret,
+            verify_ssl=row.verify_ssl,
+            tls_fingerprint=row.tls_fingerprint,
+        )
         self._connectors[cluster_id] = connector
         return connector
 

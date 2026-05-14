@@ -35,6 +35,7 @@ from app.config import settings
 from app.core.cipher import SecretCipher
 from app.core.db import engine, run_migrations
 from app.models._types_init import install_cipher
+from app.teams.bootstrap import BootstrapFailed
 
 
 @asynccontextmanager
@@ -116,6 +117,20 @@ def create_app() -> FastAPI:
             content={"detail": "Proxmox returned an unexpected error."},
         )
 
+    @app.exception_handler(BootstrapFailed)
+    async def _bootstrap_failed_handler(
+        _: Request, exc: BootstrapFailed,
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={
+                "detail": (
+                    f"Tenant bootstrap failed on cluster "
+                    f"{exc.cluster_name!r}: {exc.original}"
+                ),
+            },
+        )
+
     # Plan 01-05: auth + me + ssh-keys + tokens routers. Imports kept local to
     # the factory so test runs that don't need them aren't import-cycle penalised.
     from app.auth.routes import router as auth_router
@@ -123,6 +138,7 @@ def create_app() -> FastAPI:
     from app.me.routes import router as me_router
     from app.pats.routes import router as pats_router
     from app.ssh_keys.routes import router as ssh_keys_router
+    from app.teams.routes import router as teams_router
 
     app.include_router(auth_router, prefix="/api/v1/auth", tags=["auth"])
     app.include_router(me_router, prefix="/api/v1/me", tags=["me"])
@@ -133,6 +149,10 @@ def create_app() -> FastAPI:
     # Plan 06: cluster admin routes.
     app.include_router(
         clusters_router, prefix="/api/v1/clusters", tags=["clusters"]
+    )
+    # Plan 06: team admin routes.
+    app.include_router(
+        teams_router, prefix="/api/v1/teams", tags=["teams"]
     )
 
     return app

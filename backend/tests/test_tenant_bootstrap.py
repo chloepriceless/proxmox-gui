@@ -26,7 +26,6 @@ from tests.fixtures.pve_responses import (
     pve_api_error,
 )
 
-
 # ----------------------------------------------------------------------------
 # Helpers
 # ----------------------------------------------------------------------------
@@ -143,7 +142,7 @@ async def test_bootstrap_makes_5_calls_per_cluster_on_success(session_factory):
     from app.clusters.registry import PVEConnectorRegistry
     from app.teams.service import create_team
 
-    rows = await _insert_clusters(session_factory, ["host-a", "host-b"])
+    await _insert_clusters(session_factory, ["host-a", "host-b"])
     # team.id won't be 1 in tests where prior fixtures inserted teams; but
     # each test is in-memory + autouse-cipher-installed, so this is the
     # first team row.

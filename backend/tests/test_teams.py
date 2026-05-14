@@ -18,14 +18,11 @@ Covers the team CRUD admin surface (Plan 06 Task 2):
 
 from __future__ import annotations
 
-from unittest.mock import patch
-
 import pytest
 from sqlalchemy import func, select
 
 from app.models import Team, TeamClusterToken, TeamMembership
 from tests.factories import login_as, make_user
-from tests.fixtures.pve_responses import FakeProxmox
 
 
 async def _login_admin(client, session_factory, username="admin"):
