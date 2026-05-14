@@ -223,18 +223,24 @@ echo "    using: /usr/local/bin/pnpm -> ${PNPM_HOME}/pnpm ($(/usr/local/bin/pnpm
 # NODE_OPTIONS=--dns-result-order=ipv4first prevents IPv6 ETIMEDOUTs against
 # registry.npmjs.org (same class as the npm install -g failure above).
 #
-# Why NOT --frozen-lockfile here:
-#   @tailwindcss/oxide (Tailwind v4 Rust backend) uses optionalDependencies
-#   for per-platform native bindings (@tailwindcss/oxide-linux-x64-gnu, ...).
-#   With --frozen-lockfile, pnpm 11.1.1 sometimes fails to install the
-#   platform-matching native binding even though it's in the lockfile —
-#   "Cannot find native binding" at build time.
-#   --prefer-frozen-lockfile: use the lockfile if it matches the manifest,
-#   re-resolve otherwise. Safe because we own the lockfile + manifest.
+# Why node-linker=hoisted:
+#   @tailwindcss/oxide (Tailwind v4 Rust backend) needs a sibling import
+#   of @tailwindcss/oxide-linux-x64-gnu at runtime. With pnpm's default
+#   "isolated" linker, this only works when pnpm creates a specific
+#   nested symlink — which v11.1.1 sometimes skips, producing
+#   "Cannot find native binding" at build time
+#   (https://github.com/tailwindlabs/tailwindcss/issues/14774).
+#   "hoisted" uses npm-style flat node_modules, so native-binding
+#   resolution behaves like every other npm tool.
 #
-# We also drop --reporter=silent so any install warnings (especially around
-# optional deps and platform-skip) surface in the bootstrap output.
-echo "==> Running pnpm install (verbose, --prefer-frozen-lockfile)..."
+# Why NOT --frozen-lockfile: changing the linker means pnpm has to
+# re-materialise the tree; we use --prefer-frozen-lockfile so versions
+# stay pinned to the lockfile.
+echo "==> Switching pnpm to hoisted node-linker (Tailwind v4 native binding fix)..."
+echo "node-linker=hoisted" > "${APP_HOME}/frontend/.npmrc"
+chown "$APP_USER:$APP_GROUP" "${APP_HOME}/frontend/.npmrc"
+
+echo "==> Running pnpm install (verbose, hoisted layout)..."
 "${RUNAS[@]}" bash -c "
     set -e
     export NODE_OPTIONS='--dns-result-order=ipv4first'
