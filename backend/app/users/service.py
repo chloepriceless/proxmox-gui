@@ -8,7 +8,10 @@ Owns the AUTH-07 + AUTH-08 contract:
 - :func:`update_user` — field-by-field; on ``is_active`` True→False
   transition calls :func:`app.auth.service.revoke_user_sessions` (T-01-07-06).
   On ``team_ids`` payload, REPLACES non-personal memberships.
-- :func:`delete_user` — revoke sessions first; cascades clean up.
+- :func:`delete_user` — single-transaction atomic delete (HI-03):
+  inline-revokes refresh tokens + PATs, deletes the personal team, then
+  the user, all in one ``await db.commit()``. A mid-flow exception leaves
+  the entire operation rolled back; no half-deleted ghost accounts.
 - :func:`set_user_password` — admin password reset; revokes sessions.
 - :func:`add_user_to_team` / :func:`remove_user_from_team` — membership
   CRUD (rejects personal teams — D-05).
@@ -25,17 +28,18 @@ returning, mirroring the pattern Plan 05 established (see
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import HTTPException, status
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.auth.service import revoke_user_sessions
 from app.core.passwords import hash_password
-from app.models import Team, TeamMembership, User
+from app.models import PersonalAccessToken, RefreshToken, Team, TeamMembership, User
 from app.teams import service as teams_service
 
 # ---------------------------------------------------------------------------
@@ -327,14 +331,29 @@ async def delete_user(
 ) -> None:
     """Delete a user. Self-delete is blocked (T-01-07-05).
 
+    HI-03 fix: this used to call :func:`revoke_user_sessions` (which
+    commits its own transaction) BEFORE deleting the personal team and
+    the user (which then committed again). An exception between those
+    two commits left a "half-deleted ghost" — sessions revoked, user
+    row still present. We now perform everything in a single transaction
+    that commits exactly once at the end:
+
     Order of operations:
+
     1. Self-guard check.
-    2. Revoke sessions (defensive — refresh tokens cascade-delete via FK
-       too, but explicit revocation guarantees no in-flight reads succeed).
-    3. Delete the user's personal team (the cascade on team_memberships
+    2. Inline-revoke refresh tokens (bulk UPDATE).
+    3. Inline-revoke PATs (bulk UPDATE).
+    4. Delete the user's personal team (the cascade on team_memberships
        handles the membership row).
-    4. Delete the user — FK ON DELETE CASCADE handles refresh_tokens,
+    5. Delete the user — FK ON DELETE CASCADE handles refresh_tokens,
        PATs, ssh_keys, and remaining team_memberships.
+    6. ``await db.commit()`` — single barrier. If anything between (2)
+       and (5) raises, the session is rolled back and NO partial state
+       is persisted.
+
+    Audit-event semantics (revocations + delete) collapse into one
+    DB-visible state transition, which is the correct shape for the
+    Phase-2 audit log to record.
     """
     if user_id == current_admin_user_id:
         raise HTTPException(
@@ -348,9 +367,25 @@ async def delete_user(
             status_code=status.HTTP_404_NOT_FOUND, detail="User not found",
         )
 
-    # Defensive revocation. revoke_user_sessions commits its own tx —
-    # subsequent deletes operate on a fresh transaction implicitly.
-    await revoke_user_sessions(db, user_id=user_id)
+    now = datetime.now(UTC)
+
+    # Inline revocations — no intermediate commit (HI-03).
+    await db.execute(
+        update(RefreshToken)
+        .where(
+            RefreshToken.user_id == user_id,
+            RefreshToken.revoked_at.is_(None),
+        )
+        .values(revoked_at=now)
+    )
+    await db.execute(
+        update(PersonalAccessToken)
+        .where(
+            PersonalAccessToken.user_id == user_id,
+            PersonalAccessToken.revoked_at.is_(None),
+        )
+        .values(revoked_at=now)
+    )
 
     # Find and delete the user's personal team.
     personal_team = (
@@ -367,6 +402,7 @@ async def delete_user(
         await db.delete(personal_team)
 
     await db.delete(user)
+    # Single commit — the entire delete+revoke is atomic.
     await db.commit()
 
 

@@ -421,6 +421,116 @@ async def test_delete_user_cascades_personal_team(client, session_factory):
         assert team_gone is None
 
 
+@pytest.mark.asyncio
+async def test_delete_user_is_atomic_under_midflow_failure(
+    session_factory, monkeypatch,
+):
+    """HI-03: ``delete_user`` is a single transaction — a mid-flow failure
+    leaves the session ROLLED BACK; neither the session-revocation nor the
+    user-delete is persisted.
+
+    Previously the implementation called ``revoke_user_sessions`` (which
+    committed its own tx) and THEN deleted the user (committed separately).
+    If the second commit raised, the user was a "half-deleted ghost" with
+    sessions revoked but the row still present.
+
+    We exercise the new single-transaction guarantee by monkey-patching
+    ``db.delete`` to raise after the revocation UPDATEs have flushed, and
+    asserting that:
+
+    1. The function propagates the exception (no swallow).
+    2. After the failure, the user row still exists.
+    3. The refresh-token + PAT rows are NOT marked revoked (the rollback
+       reverted them).
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from app.models import PersonalAccessToken, RefreshToken, User
+    from app.users.service import delete_user
+
+    # Seed: an admin (current actor) + a target user with one active refresh
+    # token and one active PAT.
+    admin = await make_user(
+        session_factory, username="atomic_admin", password="adminpass12345",
+        is_admin=True,
+    )
+    target = await make_user(
+        session_factory, username="atomic_target", password="testpass12345",
+    )
+
+    async with session_factory() as s:
+        s.add(
+            RefreshToken(
+                user_id=target.id,
+                token_hash="a" * 64,
+                expires_at=datetime.now(UTC) + timedelta(days=7),
+            )
+        )
+        s.add(
+            PersonalAccessToken(
+                user_id=target.id,
+                name="atomic-pat",
+                lookup_prefix="atomicprefx0",
+                token_hash="b" * 64,
+            )
+        )
+        await s.commit()
+
+    # Patch AsyncSession.delete to raise the first time it's called inside
+    # delete_user (after the UPDATE statements have flushed). The single
+    # `await db.commit()` at the bottom of delete_user is never reached.
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    original_delete = AsyncSession.delete
+
+    async def exploding_delete(self, instance):
+        raise RuntimeError("simulated mid-flow failure")
+
+    monkeypatch.setattr(AsyncSession, "delete", exploding_delete)
+
+    async with session_factory() as s:
+        with pytest.raises(RuntimeError, match="simulated mid-flow failure"):
+            await delete_user(
+                s, user_id=target.id, current_admin_user_id=admin.id,
+            )
+
+    # Restore for the assertion-phase session.
+    monkeypatch.setattr(AsyncSession, "delete", original_delete)
+
+    # Assert: nothing was persisted. The user must still exist, AND the
+    # refresh-token + PAT rows must still be live (revoked_at is None).
+    async with session_factory() as s:
+        user_row = await s.get(User, target.id)
+        assert user_row is not None, (
+            "delete_user persisted the user delete despite failure — "
+            "the operation is NOT atomic"
+        )
+
+        refresh_rows = (
+            await s.execute(
+                select(RefreshToken).where(RefreshToken.user_id == target.id)
+            )
+        ).scalars().all()
+        assert len(refresh_rows) == 1
+        assert refresh_rows[0].revoked_at is None, (
+            "RefreshToken.revoked_at was persisted despite mid-flow "
+            "failure — revocation leaked through the rollback boundary"
+        )
+
+        pat_rows = (
+            await s.execute(
+                select(PersonalAccessToken).where(
+                    PersonalAccessToken.user_id == target.id
+                )
+            )
+        ).scalars().all()
+        assert len(pat_rows) == 1
+        assert pat_rows[0].revoked_at is None, (
+            "PAT.revoked_at was persisted despite mid-flow failure — "
+            "revocation leaked through the rollback boundary"
+        )
+
+
 # ----------------------------------------------------------------------------
 # Password reset
 # ----------------------------------------------------------------------------
