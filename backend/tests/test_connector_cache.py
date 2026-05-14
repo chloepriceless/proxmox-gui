@@ -16,7 +16,6 @@ from tests.fixtures.pve_responses import (
     CLUSTER_RESOURCES_LXC,
     CLUSTER_RESOURCES_VM,
     FakeProxmox,
-    VERSION_OK,
 )
 
 

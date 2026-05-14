@@ -66,11 +66,39 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         async_sessionmaker(engine, expire_on_commit=False),
     )
 
-    # 5. Serve.
+    # 5. Plan 02-01: spawn one background /version probe per registered cluster
+    #    so the UI's ClusterStatusPill reflects live reachability (CLUST-03).
+    #    Best-effort: a single bad cluster row must not block app startup.
+    try:
+        from sqlalchemy import select
+        from app.models import Cluster
+        async with async_sessionmaker(engine, expire_on_commit=False)() as session:
+            result = await session.execute(select(Cluster.id))
+            cluster_ids = [row[0] for row in result.all()]
+            for cid in cluster_ids:
+                try:
+                    await app.state.registry.start_probe(cid, db=session, interval=15.0)
+                except Exception as exc:  # noqa: BLE001
+                    warnings.warn(
+                        f"health probe failed to start for cluster {cid}: {exc}",
+                        stacklevel=2,
+                    )
+    except Exception as exc:  # noqa: BLE001
+        warnings.warn(
+            f"cluster probe bootstrap skipped: {exc}",
+            stacklevel=2,
+        )
+
+    # 6. Serve.
     try:
         yield
     finally:
-        # 6. Drain pool.
+        # 7. Stop all health probes before draining pool.
+        try:
+            await app.state.registry.stop_all_probes()
+        except Exception:  # noqa: BLE001
+            pass
+        # 8. Drain pool.
         await engine.dispose()
 
 
