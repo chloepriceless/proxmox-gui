@@ -55,8 +55,10 @@ Requirements for initial release. Each maps to roadmap phases via the Traceabili
 
 - [x] **INV-01
 **: User sees a list of all their VMs and LXCs with status indicators
-- [ ] **INV-02**: User can search/filter by name, tag, status, node
-- [ ] **INV-03**: User can sort the list by name, status, node, created date
+- [x] **INV-02
+**: User can search/filter by name, tag, status, node
+- [x] **INV-03
+**: User can sort the list by name, status, node, created date
 - [x] **INV-04
 **: User can view a detail page per VM/LXC (status, vCPU, RAM, disk, IPs, uptime, OS, node, cluster, tags)
 - [x] **INV-05
