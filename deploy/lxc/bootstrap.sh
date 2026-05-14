@@ -48,8 +48,9 @@ RUNAS=(runuser -u "$APP_USER" --)
 
 if [[ -f "$INSTALLED_MARKER" ]]; then
     echo "==> $INSTALLED_MARKER present — running alembic upgrade head and exiting."
-    "${RUNAS[@]}" "${APP_HOME}/.venv/bin/alembic" \
-        -c "${APP_HOME}/backend/alembic.ini" upgrade head
+    # cd into backend/: alembic 1.18+ probes cwd for pyproject.toml, and /root
+    # (default cwd for root) is mode 0700 → APP_USER cannot stat it → crash.
+    "${RUNAS[@]}" bash -c "cd '${APP_HOME}/backend' && exec '${APP_HOME}/.venv/bin/alembic' -c '${APP_HOME}/backend/alembic.ini' upgrade head"
     echo "==> Migrations applied. Bootstrap idempotent-exit OK."
     exit 0
 fi
@@ -174,8 +175,8 @@ echo "==> Creating Python venv and installing backend..."
     --quiet -e "${APP_HOME}/backend"
 
 echo "==> Running alembic upgrade head..."
-"${RUNAS[@]}" "${APP_HOME}/.venv/bin/alembic" \
-    -c "${APP_HOME}/backend/alembic.ini" upgrade head
+# Same cwd-readability requirement as the idempotent-exit branch above.
+"${RUNAS[@]}" bash -c "cd '${APP_HOME}/backend' && exec '${APP_HOME}/.venv/bin/alembic' -c '${APP_HOME}/backend/alembic.ini' upgrade head"
 
 # ----------------------------------------------------------------------------
 # Step 7: Frontend build (SvelteKit adapter-node -> frontend/build/)
