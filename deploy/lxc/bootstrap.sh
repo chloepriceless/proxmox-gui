@@ -183,24 +183,48 @@ echo "==> Running alembic upgrade head..."
 # The frontend uses pnpm (lockfile is pnpm-lock.yaml, no package-lock.json).
 # `package.json` declares packageManager: pnpm@11.1.1.
 #
-# We can't use corepack: Debian's nodejs package intentionally strips it
-# out (policy: package managers must not download other package managers
-# at runtime). Install pnpm directly via npm install -g instead.
+# Why we install pnpm as a standalone binary instead of via corepack or
+# npm install -g:
+#   - corepack: Debian's nodejs package strips it (policy decision).
+#   - npm install -g: registry.npmjs.org resolves to a Cloudflare IPv6
+#     address. Many LXCs have functional IPv4 but no IPv6 routing,
+#     leading to an ETIMEDOUT on every fresh install. Forcing Node to
+#     prefer IPv4 (NODE_OPTIONS=--dns-result-order=ipv4first) helps for
+#     the subsequent `pnpm install`, but the bootstrap problem remains.
+#   - Standalone pnpm binary: a single statically-linked file hosted on
+#     github.com (well-routed over IPv4), so no DNS surprises during
+#     bootstrap.
 # ----------------------------------------------------------------------------
-echo "==> Installing pnpm 11.1.1 globally via npm..."
-npm install -g pnpm@11.1.1
-if ! command -v pnpm >/dev/null 2>&1; then
-    echo "ERROR: npm install -g pnpm reported success but pnpm is not on PATH." >&2
-    echo "       npm root -g: $(npm root -g 2>/dev/null || echo n/a)" >&2
+PNPM_VERSION="11.1.1"
+PNPM_HOME="/opt/pnpm"
+echo "==> Downloading pnpm ${PNPM_VERSION} (~50 MB tarball from GitHub)..."
+# pnpm v11+ ships as a tarball (binary + dist/ side-car), not a single
+# self-contained file. We extract to /opt/pnpm and symlink the launcher
+# binary into /usr/local/bin/pnpm — the binary resolves dist/ relative
+# to its own resolved path, so the symlink works correctly.
+mkdir -p "$PNPM_HOME"
+TMP_TARBALL="$(mktemp -t pnpm.XXXXXX.tar.gz)"
+trap 'rm -f "$TMP_TARBALL"' EXIT
+curl -fsSL --retry 3 -o "$TMP_TARBALL" \
+    "https://github.com/pnpm/pnpm/releases/download/v${PNPM_VERSION}/pnpm-linux-x64.tar.gz"
+tar -xzf "$TMP_TARBALL" -C "$PNPM_HOME"
+chmod -R o+rX "$PNPM_HOME"
+ln -sf "${PNPM_HOME}/pnpm" /usr/local/bin/pnpm
+if ! /usr/local/bin/pnpm --version >/dev/null 2>&1; then
+    echo "ERROR: pnpm extracted but cannot execute (architecture mismatch?)." >&2
     exit 1
 fi
-echo "    using: $(command -v pnpm) ($(pnpm --version))"
+echo "    using: /usr/local/bin/pnpm -> ${PNPM_HOME}/pnpm ($(/usr/local/bin/pnpm --version))"
 
 # pnpm stores its content-addressable store under \$HOME/.local/share/pnpm/store
 # by default. APP_USER has \$APP_HOME as home (per useradd -d above) and owns
 # it, so the store + node_modules can be written there without issue.
+# NODE_OPTIONS=--dns-result-order=ipv4first prevents the same IPv6
+# ETIMEDOUT class of failures during `pnpm install` against npm registry.
 echo "==> Building frontend (pnpm install --frozen-lockfile && pnpm run build)..."
 "${RUNAS[@]}" bash -c "
+    export NODE_OPTIONS='--dns-result-order=ipv4first'
+    export PATH=/usr/local/bin:/usr/bin:/bin
     cd '${APP_HOME}/frontend' && \
     pnpm install --frozen-lockfile --reporter=silent && \
     pnpm run build
