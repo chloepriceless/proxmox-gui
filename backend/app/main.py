@@ -140,6 +140,7 @@ def create_app() -> FastAPI:
     from app.setup.routes import router as setup_router
     from app.ssh_keys.routes import router as ssh_keys_router
     from app.teams.routes import router as teams_router
+    from app.users.routes import router as users_router
 
     app.include_router(auth_router, prefix="/api/v1/auth", tags=["auth"])
     app.include_router(me_router, prefix="/api/v1/me", tags=["me"])
@@ -158,6 +159,10 @@ def create_app() -> FastAPI:
     # Plan 07: first-run setup wizard (open endpoints; no auth).
     app.include_router(
         setup_router, prefix="/api/v1/setup", tags=["setup"]
+    )
+    # Plan 07: admin user CRUD routes.
+    app.include_router(
+        users_router, prefix="/api/v1/users", tags=["users"]
     )
 
     return app

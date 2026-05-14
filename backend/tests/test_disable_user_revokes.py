@@ -33,7 +33,7 @@ async def test_disable_user_revokes_refresh_and_pat_end_to_end(
     client, session_factory,
 ):
     # 1. Bootstrap admin.
-    admin = await make_user(
+    await make_user(
         session_factory, username="adminZ", password="adminpass12345",
         is_admin=True,
     )
@@ -71,7 +71,7 @@ async def test_disable_user_revokes_refresh_and_pat_end_to_end(
         json={"name": "test-pat"},
     )
     assert pat_resp.status_code == 201, pat_resp.text
-    pat_plaintext = pat_resp.json()["token"]
+    pat_plaintext = pat_resp.json()["plaintext"]
     assert pat_plaintext.startswith("pat_")
 
     # Sanity: PAT works before disable.
@@ -113,7 +113,7 @@ async def test_re_enable_does_not_un_revoke_old_credentials(
     The user must log in again (new credentials). This guards against a
     'disable + re-enable' bypass of session revocation.
     """
-    admin = await make_user(
+    await make_user(
         session_factory, username="adminZZ", password="adminpass12345",
         is_admin=True,
     )
