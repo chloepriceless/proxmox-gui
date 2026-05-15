@@ -232,7 +232,12 @@ install -m 0644 "${APP_HOME}/deploy/caddy/Caddyfile.template" \
 systemctl daemon-reload
 systemctl enable --now proxmox-gui-api.service
 systemctl enable --now proxmox-gui-frontend.service
-systemctl enable --now caddy.service
+# Caddy was auto-started by apt with the Debian default Caddyfile (HTTP-only,
+# :80). `enable --now` would no-op because the unit is already active, leaving
+# Caddy on the stale config. Force-restart so our :443 + tls internal config
+# is the one actually loaded.
+systemctl enable caddy.service
+systemctl restart caddy.service
 # systemctl enable --now proxmox-gui-worker.service  # Phase 3 wires arq
 
 # ----------------------------------------------------------------------------
