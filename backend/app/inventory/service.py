@@ -59,10 +59,21 @@ async def list_inventory_for_cluster(
             snapshot, stale = await team_conn.list_resources()
             is_stale = is_stale or stale
             for it in snapshot:
-                if it.get("pool") != tok.poolid:
+                # PVE's /cluster/resources only fills the `pool` field for
+                # principals with Pool.Audit globally; a privsep token whose
+                # ACL is scoped to /pool/<id> sees `pool: null` even for VMs
+                # it CAN see — which by construction are members of its own
+                # pool, since the ACL is the only way the token reaches them.
+                # Trust the structural guarantee and tag accordingly.
+                item_pool = it.get("pool") or tok.poolid
+                if item_pool != tok.poolid:
                     continue
+                # Re-inject pool so downstream consumers (and the schema) see
+                # the team's pool consistently.
+                tagged = dict(it)
+                tagged["pool"] = tok.poolid
                 items.append(
-                    VMInventoryItem.from_pve(it, cluster_id=cluster_id, is_stale=stale)
+                    VMInventoryItem.from_pve(tagged, cluster_id=cluster_id, is_stale=stale)
                 )
         except Exception as exc:  # noqa: BLE001
             last_error = str(exc)
