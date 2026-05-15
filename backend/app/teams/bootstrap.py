@@ -159,7 +159,10 @@ async def bootstrap_tenant_on_clusters(
             state["token"] = token_payload
             token_value = token_payload.get("value", "")
 
-            await conn.set_pool_acl(poolid, userid=userid, role="PVEVMUser")
+            # privsep token → grant role to the TOKEN, not the user (D-01).
+            await conn.set_pool_acl(
+                poolid, userid=userid, tokenid=tokenid, role="PVEVMUser",
+            )
 
             # Add row to the outer transaction (NOT committed here).
             db.add(TeamClusterToken(
@@ -332,7 +335,10 @@ async def bootstrap_all_teams_on_cluster(
             state["token"] = token_payload
             token_value = token_payload.get("value", "")
 
-            await conn.set_pool_acl(poolid, userid=userid, role="PVEVMUser")
+            # privsep token → grant role to the TOKEN, not the user (D-01).
+            await conn.set_pool_acl(
+                poolid, userid=userid, tokenid=tokenid, role="PVEVMUser",
+            )
 
             db.add(TeamClusterToken(
                 team_id=team.id,

@@ -339,16 +339,28 @@ class PVEConnector:
         )
 
     async def set_pool_acl(
-        self, poolid: str, *, userid: str, role: str,
+        self, poolid: str, *, userid: str, role: str, tokenid: str | None = None,
     ) -> None:
-        """``PUT /access/acl`` — grant ``role`` on ``/pool/{poolid}`` to ``userid``.
+        """``PUT /access/acl`` — grant ``role`` on ``/pool/{poolid}``.
+
+        If ``tokenid`` is given, grants to the token principal
+        ``{userid}!{tokenid}`` (and adds the token to the ``tokens=`` field).
+        Otherwise grants to the user ``users=userid``.
+
+        D-01: privsep tokens have their OWN permissions, separate from the
+        user that owns them. Granting only to the user means the token sees
+        no ACLs — `/cluster/resources` returns nodes only. Bootstrap must
+        therefore pass ``tokenid`` so the token itself gets the role.
 
         Phase 1 always uses role ``PVEVMUser`` (D-02 + D-06).
         """
-        await self._call(
-            self._client.access.acl.put,
-            path=f"/pool/{poolid}",
-            users=userid,
-            roles=role,
-            propagate=1,
-        )
+        kwargs: dict[str, object] = {
+            "path": f"/pool/{poolid}",
+            "roles": role,
+            "propagate": 1,
+        }
+        if tokenid is not None:
+            kwargs["tokens"] = f"{userid}!{tokenid}"
+        else:
+            kwargs["users"] = userid
+        await self._call(self._client.access.acl.put, **kwargs)
