@@ -5,7 +5,7 @@ For every (team, active_cluster) pair, mint:
 1. A PVE pool ``gui-team-<team_id>`` (D-06).
 2. A PVE user ``gui-team-<team_id>@pve``.
 3. A privilege-separated PVE token ``gui-team-<team_id>!api`` (D-01).
-4. An ACL entry granting role ``PVEVMUser`` to the user on the pool, with
+4. An ACL entry granting role ``PVEVMAdmin`` to the user on the pool, with
    ``propagate=1``.
 5. A row in ``team_cluster_tokens`` with the (Fernet-encrypted) token value.
 
@@ -29,7 +29,7 @@ PVE naming convention (CONTEXT discretion):
 - Pool:   ``gui-team-<team_id>``
 - User:   ``gui-team-<team_id>@pve``
 - Token:  ``api`` (full PVE-side string is ``gui-team-<id>@pve!api``)
-- Role:   ``PVEVMUser`` (D-02 + D-06 — least privilege at the PVE layer)
+- Role:   ``PVEVMAdmin`` (D-02 + D-06 — least privilege at the PVE layer)
 """
 
 from __future__ import annotations
@@ -161,7 +161,7 @@ async def bootstrap_tenant_on_clusters(
 
             # privsep token → grant role to the TOKEN, not the user (D-01).
             await conn.set_pool_acl(
-                poolid, userid=userid, tokenid=tokenid, role="PVEVMUser",
+                poolid, userid=userid, tokenid=tokenid, role="PVEVMAdmin",
             )
 
             # Add row to the outer transaction (NOT committed here).
@@ -337,7 +337,7 @@ async def bootstrap_all_teams_on_cluster(
 
             # privsep token → grant role to the TOKEN, not the user (D-01).
             await conn.set_pool_acl(
-                poolid, userid=userid, tokenid=tokenid, role="PVEVMUser",
+                poolid, userid=userid, tokenid=tokenid, role="PVEVMAdmin",
             )
 
             db.add(TeamClusterToken(

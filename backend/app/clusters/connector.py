@@ -352,7 +352,10 @@ class PVEConnector:
         no ACLs — `/cluster/resources` returns nodes only. Bootstrap must
         therefore pass ``tokenid`` so the token itself gets the role.
 
-        Phase 1 always uses role ``PVEVMUser`` (D-02 + D-06).
+        Phase 1 always uses role ``PVEVMAdmin`` (D-02 + D-06). PVE 9
+        narrowed ``PVEVMUser`` to read+power only — the write-side perms
+        (``VM.Config.*``) moved to ``PVEVMAdmin``, which is what
+        self-service tenants need.
         """
         kwargs: dict[str, object] = {
             "path": f"/pool/{poolid}",

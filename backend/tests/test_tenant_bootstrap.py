@@ -211,10 +211,10 @@ async def test_bootstrap_uses_correct_pve_naming(session_factory):
         if c[0] == f"access.users.gui-team-{tid}@pve.token.api.post"
     )
     assert token_post[2]["privsep"] == 1
-    # set_pool_acl with role=PVEVMUser — ACL is granted to the TOKEN, not
+    # set_pool_acl with role=PVEVMAdmin — ACL is granted to the TOKEN, not
     # the user (D-01 privsep tokens have their own permissions).
     acl_put = next(c for c in fake.calls if c[0] == "access.acl.put")
-    assert acl_put[2]["roles"] == "PVEVMUser"
+    assert acl_put[2]["roles"] == "PVEVMAdmin"
     assert acl_put[2]["path"] == f"/pool/gui-team-{tid}"
     assert acl_put[2]["tokens"] == f"gui-team-{tid}@pve!api"
     assert "users" not in acl_put[2]

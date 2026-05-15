@@ -247,7 +247,7 @@ async def test_set_pool_acl_sends_correct_payload():
             token_value="v", verify_ssl=True,
         )
         await conn.set_pool_acl(
-            "gui-team-42", userid="gui-team-42@pve", role="PVEVMUser",
+            "gui-team-42", userid="gui-team-42@pve", role="PVEVMAdmin",
         )
     puts = [c for c in fake.calls if c[0] == "access.acl.put"]
     assert len(puts) == 1
@@ -255,7 +255,7 @@ async def test_set_pool_acl_sends_correct_payload():
     assert kwargs == {
         "path": "/pool/gui-team-42",
         "users": "gui-team-42@pve",
-        "roles": "PVEVMUser",
+        "roles": "PVEVMAdmin",
         "propagate": 1,
     }
 
