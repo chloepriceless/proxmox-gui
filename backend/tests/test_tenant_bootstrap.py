@@ -211,13 +211,14 @@ async def test_bootstrap_uses_correct_pve_naming(session_factory):
         if c[0] == f"access.users.gui-team-{tid}@pve.token.api.post"
     )
     assert token_post[2]["privsep"] == 1
-    # set_pool_acl with role=PVEVMAdmin — ACL is granted to the TOKEN, not
-    # the user (D-01 privsep tokens have their own permissions).
+    # set_pool_acl with role=PVEVMAdmin — D-01: a privsep token's effective
+    # rights are the intersection of the user's and the token's, so the ACL
+    # is granted to BOTH the user and the token.
     acl_put = next(c for c in fake.calls if c[0] == "access.acl.put")
     assert acl_put[2]["roles"] == "PVEVMAdmin"
     assert acl_put[2]["path"] == f"/pool/gui-team-{tid}"
+    assert acl_put[2]["users"] == f"gui-team-{tid}@pve"
     assert acl_put[2]["tokens"] == f"gui-team-{tid}@pve!api"
-    assert "users" not in acl_put[2]
     assert acl_put[2]["propagate"] == 1
 
 
@@ -321,3 +322,107 @@ async def test_bootstrap_surfaces_pool_collision_with_clean_state(session_factor
         n_teams = await session.scalar(select(func.count()).select_from(Team))
     assert n_tokens == 0
     assert n_teams == 0  # team row also rolled back
+
+
+# ----------------------------------------------------------------------------
+# Idempotency — adopt pre-existing PVE objects from an earlier install
+# ----------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_adopts_existing_pool_and_user(session_factory):
+    """A pool/user left over from a previous install is adopted, not
+    recreated — no create call is made, and bootstrap still succeeds."""
+    from app.clusters.registry import PVEConnectorRegistry
+    from app.teams.service import create_team
+
+    await _insert_clusters(session_factory, ["host-x"])
+    responses = _bootstrap_responses_ok(team_id=1)
+    # PVE already carries this team's pool + user (previous install).
+    responses["pools.get"] = [{"poolid": "gui-team-1"}]
+    responses["access.users.get"] = [{"userid": "gui-team-1@pve"}]
+    fake = FakeProxmox(responses=responses)
+    factory = _FakeFactory({"host-x": fake})
+    registry = PVEConnectorRegistry(None, session_factory)
+
+    with patch("app.clusters.connector.ProxmoxAPI", side_effect=factory):
+        async with session_factory() as session:
+            await create_team(
+                session, registry=registry,
+                name="adopt-test", personal=False, auto_bootstrap=True,
+            )
+
+    # Pre-existing pool + user → NOT recreated.
+    assert not [c for c in fake.calls if c[0] == "pools.post"]
+    assert not [c for c in fake.calls if c[0] == "access.users.post"]
+    # Token still minted, ACL still set, token row still persisted.
+    assert [c for c in fake.calls if "token.api.post" in c[0]]
+    assert [c for c in fake.calls if c[0] == "access.acl.put"]
+    async with session_factory() as session:
+        n_tokens = await session.scalar(
+            select(func.count()).select_from(TeamClusterToken)
+        )
+    assert n_tokens == 1
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_recreates_existing_token(session_factory):
+    """An existing token is deleted then re-minted — PVE never re-reveals an
+    existing token's secret, so a fresh one must be issued."""
+    from app.clusters.registry import PVEConnectorRegistry
+    from app.teams.service import create_team
+
+    await _insert_clusters(session_factory, ["host-x"])
+    responses = _bootstrap_responses_ok(team_id=1)
+    responses["access.users.gui-team-1@pve.token.get"] = [{"tokenid": "api"}]
+    responses["access.users.gui-team-1@pve.token.api.delete"] = EMPTY_OK
+    fake = FakeProxmox(responses=responses)
+    factory = _FakeFactory({"host-x": fake})
+    registry = PVEConnectorRegistry(None, session_factory)
+
+    with patch("app.clusters.connector.ProxmoxAPI", side_effect=factory):
+        async with session_factory() as session:
+            await create_team(
+                session, registry=registry,
+                name="retoken-test", personal=False, auto_bootstrap=True,
+            )
+
+    paths = [c[0] for c in fake.calls]
+    assert "access.users.gui-team-1@pve.token.api.delete" in paths
+    del_idx = paths.index("access.users.gui-team-1@pve.token.api.delete")
+    post_idx = paths.index("access.users.gui-team-1@pve.token.api.post")
+    assert del_idx < post_idx, "stale token must be deleted BEFORE re-creation"
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_adopted_objects_survive_rollback(session_factory):
+    """When bootstrap adopts a pre-existing pool/user and then fails, the
+    best-effort rollback must NOT delete those adopted objects — only
+    objects this run created are cleaned up."""
+    from app.clusters.registry import PVEConnectorRegistry
+    from app.teams.bootstrap import BootstrapFailed
+    from app.teams.service import create_team
+
+    await _insert_clusters(session_factory, ["host-x"])
+    responses = _bootstrap_responses_ok(team_id=1)
+    responses["pools.get"] = [{"poolid": "gui-team-1"}]
+    responses["access.users.get"] = [{"userid": "gui-team-1@pve"}]
+    # Token creation fails AFTER pool + user were adopted.
+    responses["access.users.gui-team-1@pve.token.api.post"] = pve_api_error(
+        status_code=500, content="token mint failed",
+    )
+    fake = FakeProxmox(responses=responses)
+    factory = _FakeFactory({"host-x": fake})
+    registry = PVEConnectorRegistry(None, session_factory)
+
+    with patch("app.clusters.connector.ProxmoxAPI", side_effect=factory):
+        async with session_factory() as session:
+            with pytest.raises(BootstrapFailed):
+                await create_team(
+                    session, registry=registry,
+                    name="rollback-adopt", personal=False, auto_bootstrap=True,
+                )
+
+    # Adopted pool/user were never created by this run → never deleted.
+    assert not [c for c in fake.calls if c[0] == "pools.gui-team-1.delete"]
+    assert not [c for c in fake.calls if c[0] == "access.users.gui-team-1@pve.delete"]

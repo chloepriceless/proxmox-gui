@@ -27,9 +27,9 @@ from tests.fixtures.pve_responses import (
     EMPTY_OK,
     POOL_GUI_TEAM_42,
     RRD_HOUR,
+    VERSION_OK,
     VM_CONFIG,
     VM_STATUS_RUNNING,
-    VERSION_OK,
     FakeProxmox,
     auth_error,
     connection_error,
@@ -428,3 +428,67 @@ async def test_pool_members_empty_when_no_members_key():
     conn = _make_conn(fake)
     members = await conn.pool_members(poolid="empty-pool")
     assert members == []
+
+
+# ----------------------------------------------------------------------------
+# Privsep ACL + idempotency helpers (pool/user/token existence)
+# ----------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_set_pool_acl_with_token_grants_user_and_token():
+    """D-01: a privsep token's effective rights are intersection(user, token),
+    so the pool ACL must be granted to BOTH principals — granting only the
+    token leaves the team token unable to see its own pool's VMs."""
+    fake = FakeProxmox(responses={"access.acl.put": EMPTY_OK})
+    conn = _make_conn(fake)
+    await conn.set_pool_acl(
+        "gui-team-42", userid="gui-team-42@pve", role="PVEVMAdmin", tokenid="api",
+    )
+    puts = [c for c in fake.calls if c[0] == "access.acl.put"]
+    assert len(puts) == 1
+    assert puts[0][2] == {
+        "path": "/pool/gui-team-42",
+        "users": "gui-team-42@pve",
+        "tokens": "gui-team-42@pve!api",
+        "roles": "PVEVMAdmin",
+        "propagate": 1,
+    }
+
+
+@pytest.mark.asyncio
+async def test_existence_checks_reflect_pve_listings():
+    """pool_exists / user_exists / token_exists match what PVE lists."""
+    fake = FakeProxmox(responses={
+        "pools.get": [{"poolid": "gui-team-1"}, {"poolid": "other"}],
+        "access.users.get": [{"userid": "gui-team-1@pve"}, {"userid": "root@pam"}],
+        "access.users.gui-team-1@pve.token.get": [{"tokenid": "api"}],
+    })
+    conn = _make_conn(fake)
+    assert await conn.pool_exists("gui-team-1") is True
+    assert await conn.pool_exists("gui-team-999") is False
+    assert await conn.user_exists("gui-team-1@pve") is True
+    assert await conn.user_exists("ghost@pve") is False
+    assert await conn.token_exists("gui-team-1@pve", "api") is True
+    assert await conn.token_exists("gui-team-1@pve", "missing") is False
+
+
+@pytest.mark.asyncio
+async def test_existence_checks_handle_empty_listing():
+    """An unpopulated PVE (every listing returns nothing) yields False, not
+    an error — the connector tolerates ``None`` from proxmoxer."""
+    fake = FakeProxmox(responses={})
+    conn = _make_conn(fake)
+    assert await conn.pool_exists("gui-team-1") is False
+    assert await conn.user_exists("gui-team-1@pve") is False
+
+
+@pytest.mark.asyncio
+async def test_delete_token_sends_correct_call():
+    """delete_token issues DELETE /access/users/{userid}/token/{tokenid}."""
+    fake = FakeProxmox(
+        responses={"access.users.gui-team-1@pve.token.api.delete": EMPTY_OK},
+    )
+    conn = _make_conn(fake)
+    await conn.delete_token("gui-team-1@pve", "api")
+    assert ("access.users.gui-team-1@pve.token.api.delete", (), {}) in fake.calls

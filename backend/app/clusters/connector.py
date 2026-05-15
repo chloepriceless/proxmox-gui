@@ -308,6 +308,11 @@ class PVEConnector:
         """``DELETE /pools/{poolid}`` — best-effort cleanup helper."""
         await self._call(self._client.pools(poolid).delete)
 
+    async def pool_exists(self, poolid: str) -> bool:
+        """True if a resource pool ``poolid`` already exists on the cluster."""
+        pools = await self._call(self._client.pools.get)
+        return any(p.get("poolid") == poolid for p in (pools or []))
+
     # ------------------------------------------------------------------
     # User + token lifecycle (per-tenant privsep — Phase 1, keep unchanged)
     # ------------------------------------------------------------------
@@ -319,6 +324,11 @@ class PVEConnector:
     async def delete_user(self, userid: str) -> None:
         """``DELETE /access/users/{userid}`` — best-effort cleanup helper."""
         await self._call(self._client.access.users(userid).delete)
+
+    async def user_exists(self, userid: str) -> bool:
+        """True if PVE user ``userid`` already exists on the cluster."""
+        users = await self._call(self._client.access.users.get)
+        return any(u.get("userid") == userid for u in (users or []))
 
     async def create_token(
         self, userid: str, tokenid: str, *, privsep: bool = True,
@@ -338,19 +348,38 @@ class PVEConnector:
             privsep=int(privsep),
         )
 
+    async def token_exists(self, userid: str, tokenid: str) -> bool:
+        """True if API token ``{userid}!{tokenid}`` already exists.
+
+        Assumes ``userid`` exists — call :meth:`user_exists` first.
+        """
+        tokens = await self._call(self._client.access.users(userid).token.get)
+        return any(t.get("tokenid") == tokenid for t in (tokens or []))
+
+    async def delete_token(self, userid: str, tokenid: str) -> None:
+        """``DELETE /access/users/{userid}/token/{tokenid}``.
+
+        PVE never re-reveals a token's secret, so an adopted-but-stale token
+        must be deleted and minted afresh to obtain a usable value.
+        """
+        await self._call(self._client.access.users(userid).token(tokenid).delete)
+
     async def set_pool_acl(
         self, poolid: str, *, userid: str, role: str, tokenid: str | None = None,
     ) -> None:
         """``PUT /access/acl`` — grant ``role`` on ``/pool/{poolid}``.
 
-        If ``tokenid`` is given, grants to the token principal
-        ``{userid}!{tokenid}`` (and adds the token to the ``tokens=`` field).
-        Otherwise grants to the user ``users=userid``.
+        The role is ALWAYS granted to the user ``users=userid``. If
+        ``tokenid`` is also given, the same role is additionally granted to
+        the token principal ``{userid}!{tokenid}``.
 
-        D-01: privsep tokens have their OWN permissions, separate from the
-        user that owns them. Granting only to the user means the token sees
-        no ACLs — `/cluster/resources` returns nodes only. Bootstrap must
-        therefore pass ``tokenid`` so the token itself gets the role.
+        D-01: a privsep token carries its own ACL, but its *effective*
+        permissions are the INTERSECTION of the owning user's rights and
+        the token's own rights. Granting only the token — with a
+        permission-less user — yields an empty intersection: the token then
+        sees nothing and ``/cluster/resources`` returns nodes only. Bootstrap
+        must therefore grant BOTH the user and the token, which is why this
+        method always emits ``users=`` and adds ``tokens=`` on top.
 
         Phase 1 always uses role ``PVEVMAdmin`` (D-02 + D-06). PVE 9
         narrowed ``PVEVMUser`` to read+power only — the write-side perms
@@ -361,9 +390,8 @@ class PVEConnector:
             "path": f"/pool/{poolid}",
             "roles": role,
             "propagate": 1,
+            "users": userid,
         }
         if tokenid is not None:
             kwargs["tokens"] = f"{userid}!{tokenid}"
-        else:
-            kwargs["users"] = userid
         await self._call(self._client.access.acl.put, **kwargs)

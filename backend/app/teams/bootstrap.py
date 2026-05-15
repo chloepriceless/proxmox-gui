@@ -5,9 +5,14 @@ For every (team, active_cluster) pair, mint:
 1. A PVE pool ``gui-team-<team_id>`` (D-06).
 2. A PVE user ``gui-team-<team_id>@pve``.
 3. A privilege-separated PVE token ``gui-team-<team_id>!api`` (D-01).
-4. An ACL entry granting role ``PVEVMAdmin`` to the user on the pool, with
-   ``propagate=1``.
+4. An ACL entry granting role ``PVEVMAdmin`` to BOTH the user and the
+   privsep token on the pool, with ``propagate=1``.
 5. A row in ``team_cluster_tokens`` with the (Fernet-encrypted) token value.
+
+Bootstrap is **idempotent on the PVE side**: a pool or user that already
+exists — e.g. left over from a previous install on the same Proxmox host —
+is adopted rather than recreated, and the token is always minted afresh
+(PVE never re-reveals an existing token's secret).
 
 The whole thing is **atomic across DB + PVE**. If any step on any cluster
 fails:
@@ -44,6 +49,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import Cluster, Team, TeamClusterToken
 
 if TYPE_CHECKING:
+    from app.clusters.connector import PVEConnector
     from app.clusters.registry import PVEConnectorRegistry
 
 logger = logging.getLogger(__name__)
@@ -93,6 +99,59 @@ class BootstrapFailed(Exception):
 # ----------------------------------------------------------------------------
 # Bootstrap
 # ----------------------------------------------------------------------------
+
+
+async def _provision_team_on_cluster(
+    conn: PVEConnector,
+    *,
+    poolid: str,
+    userid: str,
+    tokenid: str,
+    comment: str,
+    state: dict,
+) -> str:
+    """Idempotently ensure the PVE pool, user, privsep token and pool ACL
+    exist for one team on one cluster; return the plaintext token secret.
+
+    Idempotency — the operator may be reinstalling onto a Proxmox host that
+    still carries objects from a previous install:
+
+    - A pool or user that already exists is **adopted**: not recreated, and
+      NOT recorded in ``state``, so the best-effort rollback never deletes
+      an object this run did not create.
+    - The token is always (re)created. PVE never re-reveals an existing
+      token's secret, so a stale token is deleted and minted afresh.
+    - ``create_*`` is therefore only ever called for an object that does
+      not exist — a create failure always signals a *genuine* error worth
+      surfacing, never a benign "already exists".
+    """
+    if await conn.pool_exists(poolid):
+        logger.info("bootstrap: adopting existing PVE pool %s", poolid)
+    else:
+        await conn.create_pool(poolid, comment=f"GUI tenant {comment}")
+        state["pool_created"] = True
+
+    if await conn.user_exists(userid):
+        logger.info("bootstrap: adopting existing PVE user %s", userid)
+    else:
+        await conn.create_user(userid, comment=f"GUI tenant {comment}")
+        state["user_created"] = True
+
+    if await conn.token_exists(userid, tokenid):
+        logger.info(
+            "bootstrap: token %s!%s exists — recreating for a fresh secret",
+            userid, tokenid,
+        )
+        await conn.delete_token(userid, tokenid)
+    token_payload = await conn.create_token(userid, tokenid, privsep=True)
+    state["token"] = token_payload
+
+    # D-01: a privsep token's effective rights are the intersection of the
+    # user's and the token's — set_pool_acl grants BOTH.
+    await conn.set_pool_acl(
+        poolid, userid=userid, tokenid=tokenid, role="PVEVMAdmin",
+    )
+    return token_payload.get("value", "")
 
 
 async def bootstrap_tenant_on_clusters(
@@ -147,21 +206,9 @@ async def bootstrap_tenant_on_clusters(
             # connection (in-memory SQLite + connection-isolation; also
             # the read-your-writes idiom in production).
             conn = await registry.get(cluster.id, db=db)
-            await conn.create_pool(poolid, comment=f"GUI tenant {comment}")
-            state["pool_created"] = True
-
-            await conn.create_user(userid, comment=f"GUI tenant {comment}")
-            state["user_created"] = True
-
-            token_payload = await conn.create_token(
-                userid, tokenid, privsep=True,
-            )
-            state["token"] = token_payload
-            token_value = token_payload.get("value", "")
-
-            # privsep token → grant role to the TOKEN, not the user (D-01).
-            await conn.set_pool_acl(
-                poolid, userid=userid, tokenid=tokenid, role="PVEVMAdmin",
+            token_value = await _provision_team_on_cluster(
+                conn, poolid=poolid, userid=userid, tokenid=tokenid,
+                comment=comment, state=state,
             )
 
             # Add row to the outer transaction (NOT committed here).
@@ -323,21 +370,9 @@ async def bootstrap_all_teams_on_cluster(
         }
         bootstrap_state[team.id] = state
         try:
-            await conn.create_pool(poolid, comment=f"GUI tenant {comment}")
-            state["pool_created"] = True
-
-            await conn.create_user(userid, comment=f"GUI tenant {comment}")
-            state["user_created"] = True
-
-            token_payload = await conn.create_token(
-                userid, tokenid, privsep=True,
-            )
-            state["token"] = token_payload
-            token_value = token_payload.get("value", "")
-
-            # privsep token → grant role to the TOKEN, not the user (D-01).
-            await conn.set_pool_acl(
-                poolid, userid=userid, tokenid=tokenid, role="PVEVMAdmin",
+            token_value = await _provision_team_on_cluster(
+                conn, poolid=poolid, userid=userid, tokenid=tokenid,
+                comment=comment, state=state,
             )
 
             db.add(TeamClusterToken(
@@ -390,7 +425,7 @@ async def _rollback_pve_state_per_team(
             cluster_id, exc,
         )
         return
-    for team_id, state in bootstrap_state.items():
+    for state in bootstrap_state.values():
         if not (state["pool_created"] or state["user_created"]):
             continue
         if state["user_created"]:
