@@ -49,15 +49,14 @@ async def list_inventory_for_cluster(
     items: list[VMInventoryItem] = []
     is_stale = False
     last_error: str | None = None
-    connector: PVEConnector | None = None
     for tok in tokens:
         try:
-            connector = await registry.get_for_team(
+            team_conn = await registry.get_for_team(
                 cluster_id=cluster_id,
                 team_id=tok.team_id,
                 db=db,
             )
-            snapshot, stale = await connector.list_resources()
+            snapshot, stale = await team_conn.list_resources()
             is_stale = is_stale or stale
             for it in snapshot:
                 if it.get("pool") != tok.poolid:
@@ -68,10 +67,15 @@ async def list_inventory_for_cluster(
         except Exception as exc:  # noqa: BLE001
             last_error = str(exc)
             is_stale = True
+    # cluster_status reflects cluster reachability, which is owned by the
+    # admin-token connector (the one health_probe_loop runs against). The
+    # per-team connectors don't get their own probe, so falling back to
+    # their .status would always return "untested" until they're hit.
+    admin_conn = await registry.get(cluster_id, db=db)
     return ClusterInventory(
         cluster_id=cluster.id,
         cluster_name=cluster.name,
-        cluster_status=(connector.status if connector else "untested"),
+        cluster_status=admin_conn.status,
         is_stale=is_stale,
         last_error=last_error,
         items=items,
