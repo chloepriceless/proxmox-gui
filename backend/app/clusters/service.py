@@ -214,6 +214,56 @@ async def register_cluster(
 # ---------------------------------------------------------------------------
 
 
+async def backfill_bootstrap(
+    db: AsyncSession,
+    registry: PVEConnectorRegistry,
+    *,
+    cluster_id: int,
+) -> dict:
+    """Run bootstrap_all_teams_on_cluster on an existing cluster (Plan 02-08).
+
+    Idempotent — teams that already have a ``team_cluster_tokens`` row for
+    this cluster are skipped. Intended for retroactive remediation of
+    clusters that were registered before the auto-bootstrap fix shipped.
+
+    Returns: ``{"cluster_id": int, "bootstrapped_teams": int, "team_ids": [int]}``.
+
+    Raises:
+        HTTPException(404): cluster not found.
+        HTTPException(500): bootstrap failed on at least one team.
+    """
+    cluster = await db.get(Cluster, cluster_id)
+    if cluster is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Cluster not found",
+        )
+    from app.teams.bootstrap import (
+        BootstrapFailed,
+        bootstrap_all_teams_on_cluster,
+    )
+    try:
+        results = await bootstrap_all_teams_on_cluster(
+            db, registry, cluster=cluster, comment=f"backfill cluster {cluster.name}",
+        )
+    except BootstrapFailed as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Tenant bootstrap failed on {exc.cluster_name}: {exc.original}",
+        ) from exc
+    await db.commit()
+    return {
+        "cluster_id": cluster.id,
+        "bootstrapped_teams": len(results),
+        "team_ids": [r.cluster_id and _team_id_from_userid(r.userid) for r in results],
+    }
+
+
+def _team_id_from_userid(userid: str) -> int:
+    """Extract team_id from PVE userid format ``gui-team-<id>@pve``."""
+    return int(userid.removeprefix("gui-team-").split("@", 1)[0])
+
+
 async def validate_token(
     db: AsyncSession, *, cluster_id: int,
 ) -> ClusterTestResponse:

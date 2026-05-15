@@ -163,6 +163,26 @@ async def test_existing_cluster(
     return await service.validate_token(db, cluster_id=cluster_id)
 
 
+@router.post(
+    "/{cluster_id}/backfill-bootstrap",
+    summary=(
+        "Retroactively run tenant bootstrap on an existing cluster — "
+        "remediates clusters added before the auto-bootstrap fix (Plan 02-08)"
+    ),
+    operation_id="clusters_backfill_bootstrap",
+    dependencies=[Depends(require_admin), Depends(csrf_protect)],
+)
+async def backfill_bootstrap(
+    cluster_id: int,
+    db: AsyncSession = Depends(get_db),
+    registry: PVEConnectorRegistry = Depends(get_registry),
+) -> dict:
+    """Idempotent: skips teams that already have a token for this cluster."""
+    return await service.backfill_bootstrap(
+        db, registry, cluster_id=cluster_id,
+    )
+
+
 @router.delete(
     "/{cluster_id}",
     status_code=status.HTTP_204_NO_CONTENT,

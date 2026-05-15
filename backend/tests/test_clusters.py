@@ -485,3 +485,197 @@ async def test_service_delete_cluster_invalidates_registry(session_factory):
     async with session_factory() as session:
         await delete_cluster(session, registry, cluster_id=cid)
     assert cid not in registry._connectors
+
+
+# ----------------------------------------------------------------------------
+# Plan 02-08 — tenant bootstrap on cluster registration (Pitfall 8)
+# ----------------------------------------------------------------------------
+
+
+def _bootstrap_responses_for_team(team_id: int = 1) -> dict:
+    """Happy-path FakeProxmox responses for a tenant bootstrap on one cluster."""
+    from tests.fixtures.pve_responses import CREATE_TOKEN_OK, EMPTY_OK
+    return {
+        "version.get": VERSION_OK,
+        "pools.post": EMPTY_OK,
+        "access.users.post": EMPTY_OK,
+        f"access.users.gui-team-{team_id}@pve.token.api.post": CREATE_TOKEN_OK,
+        "access.acl.put": EMPTY_OK,
+        # Rollback paths exercised by the failure test.
+        f"access.users.gui-team-{team_id}@pve.delete": EMPTY_OK,
+        f"pools.gui-team-{team_id}.delete": EMPTY_OK,
+    }
+
+
+@pytest.mark.asyncio
+async def test_post_cluster_bootstraps_existing_personal_team(
+    client, session_factory,
+):
+    """POST /clusters with an active team writes a team_cluster_tokens row."""
+    from sqlalchemy import func, select
+
+    from app.models import TeamClusterToken
+    _, cookies = await _login_admin(
+        client, session_factory, "admin_b1", with_personal_team=True,
+    )
+    csrf = cookies["csrf_token"]
+    fake = FakeProxmox(responses=_bootstrap_responses_for_team(team_id=1))
+    with patch("app.clusters.connector.ProxmoxAPI", return_value=fake):
+        response = await client.post(
+            "/api/v1/clusters/",
+            cookies=cookies, headers={"X-CSRF-Token": csrf},
+            json=_valid_cluster_payload(),
+        )
+    assert response.status_code == 201, response.text
+    cid = response.json()["id"]
+
+    async with session_factory() as session:
+        n_tokens = await session.scalar(
+            select(func.count()).select_from(TeamClusterToken)
+        )
+        token_row = (await session.execute(
+            select(TeamClusterToken).where(TeamClusterToken.cluster_id == cid)
+        )).scalar_one()
+    assert n_tokens == 1
+    assert token_row.userid == "gui-team-1@pve"
+    assert token_row.poolid == "gui-team-1"
+
+
+@pytest.mark.asyncio
+async def test_post_cluster_rolls_back_on_bootstrap_failure(
+    client, session_factory,
+):
+    """If bootstrap fails on PVE, cluster INSERT + any partial token rows
+    must roll back, and the PVE pool/user are best-effort cleaned up."""
+    from sqlalchemy import func, select
+
+    from app.models import Cluster, TeamClusterToken
+    from tests.fixtures.pve_responses import EMPTY_OK, pve_api_error
+    _, cookies = await _login_admin(
+        client, session_factory, "admin_b2", with_personal_team=True,
+    )
+    csrf = cookies["csrf_token"]
+    # Pool created OK, but user creation fails — rollback should delete the
+    # pool we just made.
+    responses = {
+        "version.get": VERSION_OK,
+        "pools.post": EMPTY_OK,
+        "access.users.post": pve_api_error(content="user creation refused"),
+        "pools.gui-team-1.delete": EMPTY_OK,
+    }
+    fake = FakeProxmox(responses=responses)
+    with patch("app.clusters.connector.ProxmoxAPI", return_value=fake):
+        response = await client.post(
+            "/api/v1/clusters/",
+            cookies=cookies, headers={"X-CSRF-Token": csrf},
+            json=_valid_cluster_payload(),
+        )
+    assert response.status_code == 500, response.text
+    assert "bootstrap failed" in response.text.lower()
+
+    async with session_factory() as session:
+        n_clusters = await session.scalar(
+            select(func.count()).select_from(Cluster)
+        )
+        n_tokens = await session.scalar(
+            select(func.count()).select_from(TeamClusterToken)
+        )
+    assert n_clusters == 0, "cluster INSERT must roll back on bootstrap failure"
+    assert n_tokens == 0
+
+    # PVE rollback ran — pool deletion attempted.
+    delete_calls = fake.find_calls("pools.gui-team-1.delete")
+    assert delete_calls, "best-effort PVE cleanup must call delete_pool"
+
+
+@pytest.mark.asyncio
+async def test_backfill_bootstrap_route_creates_missing_tokens(
+    client, session_factory,
+):
+    """Retroactive backfill for a cluster that exists without team tokens
+    (the user's actual situation after the buggy first-run wizard)."""
+    from sqlalchemy import func, select
+
+    from app.models import Cluster, Team, TeamClusterToken
+
+    # Admin user but no personal team — register cluster without bootstrap.
+    _, cookies = await _login_admin(
+        client, session_factory, "admin_b3", with_personal_team=False,
+    )
+    csrf = cookies["csrf_token"]
+    fake = FakeProxmox(responses=_bootstrap_responses_for_team(team_id=1))
+    with patch("app.clusters.connector.ProxmoxAPI", return_value=fake):
+        response = await client.post(
+            "/api/v1/clusters/",
+            cookies=cookies, headers={"X-CSRF-Token": csrf},
+            json=_valid_cluster_payload(),
+        )
+    assert response.status_code == 201
+    cid = response.json()["id"]
+
+    # Now add a personal team after the fact — simulates the wizard order.
+    async with session_factory() as session:
+        team = Team(name="personal-1", personal=True, is_active=True)
+        session.add(team)
+        await session.commit()
+        await session.refresh(team)
+
+    # No token yet.
+    async with session_factory() as session:
+        n_tokens = await session.scalar(
+            select(func.count()).select_from(TeamClusterToken)
+        )
+    assert n_tokens == 0
+
+    # Backfill it.
+    with patch("app.clusters.connector.ProxmoxAPI", return_value=fake):
+        response = await client.post(
+            f"/api/v1/clusters/{cid}/backfill-bootstrap",
+            cookies=cookies, headers={"X-CSRF-Token": csrf},
+        )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["cluster_id"] == cid
+    assert body["bootstrapped_teams"] == 1
+
+    async with session_factory() as session:
+        n_tokens = await session.scalar(
+            select(func.count()).select_from(TeamClusterToken)
+        )
+    assert n_tokens == 1
+
+
+@pytest.mark.asyncio
+async def test_backfill_bootstrap_is_idempotent(
+    client, session_factory,
+):
+    """Calling backfill twice is a no-op the second time."""
+    from sqlalchemy import func, select
+
+    from app.models import TeamClusterToken
+    _, cookies = await _login_admin(
+        client, session_factory, "admin_b4", with_personal_team=True,
+    )
+    csrf = cookies["csrf_token"]
+    fake = FakeProxmox(responses=_bootstrap_responses_for_team(team_id=1))
+    with patch("app.clusters.connector.ProxmoxAPI", return_value=fake):
+        response = await client.post(
+            "/api/v1/clusters/",
+            cookies=cookies, headers={"X-CSRF-Token": csrf},
+            json=_valid_cluster_payload(),
+        )
+        cid = response.json()["id"]
+
+        # Now backfill — should be a no-op since token already exists.
+        response = await client.post(
+            f"/api/v1/clusters/{cid}/backfill-bootstrap",
+            cookies=cookies, headers={"X-CSRF-Token": csrf},
+        )
+    assert response.status_code == 200
+    assert response.json()["bootstrapped_teams"] == 0
+
+    async with session_factory() as session:
+        n_tokens = await session.scalar(
+            select(func.count()).select_from(TeamClusterToken)
+        )
+    assert n_tokens == 1  # still just the one from registration
