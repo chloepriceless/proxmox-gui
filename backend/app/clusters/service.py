@@ -117,13 +117,20 @@ async def register_cluster(
     db: AsyncSession,
     *,
     payload: ClusterCreate,
+    registry: PVEConnectorRegistry | None = None,
 ) -> Cluster:
-    """Validate then persist a new cluster. Pitfall A4 enforcement point.
+    """Validate, persist, then bootstrap existing teams. Pitfall A4 + Pitfall 8.
+
+    If ``registry`` is supplied, every active team gets a PVE pool/user/token
+    on the new cluster atomically — without this, the first-run wizard ends
+    with team_cluster_tokens empty and /inventory shows 0 VMs.
 
     Raises:
         HTTPException(422): token failed validation (PVEAuthError),
             or schema constraint failed, or name uniqueness violated.
         HTTPException(502): PVE unreachable / unexpected API error.
+        HTTPException(500): tenant bootstrap failed on the new cluster
+            (DB row + any partial PVE state are rolled back / cleaned up).
     """
     connector = _build_transient_connector(
         host=payload.host, port=payload.port,
@@ -163,14 +170,41 @@ async def register_cluster(
         notes=payload.notes,
     )
     db.add(cluster)
+    # flush, don't commit yet — bootstrap_all_teams_on_cluster shares this
+    # transaction; if it fails the cluster INSERT rolls back with it.
     try:
-        await db.commit()
+        await db.flush()
     except IntegrityError as exc:
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="A cluster with that name already exists.",
         ) from exc
+
+    if registry is not None:
+        # Lazy import — bootstrap pulls PVEConnectorRegistry which imports
+        # this module for delete_cluster, leading to a circular import at
+        # top level. Local import sidesteps it.
+        from app.teams.bootstrap import (
+            BootstrapFailed,
+            bootstrap_all_teams_on_cluster,
+        )
+        try:
+            await bootstrap_all_teams_on_cluster(
+                db, registry, cluster=cluster,
+                comment=f"cluster {cluster.name}",
+            )
+        except BootstrapFailed as exc:
+            await db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=(
+                    f"Cluster validated but tenant bootstrap failed on "
+                    f"{exc.cluster_name}: {exc.original}"
+                ),
+            ) from exc
+
+    await db.commit()
     await db.refresh(cluster)
     return cluster
 

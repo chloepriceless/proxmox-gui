@@ -92,9 +92,12 @@ async def test_cluster_dryrun(
 async def create_cluster(
     payload: ClusterCreate,
     db: AsyncSession = Depends(get_db),
+    registry: PVEConnectorRegistry = Depends(get_registry),
 ) -> ClusterResponse:
-    """Validate the bootstrap token, then persist the cluster row."""
-    cluster = await service.register_cluster(db, payload=payload)
+    """Validate the token, persist the cluster, and bootstrap teams (Pitfall 8)."""
+    cluster = await service.register_cluster(
+        db, payload=payload, registry=registry,
+    )
     return ClusterResponse.model_validate(cluster)
 
 

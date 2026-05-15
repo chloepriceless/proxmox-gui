@@ -29,11 +29,19 @@ from tests.fixtures.pve_responses import (
 )
 
 
-async def _login_admin(client, session_factory, username="admin1"):
-    """Make an admin user, log in, return (user, cookies)."""
+async def _login_admin(
+    client, session_factory, username="admin1", *, with_personal_team=False,
+):
+    """Make an admin user, log in, return (user, cookies).
+
+    Default ``with_personal_team=False`` so register_cluster's tenant
+    bootstrap (Pitfall 8 fix) sees zero teams and is a no-op. Tests that
+    explicitly cover the bootstrap path opt in with True and supply matching
+    FakeProxmox bootstrap responses.
+    """
     user = await make_user(
         session_factory, username=username, password="adminpass12345",
-        is_admin=True,
+        is_admin=True, with_personal_team=with_personal_team,
     )
     cookies = await login_as(client, username=username, password="adminpass12345")
     return user, cookies
