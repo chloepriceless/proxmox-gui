@@ -295,20 +295,24 @@ def _make_conn(fake: FakeProxmox):
 
 @pytest.mark.asyncio
 async def test_list_resources_happy_path():
-    """list_resources() merges vm + lxc responses and returns (snapshot, False)."""
+    """list_resources() returns the (qemu + lxc merged) snapshot from one call.
+
+    PVE's /cluster/resources?type=vm returns BOTH qemu and lxc items —
+    `type=lxc` is not a valid parameter value (PVE 9.x rejects with 400).
+    """
     fake = FakeProxmox(responses={})
-    fake.queue_response("cluster.resources.get", CLUSTER_RESOURCES_VM)
-    fake.queue_response("cluster.resources.get", CLUSTER_RESOURCES_LXC)
+    # Real PVE returns both qemu + lxc items under type=vm.
+    fake.queue_response(
+        "cluster.resources.get", CLUSTER_RESOURCES_VM + CLUSTER_RESOURCES_LXC,
+    )
     conn = _make_conn(fake)
 
     snapshot, stale = await conn.list_resources()
     assert stale is False
     assert len(snapshot) == 3
     vm_calls = [c for c in fake.calls if c[0] == "cluster.resources.get"]
-    assert len(vm_calls) == 2
-    # Verify type kwarg was passed for both calls.
+    assert len(vm_calls) == 1
     assert vm_calls[0][2] == {"type": "vm"}
-    assert vm_calls[1][2] == {"type": "lxc"}
 
 
 @pytest.mark.asyncio

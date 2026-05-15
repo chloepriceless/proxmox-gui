@@ -38,41 +38,41 @@ def _make_connector(fake: FakeProxmox):
 async def test_list_resources_serves_from_cache_within_30s():
     """Second list_resources() within 30s must hit the cache, not PVE."""
     fake = FakeProxmox(responses={})
-    # Queue separate responses: first call gets VMs, second gets LXCs.
-    fake.queue_response("cluster.resources.get", CLUSTER_RESOURCES_VM)
-    fake.queue_response("cluster.resources.get", CLUSTER_RESOURCES_LXC)
+    # PVE /cluster/resources?type=vm returns BOTH qemu + lxc items.
+    fake.queue_response(
+        "cluster.resources.get", CLUSTER_RESOURCES_VM + CLUSTER_RESOURCES_LXC,
+    )
     conn = _make_connector(fake)
 
-    # First call — hits PVE (2 calls: type=vm + type=lxc).
     snapshot1, stale1 = await conn.list_resources()
     assert stale1 is False
-    assert len(snapshot1) == 3  # 2 VM + 1 LXC
+    assert len(snapshot1) == 3  # 2 qemu + 1 lxc
 
     # Second call within 30s — cache hit; no new PVE calls.
     snapshot2, stale2 = await conn.list_resources()
     assert stale2 is False
-    assert snapshot2 is snapshot1  # same object (not a copy)
+    assert snapshot2 is snapshot1
 
-    # Exactly 2 PVE calls (type=vm + type=lxc on the first call only).
+    # Exactly 1 PVE call (cache served the second).
     resource_calls = [c for c in fake.calls if "cluster.resources.get" in c[0]]
-    assert len(resource_calls) == 2
+    assert len(resource_calls) == 1
 
 
 @pytest.mark.asyncio
 async def test_list_resources_force_refresh_bypasses_cache():
     """force_refresh=True must bypass the TTL check and re-fetch."""
-    # Queue 4 responses: 2 for first call (vm+lxc), 2 for force_refresh call.
     fake = FakeProxmox(responses={})
     for _ in range(2):
-        fake.queue_response("cluster.resources.get", CLUSTER_RESOURCES_VM)
-        fake.queue_response("cluster.resources.get", CLUSTER_RESOURCES_LXC)
+        fake.queue_response(
+            "cluster.resources.get", CLUSTER_RESOURCES_VM + CLUSTER_RESOURCES_LXC,
+        )
     conn = _make_connector(fake)
 
-    await conn.list_resources()  # first call: 2 PVE calls
-    await conn.list_resources(force_refresh=True)  # force: 2 more PVE calls
+    await conn.list_resources()
+    await conn.list_resources(force_refresh=True)
 
     resource_calls = [c for c in fake.calls if "cluster.resources.get" in c[0]]
-    assert len(resource_calls) == 4
+    assert len(resource_calls) == 2
 
 
 @pytest.mark.asyncio
@@ -157,23 +157,21 @@ async def test_auth_error_does_not_trip_breaker():
 
 @pytest.mark.asyncio
 async def test_concurrent_list_resources_only_fetches_once():
-    """Five concurrent list_resources() calls must result in exactly 2 PVE calls (1 vm + 1 lxc)."""
+    """Five concurrent list_resources() calls must result in exactly 1 PVE call."""
     fake = FakeProxmox(responses={})
-    # Only queue 2 responses — the lock ensures only one refresh happens.
-    fake.queue_response("cluster.resources.get", CLUSTER_RESOURCES_VM)
-    fake.queue_response("cluster.resources.get", CLUSTER_RESOURCES_LXC)
+    fake.queue_response(
+        "cluster.resources.get", CLUSTER_RESOURCES_VM + CLUSTER_RESOURCES_LXC,
+    )
     conn = _make_connector(fake)
 
-    # Fire 5 concurrent calls.
     results = await asyncio.gather(
         *[conn.list_resources() for _ in range(5)]
     )
 
-    # All should succeed with the same snapshot.
     for snapshot, stale in results:
         assert stale is False
-        assert len(snapshot) == 3  # 2 VM + 1 LXC
+        assert len(snapshot) == 3
 
-    # Exactly 2 PVE calls total (thundering-herd protection via asyncio.Lock).
+    # Exactly 1 PVE call total (thundering-herd protection via asyncio.Lock).
     resource_calls = [c for c in fake.calls if "cluster.resources.get" in c[0]]
-    assert len(resource_calls) == 2
+    assert len(resource_calls) == 1

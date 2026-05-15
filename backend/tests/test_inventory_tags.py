@@ -309,12 +309,10 @@ async def test_put_tags_invalidates_cache(client, session_factory):
         "nodes.pve-01.qemu.100.config.get": VM_CONFIG,
         "nodes.pve-01.qemu.100.config.put": None,
     })
-    # Pre-load queue for list before PUT (vm + lxc)
+    # PVE returns both qemu + lxc under type=vm — one queued response per list.
     fake.queue_response("cluster.resources.get", CLUSTER_RESOURCES_VM)
-    fake.queue_response("cluster.resources.get", [])
-    # After PUT cache is invalidated — next list call must hit PVE again
+    # After PUT cache is invalidated — next list call must hit PVE again.
     fake.queue_response("cluster.resources.get", CLUSTER_RESOURCES_VM)
-    fake.queue_response("cluster.resources.get", [])
 
     with patch("app.clusters.connector.ProxmoxAPI", return_value=fake):
         cookies = await login_as(client, username="tagscache", password="testpass12345")
@@ -343,5 +341,5 @@ async def test_put_tags_invalidates_cache(client, session_factory):
         )
         calls_after = len([c for c in fake.calls if "cluster.resources.get" in c[0]])
 
-    # Before: 2 (vm+lxc for list). After PUT + re-list: at least 2 more
-    assert calls_after > calls_before + 1
+    # Before: 1 resource-list call. After PUT (cache invalidated) + re-list: 1 more.
+    assert calls_after > calls_before

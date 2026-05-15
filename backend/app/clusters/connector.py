@@ -199,7 +199,15 @@ class PVEConnector:
     async def list_resources(
         self, *, force_refresh: bool = False
     ) -> tuple[list[dict], bool]:
-        """GET /cluster/resources?type=vm + type=lxc — merged, with 30s TTL cache.
+        """GET /cluster/resources?type=vm — returns both qemu + lxc, 30s TTL.
+
+        PVE's `/cluster/resources` ``type`` param accepts only
+        ``vm|storage|node|sdn``. ``type=vm`` returns BOTH QEMU VMs and LXCs
+        (PVE collapses both under "virtual machines" for this endpoint —
+        each item carries its actual ``type`` of ``qemu`` or ``lxc``).
+        An earlier version of this method made a second call with
+        ``type=lxc`` which PVE rejects with 400 "parameter verification
+        failed" — verified live against PVE 9.1.4.
 
         Returns (snapshot, is_stale). On breaker-open + stale cache present:
         returns (snapshot, True). On breaker-open + NO cache: raises PVEUnreachable.
@@ -209,13 +217,10 @@ class PVEConnector:
             if cache.is_fresh and not force_refresh:
                 return cache.snapshot, False
             try:
-                vms = await self._call_with_breaker(
+                items = await self._call_with_breaker(
                     self._client.cluster.resources.get, type="vm",
                 )
-                lxcs = await self._call_with_breaker(
-                    self._client.cluster.resources.get, type="lxc",
-                )
-                cache.snapshot = (vms or []) + (lxcs or [])
+                cache.snapshot = items or []
                 cache.fetched_at = time.monotonic()
                 return cache.snapshot, False
             except PVEUnreachable:

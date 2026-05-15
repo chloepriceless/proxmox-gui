@@ -150,8 +150,8 @@ async def test_compute_team_usage_sums_mixed_qemu_lxc(session_factory):
     ]
 
     fake = FakeProxmox()
-    fake.queue_response("cluster.resources.get", vms)
-    fake.queue_response("cluster.resources.get", lxcs)
+    # PVE /cluster/resources?type=vm returns BOTH qemu + lxc items.
+    fake.queue_response("cluster.resources.get", vms + lxcs)
 
     with patch("app.clusters.connector.ProxmoxAPI", return_value=fake):
         from app.clusters.registry import PVEConnectorRegistry
