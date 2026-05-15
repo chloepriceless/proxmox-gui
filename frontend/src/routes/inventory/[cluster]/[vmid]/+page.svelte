@@ -15,6 +15,7 @@
   import type { PageData } from './$types';
   import type { RRDSample, ResourceKind } from '$lib/api/types';
   import AuditTable from '$lib/components/audit/AuditTable.svelte';
+  import { formatUptime, formatBytes, formatRate, formatPercent } from '$lib/utils/format';
 
   let { data }: { data: PageData } = $props();
 
@@ -95,6 +96,8 @@
   // RRD max values for sparkline normalisation
   const maxDiskIO = $derived(Math.max(...rrd.map((s) => s.diskread + s.diskwrite), 1));
   const maxNet = $derived(Math.max(...rrd.map((s) => s.netin + s.netout), 1));
+  // Shared timestamp axis for sparkline hover tooltips.
+  const rrdTimes = $derived(rrd.map((s) => s.time));
 </script>
 
 {#if !detail || data.loadError}
@@ -170,7 +173,7 @@
               <dt class="text-muted-foreground">Disk</dt>
               <dd class="font-mono">{diskGb} GB</dd>
               <dt class="text-muted-foreground">Uptime</dt>
-              <dd class="font-mono">{detail.uptime}s</dd>
+              <dd class="font-mono">{formatUptime(detail.uptime)}</dd>
               <dt class="text-muted-foreground">Type</dt>
               <dd class="font-mono">{detail.type === 'lxc' ? 'LXC' : 'VM (QEMU)'}</dd>
             </dl>
@@ -186,9 +189,9 @@
               <dt class="text-muted-foreground">net1</dt>
               <dd class="font-mono truncate">{String(detail.raw_config?.net1 ?? '—')}</dd>
               <dt class="text-muted-foreground">Net in</dt>
-              <dd class="font-mono">{(detail.netin / 1024).toFixed(1)} KB/s</dd>
+              <dd class="font-mono">{formatBytes(detail.netin)} <span class="text-muted-foreground">total</span></dd>
               <dt class="text-muted-foreground">Net out</dt>
-              <dd class="font-mono">{(detail.netout / 1024).toFixed(1)} KB/s</dd>
+              <dd class="font-mono">{formatBytes(detail.netout)} <span class="text-muted-foreground">total</span></dd>
             </dl>
           </Card.Root>
         </div>
@@ -211,13 +214,21 @@
             <div class="grid grid-cols-2 gap-6">
               <div>
                 <p class="text-[13px] text-muted-foreground mb-1">CPU %</p>
-                <Sparkline points={rrd.map((s) => s.cpu)} max={1} label="CPU usage over time" />
+                <Sparkline
+                  points={rrd.map((s) => s.cpu)}
+                  max={1}
+                  format={formatPercent}
+                  times={rrdTimes}
+                  label="CPU usage over time"
+                />
               </div>
               <div>
                 <p class="text-[13px] text-muted-foreground mb-1">RAM</p>
                 <Sparkline
                   points={rrd.map((s) => s.mem)}
                   max={detail.maxmem || 1}
+                  format={formatBytes}
+                  times={rrdTimes}
                   label="RAM usage over time"
                 />
               </div>
@@ -226,6 +237,8 @@
                 <Sparkline
                   points={rrd.map((s) => s.diskread + s.diskwrite)}
                   max={maxDiskIO}
+                  format={formatRate}
+                  times={rrdTimes}
                   label="Disk I/O over time"
                 />
               </div>
@@ -234,6 +247,8 @@
                 <Sparkline
                   points={rrd.map((s) => s.netin + s.netout)}
                   max={maxNet}
+                  format={formatRate}
+                  times={rrdTimes}
                   label="Network throughput over time"
                 />
               </div>
