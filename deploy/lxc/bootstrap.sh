@@ -226,8 +226,20 @@ install -m 0644 "${APP_HOME}/deploy/systemd/proxmox-gui-worker.service" \
     /etc/systemd/system/proxmox-gui-worker.service
 
 echo "==> Installing Caddyfile..."
-install -m 0644 "${APP_HOME}/deploy/caddy/Caddyfile.template" \
-    /etc/caddy/Caddyfile
+# Detect the LXC's primary IPv4 address and substitute it into the
+# Caddyfile so `tls internal` has a concrete SAN anchor. A bare `:443`
+# site block creates a TLS server with no issuable cert — clients then
+# get TLS alert internal_error (80) and the wizard is unreachable.
+LXC_IP="$(hostname -I | awk '{print $1}')"
+if [ -z "$LXC_IP" ]; then
+    echo "ERROR: could not detect LXC primary IPv4 from \`hostname -I\`." >&2
+    exit 1
+fi
+echo "    primary IP detected: ${LXC_IP}"
+sed "s|__SITE_ADDR__|https://${LXC_IP}:443|" \
+    "${APP_HOME}/deploy/caddy/Caddyfile.template" \
+    > /etc/caddy/Caddyfile
+chmod 0644 /etc/caddy/Caddyfile
 
 systemctl daemon-reload
 systemctl enable --now proxmox-gui-api.service

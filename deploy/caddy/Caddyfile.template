@@ -23,7 +23,11 @@
 	auto_https disable_redirects
 }
 
-:443 {
+# __SITE_ADDR__ is replaced by bootstrap.sh with `https://<LXC-IP>:443` so
+# Caddy's internal CA has a concrete IP to put in the leaf cert's SAN.
+# A bare `:443` block creates a TLS server with no connection policy that
+# can issue a cert — clients then get TLS alert internal_error (80).
+__SITE_ADDR__ {
 	tls internal
 
 	encode zstd gzip
