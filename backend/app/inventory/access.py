@@ -106,7 +106,12 @@ async def resolve_resource(
         for item in snapshot:
             if int(item.get("vmid", 0)) != vmid:
                 continue
-            if item.get("pool") != tok.poolid:
+            # PVE returns pool:null for privsep tokens that lack Pool.Audit;
+            # by construction anything the team-scoped token sees IS in its
+            # pool (the only path that grants VM.Audit). Trust the structural
+            # guarantee.
+            item_pool = item.get("pool") or tok.poolid
+            if item_pool != tok.poolid:
                 continue
             return ResolvedResource(
                 cluster=cluster,

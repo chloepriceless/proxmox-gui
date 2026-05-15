@@ -40,7 +40,10 @@ async def compute_team_usage(
     snapshot, _is_stale = await connector.list_resources()
     usage = QuotaUsage()
     for item in snapshot:
-        if item.get("pool") != tok.poolid:
+        # PVE returns pool:null for privsep tokens lacking Pool.Audit; items
+        # visible to a team-scoped token are by construction in its pool.
+        item_pool = item.get("pool") or tok.poolid
+        if item_pool != tok.poolid:
             continue
         usage.cpu_cores += int(item.get("maxcpu") or 0)
         usage.ram_bytes += int(item.get("maxmem") or 0)
