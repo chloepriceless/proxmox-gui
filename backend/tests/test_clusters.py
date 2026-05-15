@@ -596,7 +596,7 @@ async def test_backfill_bootstrap_route_creates_missing_tokens(
     (the user's actual situation after the buggy first-run wizard)."""
     from sqlalchemy import func, select
 
-    from app.models import Cluster, Team, TeamClusterToken
+    from app.models import Team, TeamClusterToken
 
     # Admin user but no personal team — register cluster without bootstrap.
     _, cookies = await _login_admin(
@@ -679,3 +679,61 @@ async def test_backfill_bootstrap_is_idempotent(
             select(func.count()).select_from(TeamClusterToken)
         )
     assert n_tokens == 1  # still just the one from registration
+
+
+# ----------------------------------------------------------------------------
+# Health-probe lifecycle — clusters registered after app boot
+# ----------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_register_cluster_starts_health_probe(session_factory):
+    """register_cluster wires a background health probe for the new cluster.
+
+    The lifespan only probes clusters present at boot; without this a
+    cluster added later is stuck on status 'untested' until the next
+    restart."""
+    from app.clusters.registry import PVEConnectorRegistry
+    from app.clusters.schemas import ClusterCreate
+    from app.clusters.service import register_cluster
+
+    fake = FakeProxmox(responses={"version.get": VERSION_OK})
+    registry = PVEConnectorRegistry(None, session_factory)
+    with patch("app.clusters.connector.ProxmoxAPI", return_value=fake):
+        async with session_factory() as session:
+            payload = ClusterCreate(
+                name="probe-reg", host="pve.test", port=8006, verify_ssl=True,
+                token_user="root@pam", token_name="t",
+                api_token_secret="abcdef-12345",
+            )
+            cluster = await register_cluster(
+                session, payload=payload, registry=registry,
+            )
+        assert cluster.id in registry._probes
+        await registry.stop_all_probes()
+    assert cluster.id not in registry._probes
+
+
+@pytest.mark.asyncio
+async def test_delete_cluster_stops_health_probe(session_factory):
+    """delete_cluster cancels the cluster's background health probe."""
+    from app.clusters.registry import PVEConnectorRegistry
+    from app.clusters.schemas import ClusterCreate
+    from app.clusters.service import delete_cluster, register_cluster
+
+    fake = FakeProxmox(responses={"version.get": VERSION_OK})
+    registry = PVEConnectorRegistry(None, session_factory)
+    with patch("app.clusters.connector.ProxmoxAPI", return_value=fake):
+        async with session_factory() as session:
+            payload = ClusterCreate(
+                name="probe-del", host="pve.test", port=8006, verify_ssl=True,
+                token_user="root@pam", token_name="t",
+                api_token_secret="abcdef-12345",
+            )
+            cluster = await register_cluster(
+                session, payload=payload, registry=registry,
+            )
+        assert cluster.id in registry._probes
+        async with session_factory() as session:
+            await delete_cluster(session, registry, cluster_id=cluster.id)
+        assert cluster.id not in registry._probes

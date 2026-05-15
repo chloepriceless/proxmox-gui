@@ -22,6 +22,8 @@ Functions:
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -37,6 +39,11 @@ from app.clusters.schemas import (
     ClusterUpdate,
 )
 from app.models import Cluster, TeamClusterToken
+
+logger = logging.getLogger(__name__)
+
+# Health-probe interval (seconds) for the per-cluster /version probe.
+_PROBE_INTERVAL = 15.0
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -68,6 +75,39 @@ def _build_transient_connector(
         verify_ssl=verify_ssl,
         tls_fingerprint=tls_fingerprint,
     )
+
+
+async def _start_cluster_probe(
+    registry: PVEConnectorRegistry, cluster_id: int, *, db: AsyncSession,
+) -> None:
+    """Best-effort start of a cluster's background health probe.
+
+    The lifespan in :mod:`app.main` only wires probes for clusters that
+    exist at boot. A cluster registered *afterwards* would otherwise have no
+    probe, so its ClusterStatusPill stays stuck on ``'untested'`` until the
+    next restart — this closes that gap. A probe that fails to spawn must
+    never fail the (already-committed) cluster mutation that triggered it.
+    """
+    try:
+        await registry.start_probe(cluster_id, db=db, interval=_PROBE_INTERVAL)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "health probe failed to start for cluster %s: %s", cluster_id, exc,
+        )
+
+
+async def _restart_cluster_probe(
+    registry: PVEConnectorRegistry, cluster_id: int, *, db: AsyncSession,
+) -> None:
+    """Best-effort cancel + respawn of a cluster's probe so it rebinds to a
+    fresh connector after the cluster's host/token changed."""
+    try:
+        await registry.stop_probe(cluster_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "health probe stop failed for cluster %s: %s", cluster_id, exc,
+        )
+    await _start_cluster_probe(registry, cluster_id, db=db)
 
 
 # ---------------------------------------------------------------------------
@@ -206,6 +246,11 @@ async def register_cluster(
 
     await db.commit()
     await db.refresh(cluster)
+    # The cluster is now persisted. If it was registered after app boot the
+    # lifespan probe-wiring already ran without it — start its probe now so
+    # the ClusterStatusPill reflects live reachability (CLUST-03).
+    if registry is not None:
+        await _start_cluster_probe(registry, cluster.id, db=db)
     return cluster
 
 
@@ -405,6 +450,9 @@ async def update_cluster(
         ) from exc
 
     registry.invalidate(cluster_id)
+    # Respawn the probe so it rebinds to a fresh connector — a host/token
+    # change otherwise leaves the running probe polling a stale client.
+    await _restart_cluster_probe(registry, cluster_id, db=db)
     await db.refresh(row)
     return row
 
@@ -447,6 +495,13 @@ async def delete_cluster(
     await db.delete(row)
     await db.commit()
     registry.invalidate(cluster_id)
+    # Cancel the background health probe — the cluster no longer exists.
+    try:
+        await registry.stop_probe(cluster_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "health probe stop failed for cluster %s: %s", cluster_id, exc,
+        )
 
 
 # ---------------------------------------------------------------------------
