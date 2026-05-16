@@ -273,15 +273,15 @@ Which phases cover which requirements. Updated during roadmap creation.
 | NET-04 | Phase 4 | Pending |
 | LIFE-01 | Phase 3 | Complete (Plan 03-02) |
 | LIFE-02 | Phase 3 | Complete (Plan 03-02) |
-| LIFE-03 | Phase 3 | Complete (Plan 03-02) |
-| LIFE-04 | Phase 3 | Pending |
+| LIFE-03 | Phase 3 | Complete (Plan 03-02 + 03-06 frontend) |
+| LIFE-04 | Phase 3 | Complete (Plan 03-03 + 03-06 frontend) |
 | LIFE-05 | Phase 3 | Complete (Plan 03-04) |
 | LIFE-06 | Phase 3 | Complete (Plan 03-04) |
 | LIFE-07 | Phase 3 | Complete (Plan 03-04) |
-| LIFE-08 | Phase 3 | Pending |
-| LIFE-09 | Phase 3 | Pending |
-| LIFE-10 | Phase 3 | Complete (Plan 03-04) |
-| LIFE-11 | Phase 3 | Complete (Plan 03-04) |
+| LIFE-08 | Phase 3 | Complete (Plan 03-03 + 03-06 frontend) |
+| LIFE-09 | Phase 3 | Complete (Plan 03-03 + 03-06 frontend) |
+| LIFE-10 | Phase 3 | Complete (Plan 03-04 + 03-06 frontend) |
+| LIFE-11 | Phase 3 | Complete (Plan 03-04 + 03-06 frontend) |
 | LIFE-12 | Phase 3 | Complete (Plan 03-02) |
 | LIFE-13 | Phase 3 | Complete (Plan 03-02) |
 | LIFE-14 | Phase 3 | Complete (Plan 03-01) |
