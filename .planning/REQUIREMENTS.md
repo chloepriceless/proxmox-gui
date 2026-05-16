@@ -275,13 +275,13 @@ Which phases cover which requirements. Updated during roadmap creation.
 | LIFE-02 | Phase 3 | Complete (Plan 03-02) |
 | LIFE-03 | Phase 3 | Complete (Plan 03-02) |
 | LIFE-04 | Phase 3 | Pending |
-| LIFE-05 | Phase 3 | Pending |
-| LIFE-06 | Phase 3 | Pending |
-| LIFE-07 | Phase 3 | Pending |
+| LIFE-05 | Phase 3 | Complete (Plan 03-04) |
+| LIFE-06 | Phase 3 | Complete (Plan 03-04) |
+| LIFE-07 | Phase 3 | Complete (Plan 03-04) |
 | LIFE-08 | Phase 3 | Pending |
 | LIFE-09 | Phase 3 | Pending |
-| LIFE-10 | Phase 3 | Pending |
-| LIFE-11 | Phase 3 | Pending |
+| LIFE-10 | Phase 3 | Complete (Plan 03-04) |
+| LIFE-11 | Phase 3 | Complete (Plan 03-04) |
 | LIFE-12 | Phase 3 | Complete (Plan 03-02) |
 | LIFE-13 | Phase 3 | Complete (Plan 03-02) |
 | LIFE-14 | Phase 3 | Complete (Plan 03-01) |
