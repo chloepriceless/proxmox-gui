@@ -106,7 +106,7 @@ Plans:
 - [x] 04-07-PLAN.md — Networks backend — SDN reads, picker service, per-team scoping *(completed 2026-05-16, 8 files, 462 tests green; NET-01/02/03/04 shipped; SUMMARY: .planning/phases/04-provisioning-networking-console/04-07-SUMMARY.md)*
 - [x] 04-08-PLAN.md — Console backend — vncproxy mint + reverse-proxied WebSocket relay *(completed 2026-05-16, 9 files, 477 tests green; CON-01/02/03 shipped; SUMMARY: .planning/phases/04-provisioning-networking-console/04-08-SUMMARY.md)*
 - [x] 04-09-PLAN.md — Frontend foundation — 5 API modules + EmptyState/HelpTooltip + /inventory Create entry *(completed 2026-05-16, 12 files, 18 new tests / 157 frontend total; UI-04/UI-05 frontend-completed; SUMMARY: .planning/phases/04-provisioning-networking-console/04-09-SUMMARY.md)*
-- [ ] 04-10-PLAN.md — Wizard shell — /create route, WizardChrome, PathPicker, sessionStorage draft store
+- [x] 04-10-PLAN.md — Wizard shell — /create route, WizardChrome, PathPicker, sessionStorage draft store *(completed 2026-05-16, 12 files, 32 new tests / 171 frontend total; UI-04 advanced; SUMMARY: .planning/phases/04-provisioning-networking-console/04-10-SUMMARY.md)*
 - [ ] 04-11-PLAN.md — LXC wizard paths + community-scripts catalog browser
 - [ ] 04-12-PLAN.md — VM wizard (4 paths) + node-fit + SDN-aware network picker
 - [ ] 04-13-PLAN.md — Cloud-Init two-pane editor + ISO library browser

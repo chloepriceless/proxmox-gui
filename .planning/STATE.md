@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_plan: 10
+current_plan: 11
 status: executing
-stopped_at: Completed 04-09-PLAN.md
-last_updated: "2026-05-16T20:51:58.000Z"
+stopped_at: Completed 04-10-PLAN.md
+last_updated: "2026-05-16T21:05:24.000Z"
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 38
-  completed_plans: 33
-  percent: 87
+  completed_plans: 34
+  percent: 89
 ---
 
 # STATE: Proxmox Self-Service GUI
@@ -29,14 +29,14 @@ progress:
 ## Current Position
 
 Phase: 04 (provisioning-networking-console) — EXECUTING
-Plan: 9 of 14
-Current Plan: 10
+Plan: 10 of 14
+Current Plan: 11
 
 - **Milestone:** v1
 - **Phase:** 4
-- **Plan:** 04-09 frontend-api-foundation ✅ complete
-- **Status:** Executing Phase 04 — Wave 3 complete (04-09 was the only Wave-3 plan)
-- **Progress:** [████████▋░] 87%
+- **Plan:** 04-10 frontend-wizard-shell ✅ complete
+- **Status:** Executing Phase 04 — Wave 4 complete (04-10 was the only Wave-4 plan)
+- **Progress:** [████████▉░] 89%
 
 ## Phases at a Glance
 
@@ -88,6 +88,7 @@ Current Plan: 10
 | Phase 04 P04-07 | ~9 min | 2 tasks | 8 files |
 | Phase 04 P08 | ~38 min | 2 tasks | 9 files |
 | Phase 04 P09 | ~6 min | 2 tasks | 12 files | 18 new / 157 frontend |
+| Phase 04 P10 | ~8 min | 2 tasks | 12 files | 32 new / 171 frontend |
 
 ## Accumulated Context
 
@@ -215,6 +216,11 @@ Current Plan: 10
 | `api/index.ts` re-exports the `api` namespace + the five Phase-4 modules, while `api/client.ts` stays the canonical page-import surface — both ship | The plan mandated an `index.ts` artifact, but every page imports `from '$lib/api/client'`; shipping both satisfies the plan's artifact requirement AND the existing client.ts contract without breaking either | Plan 04-09 SUMMARY |
 | `iso.listIsos` / `listCloudImages` unwrap the backend `{isos}` / `{images}` envelope inside the client so callers consume a flat `IsoItem[]` / `CloudImage[]` | The backend wraps the lists; the plan typed the client functions as returning flat arrays — the unwrap keeps the typed signature the wizard plans build against | Plan 04-09 SUMMARY |
 | `HelpTooltip` uses a `popover` (not a `tooltip`) when `learnMoreHref` is set | Tooltip content is not reliably interactive/keyboard-reachable; the "Learn more" link must be clickable + tab-reachable, which a popover guarantees (D-25) | Plan 04-09 SUMMARY |
+| Wizard pure logic (step model, path cards, D-04 routing helper, discard gate) lives in a framework-free `wizard-model.ts` | The vitest env is `node` — `.svelte` files cannot be mounted; extracting the logic makes the tested code the rendered code (the Phase-3 `snapshot-tree.ts` discipline) | Plan 04-10 SUMMARY |
+| The `wizardDraft` rune store takes an injectable `StorageLike` (browser binds `sessionStorage`, tests inject an in-memory map) | Same injectable-dependency discipline as the Phase-3 jobs-store `WsFactory` — gives the persist/rehydrate/clear cycle full unit coverage without a browser | Plan 04-10 SUMMARY |
+| The `/create` cluster context comes from `api.inventory.listAll` (team-scoped), not `api.clusters.list` (admin-gated) | The wizard is open to any authenticated team member; `clusters.list` returns admin cluster rows and would 403 a non-admin | Plan 04-10 SUMMARY |
+| A rehydrated wizard draft with an unknown `path` value discards the WHOLE blob (not just the path field) | A forged `path` marks the draft as untrusted — `step`/`formData` are not partially rehydrated either (T-04-10-03) | Plan 04-10 SUMMARY |
+| The `/create` route exposes a single `orchestration` object (`next`/`back`/`goToStep`/`completeWithJob` + getters) | The three sibling wizard-step plans (04-11/12/13) plug their per-path step bodies into a stable shell without re-implementing the step machine or the D-04 routing rule | Plan 04-10 SUMMARY |
 
 ### Open Questions (resolve before/during named phase)
 
@@ -246,11 +252,13 @@ None.
 
 ## Session Continuity
 
-**To resume:** Phase 04 executing — Wave 3 complete (04-09 frontend API foundation + shared primitives). Next is Wave 4: Plan 04-10 (wizard shell — `/create` route, WizardChrome, PathPicker, sessionStorage draft store).
+**To resume:** Phase 04 executing — Wave 4 complete (04-10 wizard shell — the `/create` route, WizardChrome, PathPicker, the sessionStorage draft store + the step-orchestration surface). Next is Wave 5: Plan 04-11 (LXC wizard paths + community-scripts catalog browser) and Plan 04-14 (console tab + notification bell + Networks admin tab) — they plug their step/tab content into the shell 04-10 shipped.
 
 **Next milestone:** First end-to-end "click → running VM/LXC" lands at the end of Phase 4.
 
 **Recently completed:**
+
+- 2026-05-16 — Plan 04-10 frontend-wizard-shell (the Wave-4 `/create` unified provisioning-wizard shell: `wizard-model.ts` — the framework-free heart extracted for `node`-env unit testing — `WizardPath`/`WizardStepId` ids, `stepsForPath` the path-conditional step model (every path `Path → Source → Resources → Network → [Cloud-Init] → Review`; the Cloud-Init step present on all four VM paths, absent from both LXC paths), `PATH_CARDS` the six path-picker cards pinned verbatim from the Copywriting Contract, `FINAL_CTA_LABEL`, `canAdvanceFromPathStep` the Step-1 Next gate, `shouldPromptDiscard` the close-wizard discard gate, `inventoryPathForJob` the D-04 `/inventory/{cluster}/{vmid}` routing helper reading the reserved `vmid` off `ProvisioningJobAccepted`; `wizardDraft.svelte.ts` — a Svelte-5 rune store (modelled on `jobs.svelte.ts`) holding `path`/`step`/`formData`, `sessionStorage`-backed via an injectable `StorageLike`, persisting on every mutation + rehydrating on construction + a `clear()`, with `cipassword`/`ci_password`/`password` stripped from the serialised draft (T-04-10-02 — no secrets to sessionStorage) and a corrupt/forged blob falling back to a fresh empty draft (T-04-10-03); `WizardChrome.svelte` — the reusable chrome: a "Create" header + an icon-only `X` close button with `aria-label="Close wizard"`, the pip+connecting-line stepper rail reusing the Phase-1 `setup/+page.svelte` markup (active `bg-primary`, completed `bg-success`+`Check`, future `bg-muted`), a 64px sticky footer (Back hidden on Step 1, Next/final-CTA right), the step body injected via a `body` snippet, `max-w-[45rem]` centered unless `wide`; `PathPicker.svelte` — Step 1, the six cards in a responsive 3/2/1-up grid as a `bits-ui` radio-group (`role="radiogroup"` + per-card `role="radio"`), the chosen card a `border-primary` ring + a `text-primary` `Check`; `create/+page.server.ts` — an auth-gated SSR loader redirecting an unauthenticated user to `/login?next=…` (T-04-10-01) + pre-fetching the team-scoped cluster context via `api.inventory.listAll`; `create/+page.svelte` — the route assembling the chrome + the path-conditional stepper + Step 1, exposing the `next`/`back`/`goToStep`/`completeWithJob` orchestration surface the sibling step plans (04-11/12/13) plug their per-path step bodies into, with the path+step round-tripping through `wizardDraft` so a mid-wizard reload restores progress, the "Discard this draft?" `alert-dialog` on close, and `completeWithJob` the D-04 post-submit helper (clears the draft, fires the `sonner` toast, routes off `response.vmid`); the shadcn-svelte `radio-group` primitive installed once; 1 auto-fixed deviation — a forged-path rehydrated draft kept a tampered step, fixed by discarding the whole blob; 32 new tests, 171 frontend tests green, `svelte-check` clean; UI-04 advanced)
 
 - 2026-05-16 — Plan 04-09 frontend-api-foundation (the Wave-3 frontend API foundation + shared primitives: five typed API client modules — `api/provisioning.ts` (`createLxc`/`createQemu`/`createCommunityScript` all → the 202 `ProvisioningJobAccepted` carrying the reserved `vmid` for the D-04 post-submit route, + `cloudinitPreview`), `api/catalog.ts` (`listCatalog` curated/full + `getCatalogEntry` + admin `syncCatalog`), `api/networks.ts` (`listNetworks` + admin `getTeamNetworkScope`/`setTeamNetworkScope`), `api/iso.ts` (`listIsos`/`listCloudImages` — both unwrap the backend `{isos}`/`{images}` envelope to a flat array — + `downloadIso` → 202), `api/console.ts` (`mintVncProxy`, VM+LXC) — every module mirrors `lifecycle.ts` verbatim (`withFetch` helper, `MaybeFetch` opts, `apiJson<T>`, per-fn JSDoc); the Phase-4 request/response types appended to `api/types.ts` field-for-field against the shipped Wave-2 backend Pydantic schemas; `api/index.ts` re-exports the `api` namespace + the five modules, `api/client.ts` wires the five into the `api` namespace; the two UI-SPEC shared primitives — `EmptyState.svelte` (UI-04: a centered card-less block, 24px muted icon + Heading 18/600 + Body 14/400 + an optional primary CTA rendered as an `<a href>`, CTA shows only when both `ctaLabel`+`ctaHref` set, a `fullPage` prop for the 3xl top margin) and `HelpTooltip.svelte` (UI-05/D-25: a 14px `HelpCircle` inside a real focusable `<button>` with a `Help: <label>` aria-label, a plain tooltip for short text and a popover with a clickable "Learn more" `ExternalLink` link when `learnMoreHref` is set, content `role="tooltip"`, keyboard-reachable); `/inventory` gained a primary "Create" button (`Plus` icon → `/create`, D-02 no global topbar "+") and the zero-resources list now renders the `EmptyState` with the pinned copy; 1 auto-fixed deviation — a Svelte-5 `state_referenced_locally` on `HelpTooltip`'s `triggerClass` fixed with `$derived`; 18 new tests, 157 frontend tests green, `svelte-check` clean; UI-04 + UI-05 frontend-completed)
 - 2026-05-16 — Plan 04-08 console-backend (the spike-gated embedded-noVNC console backend — the final Wave-2 plan: `connector.vncproxy` minting a console ticket via the spike-confirmed `POST /nodes/{node}/{qemu|lxc}/{vmid}/vncproxy` with `websocket=1` through `_call_with_breaker` — a synchronous mint, not a UPID job; `PVEConnector` gained explicit `host`/`port`/`verify_ssl`/`tls_fingerprint` instance attributes because proxmoxer discards them and the relay's upstream leg needs them; `console/routes.py` — `POST .../{vms|lxcs}/{vmid}/console/vncproxy` minting the ticket ON the click behind `require_resource_access` (cross-tenant → 403, CON-01/02), returning a `VncProxyResponse` whose `relay_url` is the GUI's own `/api/v1/ws/console/...` path — never the Proxmox host:8006 URL (CON-03); `console/proxy.py` — the reverse-proxied bidirectional WebSocket relay: auth-before-`accept()` via `jobs/ws._resolve_ws_user` (cookie-only, `close(1008)` on failure, T-04-08-02), an ownership check via `resolve_resource` before accept (cross-tenant → close, T-04-08-03), a just-in-time `vncproxy` mint inside the relay so the browser never holds a ticket (spike §3 shape a, CON-02), the `vncticket` URL-encoded EXACTLY ONCE via `quote(ticket, safe="")` when building the upstream `wss://...:8006/.../vncwebsocket` URL — `safe=""` is load-bearing because the base64 ticket body contains `/` (Pitfall 2 / T-04-08-04), the upstream leg's `ssl.SSLContext` built from the per-cluster `verify_ssl` posture (`CERT_NONE` when `verify_ssl=False`, spike §5 / T-04-08-06), and a two-pump `FIRST_COMPLETED` relay loop that cleanly closes the browser when the upstream closes; `deploy/caddy/Caddyfile.template` gained a `handle /api/v1/ws/console*` block with `flush_interval -1` (the nginx `proxy_buffering off` equivalent), placed before the generic `/api/*` block; `websockets==16.0` promoted to an explicit `pyproject.toml` pin (already in the venv via `uvicorn[standard]` — a pin, not an install); zero deviations — plan executed exactly against the APPROVED spike 04-03 contract; 15 new tests, 462 → 477 backend tests green; CON-01/02/03 shipped)
@@ -279,8 +287,8 @@ None.
 - 2026-05-14 — Requirements definition (89 v1 requirements across 13 categories)
 - 2026-05-14 — Roadmap (5-phase structure, 100% coverage)
 
-**Last session:** 2026-05-16T20:51:58.000Z
-**Stopped at:** Completed 04-09-PLAN.md
+**Last session:** 2026-05-16T21:05:24.000Z
+**Stopped at:** Completed 04-10-PLAN.md
 **Resume file:** None
 
 ---
