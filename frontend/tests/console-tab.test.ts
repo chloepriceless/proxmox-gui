@@ -16,6 +16,7 @@
 
 import { describe, expect, it } from 'vitest';
 import {
+  consoleEmbedSrc,
   consoleIframeSrc,
   iframeVisible,
   isSafeRelayUrl,
@@ -90,19 +91,62 @@ describe('ConsoleTab relay-URL safety (CON-03)', () => {
     expect(isSafeRelayUrl('')).toBe(false);
   });
 
-  it('consoleIframeSrc returns the relay URL when it is safe', () => {
-    expect(consoleIframeSrc('/api/v1/ws/console/2/lxc/200')).toBe(
-      '/api/v1/ws/console/2/lxc/200'
-    );
-  });
-
   it('consoleIframeSrc throws rather than ever pointing the iframe at :8006', () => {
     expect(() => consoleIframeSrc('wss://pve-host:8006/.../vncwebsocket')).toThrow();
   });
+});
 
-  it('the iframe src never contains the PVE web port', () => {
-    const src = consoleIframeSrc('/api/v1/ws/console/1/vm/101');
-    expect(src).not.toContain(':8006');
+// ---------------------------------------------------------------------------
+// Console — the iframe loads the GUI-origin /console/embed HTML route, never a
+// raw WebSocket path and never a Proxmox-host URL (Plan 04-15, CON-01/CON-03)
+// ---------------------------------------------------------------------------
+
+describe('ConsoleTab embed-src composition (Plan 04-15)', () => {
+  it('consoleEmbedSrc composes the /console/embed?ws=<encoded> URL from a relay path', () => {
+    expect(consoleEmbedSrc('/api/v1/ws/console/clusters/1/qemu/101')).toBe(
+      '/console/embed?ws=%2Fapi%2Fv1%2Fws%2Fconsole%2Fclusters%2F1%2Fqemu%2F101'
+    );
+  });
+
+  it('consoleEmbedSrc URL-encodes the relay path exactly once as the ws query value', () => {
+    const src = consoleEmbedSrc('/api/v1/ws/console/2/lxc/200');
+    expect(src.startsWith('/console/embed?ws=')).toBe(true);
+    // single-encoding — the encoded path must not contain a double-encoded %25.
+    expect(src).not.toContain('%25');
+    expect(src.slice('/console/embed?ws='.length)).toBe(
+      encodeURIComponent('/api/v1/ws/console/2/lxc/200')
+    );
+  });
+
+  it('consoleEmbedSrc throws on a :8006 Proxmox-host URL (CON-03 guard preserved)', () => {
+    expect(() => consoleEmbedSrc('wss://pve-host:8006/.../vncwebsocket')).toThrow();
+  });
+
+  it('consoleEmbedSrc throws on a raw vncwebsocket Proxmox URL', () => {
+    expect(() =>
+      consoleEmbedSrc('wss://pve-host/api2/json/nodes/n/qemu/101/vncwebsocket')
+    ).toThrow();
+  });
+
+  it('consoleIframeSrc accepts a /console/embed?ws= URL and returns it unchanged', () => {
+    const url = '/console/embed?ws=%2Fapi%2Fv1%2Fws%2Fconsole%2Fclusters%2F1%2Fqemu%2F101';
+    expect(consoleIframeSrc(url)).toBe(url);
+  });
+
+  it('consoleIframeSrc rejects a bare /api/v1/ws/console/... WebSocket path', () => {
+    expect(() => consoleIframeSrc('/api/v1/ws/console/clusters/1/qemu/101')).toThrow();
+  });
+
+  it('consoleIframeSrc rejects any :8006 URL even with the embed prefix', () => {
+    expect(() =>
+      consoleIframeSrc('/console/embed?ws=wss://pve-host:8006/x')
+    ).toThrow();
+  });
+
+  it('the composed iframe src round-trips through consoleIframeSrc', () => {
+    const composed = consoleEmbedSrc('/api/v1/ws/console/clusters/3/lxc/300');
+    expect(consoleIframeSrc(composed)).toBe(composed);
+    expect(composed).not.toContain(':8006');
   });
 });
 
