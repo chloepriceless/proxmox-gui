@@ -58,6 +58,11 @@
     /** True when the cluster is unreachable — disables the whole toolbar. */
     clusterUnreachable?: boolean;
     /**
+     * False when the cluster has no designated backup storage (D-08) — the
+     * "Back up now" More-menu item is disabled with a tooltip.
+     */
+    backupStorageConfigured?: boolean;
+    /**
      * Called when a "More" menu item is chosen, after the toolbar has opened
      * the matching dialog. Optional — kept for observers / analytics.
      */
@@ -74,6 +79,7 @@
     vmName,
     node,
     clusterUnreachable = false,
+    backupStorageConfigured = true,
     onMoreAction,
   }: Props = $props();
 
@@ -167,7 +173,7 @@
   // Convert-to-template is qemu-only — the backend rejects an LXC 422.
   const isLxc = $derived(type === 'lxc');
 
-  /** Open the dialog the chosen "More" item owns (Plan 03-06 wires these). */
+  /** Open the dialog the chosen "More" item owns (Plans 03-06/07 wire these). */
   function more(action: 'snapshot' | 'backup' | 'resize' | 'clone' | 'migrate' | 'template') {
     switch (action) {
       case 'snapshot':
@@ -186,10 +192,26 @@
         convertDialogOpen = true;
         break;
       case 'backup':
-        // "Back up now" stays a TODO — Plan 03-07 owns the backup dialog.
+        // "Back up now" enqueues a manual vzdump directly — the dedicated
+        // schedule/file UI lives on the Backups tab (Plan 03-07).
+        void runBackupNow();
         break;
     }
     onMoreAction?.(action);
+  }
+
+  /** Enqueue a manual backup and surface the enqueue toast (UI-SPEC copy). */
+  async function runBackupNow() {
+    if (jobInFlight) return;
+    jobInFlight = true;
+    try {
+      await api.lifecycle.backupNow({ clusterId, vmid, type });
+      toast(`Backup started for ${vmName}.`);
+    } catch {
+      toast.error(`Couldn’t queue the backup for ${vmName}. Try again.`);
+    } finally {
+      jobInFlight = false;
+    }
   }
 
   /** Snapshot-create submit — enqueues the 202 job + the toast. */
@@ -299,10 +321,28 @@
           <DropdownMenu.Item onSelect={() => more('snapshot')}>
             <Camera class="size-4 mr-2" aria-hidden="true" /> Snapshot
           </DropdownMenu.Item>
-          <!-- TODO(03-07): wire Back up now dialog -->
-          <DropdownMenu.Item onSelect={() => more('backup')}>
-            <Database class="size-4 mr-2" aria-hidden="true" /> Back up now
-          </DropdownMenu.Item>
+          {#if backupStorageConfigured}
+            <DropdownMenu.Item onSelect={() => more('backup')}>
+              <Database class="size-4 mr-2" aria-hidden="true" /> Back up now
+            </DropdownMenu.Item>
+          {:else}
+            <!-- No backup storage configured for this cluster (D-08). -->
+            <Tooltip.Root>
+              <Tooltip.Trigger>
+                {#snippet child({ props })}
+                  <div {...props}>
+                    <DropdownMenu.Item disabled>
+                      <Database class="size-4 mr-2" aria-hidden="true" />
+                      Back up now
+                    </DropdownMenu.Item>
+                  </div>
+                {/snippet}
+              </Tooltip.Trigger>
+              <Tooltip.Content>
+                No backup storage is configured for this cluster.
+              </Tooltip.Content>
+            </Tooltip.Root>
+          {/if}
           <DropdownMenu.Item onSelect={() => more('resize')}>
             <Cpu class="size-4 mr-2" aria-hidden="true" /> Resize
           </DropdownMenu.Item>

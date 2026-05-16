@@ -15,6 +15,8 @@
 
 import { apiJson, type ApiInit } from '$lib/utils/api';
 import type {
+  BackupListResponse,
+  BackupSchedule,
   BulkJobAccepted,
   CloneRequest,
   JobAccepted,
@@ -23,6 +25,7 @@ import type {
   ResizeInfo,
   ResizeRequest,
   ResourceKind,
+  ScheduledBackupRow,
   SnapshotListResponse,
 } from './types';
 
@@ -254,5 +257,142 @@ export async function migrate(
   return apiJson<JobAccepted>(
     `${basePath(args.clusterId, args.type, args.vmid)}/migrate`,
     withFetch(opts, { method: 'POST', body: { ...args.body } })
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Plan 03-07 — backup / restore / schedule (Plan 03-04 backend contracts)
+//
+//   POST   /clusters/{id}/{vms|lxcs}/{vmid}/backup            → 202 JobAccepted
+//                                                               (409 if no
+//                                                               backup_storage)
+//   GET    /clusters/{id}/{vms|lxcs}/{vmid}/backups           → BackupListResponse
+//   POST   /clusters/{id}/{vms|lxcs}/{vmid}/restore           → 202 JobAccepted
+//   GET    /clusters/{id}/{vms|lxcs}/{vmid}/backup-schedule   → BackupSchedule
+//   PUT    /clusters/{id}/{vms|lxcs}/{vmid}/backup-schedule   → BackupSchedule
+//   DELETE /clusters/{id}/{vms|lxcs}/{vmid}/backups/{volid}   → 202 JobAccepted
+//   GET    /backups/schedules                                 → ScheduledBackupRow[]
+// ---------------------------------------------------------------------------
+
+/**
+ * POST .../backup — enqueue a manual vzdump. Returns the 202 JobAccepted body;
+ * a 409 ApiError is thrown when the cluster has no designated backup storage
+ * (D-08 — the UI guards this with a disabled button + banner, but the backend
+ * is the enforcement point).
+ */
+export async function backupNow(
+  args: { clusterId: number; vmid: number; type: ResourceKind },
+  opts?: MaybeFetch
+): Promise<JobAccepted> {
+  return apiJson<JobAccepted>(
+    `${basePath(args.clusterId, args.type, args.vmid)}/backup`,
+    withFetch(opts, { method: 'POST' })
+  );
+}
+
+/** GET .../backups — the VM's backup file list (a pure read, no job). */
+export async function listBackups(
+  args: { clusterId: number; vmid: number; type: ResourceKind },
+  opts?: MaybeFetch
+): Promise<BackupListResponse> {
+  return apiJson<BackupListResponse>(
+    `${basePath(args.clusterId, args.type, args.vmid)}/backups`,
+    withFetch(opts, { method: 'GET' })
+  );
+}
+
+/**
+ * POST .../restore — restore from a backup archive. `mode` is "in_place"
+ * (overwrite the existing VM) or "new" (a fresh VMID, runs quota admission
+ * server-side). `new_vmid` / `new_name` are only used for the "new" mode.
+ */
+export async function restore(
+  args: {
+    clusterId: number;
+    vmid: number;
+    type: ResourceKind;
+    archive: string;
+    mode: 'in_place' | 'new';
+    new_vmid?: number;
+    new_name?: string;
+  },
+  opts?: MaybeFetch
+): Promise<JobAccepted> {
+  return apiJson<JobAccepted>(
+    `${basePath(args.clusterId, args.type, args.vmid)}/restore`,
+    withFetch(opts, {
+      method: 'POST',
+      body: {
+        archive: args.archive,
+        mode: args.mode,
+        ...(args.new_vmid !== undefined ? { new_vmid: args.new_vmid } : {}),
+        ...(args.new_name !== undefined ? { new_name: args.new_name } : {}),
+      },
+    })
+  );
+}
+
+/**
+ * GET .../backup-schedule — the current backup schedule row, or `null` when
+ * the VM has no schedule yet (the backend returns `null`, not 404).
+ */
+export async function getSchedule(
+  args: { clusterId: number; vmid: number; type: ResourceKind },
+  opts?: MaybeFetch
+): Promise<BackupSchedule | null> {
+  return apiJson<BackupSchedule | null>(
+    `${basePath(args.clusterId, args.type, args.vmid)}/backup-schedule`,
+    withFetch(opts, { method: 'GET' })
+  );
+}
+
+/** PUT .../backup-schedule — upsert the backup schedule. Returns the saved row. */
+export async function saveSchedule(
+  args: {
+    clusterId: number;
+    vmid: number;
+    type: ResourceKind;
+    enabled: boolean;
+    frequency: 'daily' | 'weekly';
+    keep_last: number;
+  },
+  opts?: MaybeFetch
+): Promise<BackupSchedule> {
+  return apiJson<BackupSchedule>(
+    `${basePath(args.clusterId, args.type, args.vmid)}/backup-schedule`,
+    withFetch(opts, {
+      method: 'PUT',
+      body: {
+        enabled: args.enabled,
+        frequency: args.frequency,
+        keep_last: args.keep_last,
+      },
+    })
+  );
+}
+
+/** DELETE .../backups/{volid} — delete a backup file from storage. */
+export async function deleteBackupFile(
+  args: { clusterId: number; vmid: number; type: ResourceKind; volid: string },
+  opts?: MaybeFetch
+): Promise<JobAccepted> {
+  return apiJson<JobAccepted>(
+    `${basePath(args.clusterId, args.type, args.vmid)}/backups/${encodeURIComponent(
+      args.volid
+    )}`,
+    withFetch(opts, { method: 'DELETE' })
+  );
+}
+
+/**
+ * GET /backups/schedules — the team-scoped scheduled-backup list for the
+ * global `/backups` page (D-06).
+ */
+export async function listScheduledBackups(
+  opts?: MaybeFetch
+): Promise<ScheduledBackupRow[]> {
+  return apiJson<ScheduledBackupRow[]>(
+    '/backups/schedules',
+    withFetch(opts, { method: 'GET' })
   );
 }

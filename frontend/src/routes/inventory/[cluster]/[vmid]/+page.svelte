@@ -13,6 +13,7 @@
   import Sparkline from '$lib/components/inventory/Sparkline.svelte';
   import ActionToolbar from '$lib/components/lifecycle/ActionToolbar.svelte';
   import SnapshotsTab from '$lib/components/lifecycle/SnapshotsTab.svelte';
+  import BackupsTab from '$lib/components/lifecycle/BackupsTab.svelte';
   import { api } from '$lib/api/client';
   import type { PageData } from './$types';
   import type { RRDSample, ResourceKind } from '$lib/api/types';
@@ -22,6 +23,9 @@
   let { data }: { data: PageData } = $props();
 
   const detail = $derived(data.detail);
+  // D-08: the cluster's backup-storage designation drives whether the backup
+  // surfaces are enabled. Best-effort SSR probe — see +page.server.ts.
+  const backupStorageConfigured = $derived(data.backupStorageConfigured ?? true);
 
   // VMDetail.type is 'qemu' | 'lxc' (Proxmox native); ResourceKind is 'vm' | 'lxc'
   // (our API path segment). Map qemu → vm for all API calls.
@@ -136,6 +140,7 @@
       status={detail.status}
       vmName={detail.name ?? `VM ${detail.vmid}`}
       node={detail.node}
+      {backupStorageConfigured}
     />
   </div>
 
@@ -147,6 +152,8 @@
       <!-- Snapshots tab — the Phase 2 Lock marker is removed; the tab activates
            (UI-SPEC Implementation Note 4). -->
       <Tabs.Trigger value="snapshots">Snapshots</Tabs.Trigger>
+      <!-- Backups tab — new in Phase 3, between Snapshots and Console. -->
+      <Tabs.Trigger value="backups">Backups</Tabs.Trigger>
       <Tooltip.Provider>
         <Tooltip.Root>
           <Tooltip.Trigger>
@@ -348,6 +355,19 @@
           vmid={detail.vmid}
           type={toResourceKind(detail.type)}
           vmName={detail.name ?? `VM ${detail.vmid}`}
+        />
+      </div>
+    </Tabs.Content>
+
+    <!-- Backups tab — file list + schedule card + Back-up-now (Plan 03-07). -->
+    <Tabs.Content value="backups">
+      <div class="mt-6">
+        <BackupsTab
+          clusterId={detail.cluster_id}
+          vmid={detail.vmid}
+          type={toResourceKind(detail.type)}
+          vmName={detail.name ?? `VM ${detail.vmid}`}
+          {backupStorageConfigured}
         />
       </div>
     </Tabs.Content>

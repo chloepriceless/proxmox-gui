@@ -246,6 +246,11 @@ export interface Cluster {
   notes: string | null;
   created_at: string;
   updated_at: string;
+  /**
+   * The admin-designated backup storage for this cluster (D-08). `null` when
+   * backups are disabled. Added by Plan 03-04's `0005_phase3_backup_storage`.
+   */
+  backup_storage: string | null;
 }
 
 /**
@@ -266,6 +271,13 @@ export interface ClusterUpdateRequest {
   tls_fingerprint?: string | null;
   notes?: string | null;
   is_active?: boolean;
+  /**
+   * The admin backup-storage designation (D-08). A storage name enables
+   * backups; `null` is the explicit "None — backups disabled" choice. The
+   * backend distinguishes absent (leave unchanged) from null (clear) via an
+   * `_UNSET` sentinel — omit the key entirely to leave the value untouched.
+   */
+  backup_storage?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -600,3 +612,62 @@ export interface MigrateRequest {
   online: boolean;
   bwlimit_mbps: number;
 }
+
+// ---------------------------------------------------------------------------
+// Phase 3 Backup + Restore + Schedule types (Plan 03-07)
+//
+// Backend contracts are from Plan 03-04 (backups.py / backup_routes.py).
+// The Backups tab consumes the per-VM file list + schedule; the global
+// /backups page consumes the team-scoped scheduled-backup list.
+// ---------------------------------------------------------------------------
+
+/** Mirrors one backup file from `GET .../backups` (Plan 03-04 storage content). */
+export interface BackupFile {
+  /** PVE volume id, e.g. "local:backup/vzdump-qemu-100-...". */
+  volid: string;
+  filename: string;
+  /** Size in bytes. */
+  size: number;
+  /** UNIX seconds the backup was created. */
+  ctime: number;
+  /** Archive format, e.g. "vma.zst", "tar.zst". */
+  format: string;
+}
+
+/** Mirrors `GET .../backups` — the VM's backup file list. */
+export interface BackupListResponse {
+  backups: BackupFile[];
+}
+
+/**
+ * Mirrors `app.lifecycle.schemas.BackupScheduleResponse` (GET/PUT
+ * .../backup-schedule). `keep_last` is the simple retention count (D-08).
+ *
+ * The GET route returns `null` when the VM has no schedule yet — callers
+ * must handle the null. The PUT route always returns a populated row.
+ */
+export interface BackupSchedule {
+  id: number | null;
+  cluster_id: number;
+  vmid: number;
+  /** True for an LXC schedule row. */
+  is_lxc: boolean;
+  node: string;
+  enabled: boolean;
+  frequency: string;
+  keep_last: number;
+  /** ISO timestamp of the last scheduled run, or null when never run. */
+  last_run_at: string | null;
+  /** "ok" / "fail" / null — the outcome of the last scheduled run. */
+  last_run_state: string | null;
+}
+
+/**
+ * One row of the global `/backups` page — a scheduled backup across the
+ * user's team-scoped VMs/LXCs (GET /backups/schedules, Plan 03-04 D-06).
+ *
+ * The backend returns `BackupScheduleResponse` rows; this is the same shape
+ * as `BackupSchedule` (the schedule rows ARE the global-page rows). Kept as a
+ * distinct alias so the page reads intentionally.
+ */
+export type ScheduledBackupRow = BackupSchedule;
