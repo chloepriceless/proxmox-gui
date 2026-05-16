@@ -21,10 +21,13 @@
   import Square from '@lucide/svelte/icons/square';
   import RotateCw from '@lucide/svelte/icons/rotate-cw';
   import Power from '@lucide/svelte/icons/power';
+  import Plus from '@lucide/svelte/icons/plus';
+  import Boxes from '@lucide/svelte/icons/boxes';
   import { toast } from 'svelte-sonner';
   import ClusterSection from '$lib/components/inventory/ClusterSection.svelte';
   import FilterChip from '$lib/components/inventory/FilterChip.svelte';
   import TagPill from '$lib/components/inventory/TagPill.svelte';
+  import EmptyState from '$lib/components/shared/EmptyState.svelte';
   import { api } from '$lib/api/client';
   import type {
     ClusterInventory,
@@ -373,6 +376,10 @@
     <h1 class="text-[28px] font-semibold tracking-tight">Inventory</h1>
     <p class="text-muted-foreground text-[14px]">Your VMs and LXCs across all clusters.</p>
   </div>
+  <!-- Primary "Create" entry point (D-02 — no global topbar "+"). -->
+  <Button href="/create" class="shrink-0">
+    <Plus class="size-4" aria-hidden="true" /> Create
+  </Button>
 </header>
 
 <!-- Sticky filter row -->
@@ -486,9 +493,15 @@
     <Button variant="outline" onclick={() => invalidateAll()}>Try again</Button>
   </div>
 {:else if clusters.length === 0}
-  <div class="border-border bg-muted/30 flex flex-col items-center gap-3 rounded-md border border-dashed px-6 py-16 text-center">
-    <p class="text-[14px] font-medium">No VMs or LXCs in your scope yet.</p>
-  </div>
+  <!-- UI-04: the headline empty state — the user has zero VMs/LXCs. -->
+  <EmptyState
+    icon={Boxes}
+    heading="You have no VMs yet"
+    body="Create your first VM or container to get started."
+    ctaLabel="Create one"
+    ctaHref="/create"
+    fullPage
+  />
 {:else if data.inventory.length === 1 && clusterFilter === null}
   <!-- D-01: single cluster — flat table, no section header -->
   {@const c = data.inventory[0]}
