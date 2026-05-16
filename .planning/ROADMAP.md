@@ -81,7 +81,7 @@ Users can self-provision and manage VMs/LXCs on Proxmox through a polished, opin
 - [x] 03-04-PLAN.md — Backups (manual vzdump + scheduled arq-cron with keep-last-N + restore in-place/as-new), clone (VMID reservation + quota admission), template-convert, migrate (quorum + node-local snippet pre-flights + bwlimit), admin backup-storage config
 - [x] 03-05-PLAN.md — Frontend job infra: api/jobs + api/lifecycle clients, WebSocket jobs store, Tasks drawer + JobRow + error detail + retry, Topbar count badge, VM-detail action toolbar + power confirm dialogs *(completed 2026-05-16, 17 files, 100 tests green; LIFE-01/02/12/13 + UI-06 frontend-completed; SUMMARY: .planning/phases/03-job-queue-lifecycle/03-05-SUMMARY.md)*
 - [x] 03-06-PLAN.md — Frontend snapshots tab (hand-rolled recursive tree), resize/clone/migrate/convert dialogs, inventory per-row power menu + bulk-select bar *(completed 2026-05-16, 14 files, 110 tests green; LIFE-03/04/08/09/10/11 frontend-completed; SUMMARY: .planning/phases/03-job-queue-lifecycle/03-06-SUMMARY.md)*
-- [ ] 03-07-PLAN.md — Frontend backups: per-VM Backups tab + restore dialog + schedule card, global /backups page + sidebar nav, admin per-cluster backup-storage Select
+- [x] 03-07-PLAN.md — Frontend backups: per-VM Backups tab + restore dialog + schedule card, global /backups page + sidebar nav, admin per-cluster backup-storage Select *(completed 2026-05-16, 14 files, 121 tests green; LIFE-05/06/07 frontend-completed; SUMMARY: .planning/phases/03-job-queue-lifecycle/03-07-SUMMARY.md)*
 **UI hint**: yes
 **Notes**: arq + embedded Redis (or SQLite-queue fallback if Redis is dropped late). UPID polling must treat the first status response as authoritative (Pitfall 2 — fast operations finish before the first poll). UPID must be persisted to DB before the Proxmox call is issued (Pitfall 12 — task state lost on restart). Migration pre-flight must refuse if a referenced cloud-init snippet lives on node-local storage (Pitfall 20) — this hook lives here even though snippets are written in Phase 4. `skiplock` deliberately not exposed in UI (Pitfall 17). Power actions are intentionally the first writes that exercise the full pipeline (per research SUMMARY.md). Planned 2026-05-16 — 7 plans across 4 waves: W1 {01}, W2 {02,03}, W3 {04,05}, W4 {06,07}.
 
@@ -140,7 +140,7 @@ Users can self-provision and manage VMs/LXCs on Proxmox through a polished, opin
 |-------|----------------|--------|-----------|
 | 1. Foundation | 9/10 | Executing | - |
 | 2. Multi-Cluster Inventory, Quotas & Audit | 0/TBD | Not started | - |
-| 3. Job Queue & Lifecycle | 5/7 | In Progress | - |
+| 3. Job Queue & Lifecycle | 7/7 | Complete | 2026-05-16 |
 | 4. Provisioning, Networking & Console | 0/TBD | Not started | - |
 | 5. Polish & Operational Hardening | 0/TBD | Not started | - |
 

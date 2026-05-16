@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 current_plan: 7
-status: executing
-stopped_at: Completed 03-06-PLAN.md
-last_updated: "2026-05-16T13:39:22Z"
+status: phase-complete
+stopped_at: Completed 03-07-PLAN.md
+last_updated: "2026-05-16T14:06:00Z"
 progress:
   total_phases: 5
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 24
   completed_plans: 24
   percent: 100
@@ -28,14 +28,14 @@ progress:
 
 ## Current Position
 
-Phase: 03 (job-queue-lifecycle) — EXECUTING
+Phase: 03 (job-queue-lifecycle) — COMPLETE
 Plan: 7 of 7
 Current Plan: 7
 
 - **Milestone:** v1
-- **Phase:** 03 — Job Queue & Lifecycle (executing)
-- **Plan:** 03-06 frontend-snapshots-lifecycle-bulk ✅ complete
-- **Status:** Executing Phase 03 — ready for Plan 03-07
+- **Phase:** 03 — Job Queue & Lifecycle ✅ complete (7/7 plans)
+- **Plan:** 03-07 frontend-backups ✅ complete
+- **Status:** Phase 03 complete — ready to plan Phase 04
 - **Progress:** [██████████] 100%
 
 ## Phases at a Glance
@@ -52,8 +52,8 @@ Current Plan: 7
 
 ## Performance Metrics
 
-- **Phases complete:** 0/5
-- **Plans complete:** 9/10
+- **Phases complete:** 3/5
+- **Plans complete:** 24/24 (Phases 1–3 complete)
 - **Requirements shipped:** 22/89 (API-01, API-03 via Plan 01-01; AUTH-01, AUTH-02, AUTH-05, AUTH-07, AUTH-08, CLUST-01, CLUST-05 schema-landed via Plan 01-02; UI-01, UI-02 frontend-shell via Plan 01-03; DEPLOY-01, DEPLOY-02, DEPLOY-03, DEPLOY-05 helper-script skeleton via Plan 01-04; AUTH-01..05 fully shipped + API-01..03 fully shipped via Plan 01-05; CLUST-01, CLUST-05, CLUST-06, AUTH-08 fully shipped via Plan 01-06; AUTH-07, AUTH-08, DEPLOY-05 fully shipped via Plan 01-07; AUTH-01, AUTH-02 (login surface), UI-01, UI-02 (auth gate + login + setup wizard frontend), DEPLOY-05 (wizard frontend) frontend-completed via Plan 01-08; AUTH-03, AUTH-04, AUTH-05 (account self-service surface), API-02 (PAT frontend mint/list/revoke + show-once dialog) frontend-completed via Plan 01-09)
 - **Out-of-scope items deferred:** see REQUIREMENTS.md v2 section
 
@@ -82,7 +82,7 @@ Current Plan: 7
 | Phase 03 P04 | 17min | 3 tasks | 23 files |
 | Phase 03 P05 | 8min | 2 tasks | 17 files |
 | Phase 03 P06 | 9min | 2 tasks | 14 files |
-| Phase 03 P06 | 9min | 2 tasks | 14 files |
+| Phase 03 P07 | 18min | 2 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -189,6 +189,9 @@ Current Plan: 7
 | SnapshotTree's parent-pointer → hierarchy transform lives in a pure snapshot-tree.ts module imported by the component | The `node` vitest env cannot mount Svelte components; extracting the builder makes the tested logic the rendered logic — same constraint as the jobs-store injectable factory | Plan 03-06 SUMMARY |
 | Clone/Migrate node lists are derived from the cluster inventory's unique `node` values | The frontend has no dedicated node-listing endpoint and Plan 04 added no nextid helper; the clone backend auto-assigns the VMID server-side when new_vmid is omitted | Plan 03-06 SUMMARY |
 | The recursive snapshot tree is a self-rendering `{#snippet}` (treeNodes), not recursive component instantiation | A snippet that calls itself is the cleaner Svelte 5 idiom and keeps the roving-tabindex $state in one component instance | Plan 03-06 SUMMARY |
+| ScheduledBackupRow aliases BackupSchedule; GET /backups/schedules returns BackupScheduleResponse rows (cluster_id/vmid/is_lxc/node), not the cluster_name/vm_name shape the plan sketched | The /backups table renders the real Plan 03-04 backend contract; rendering row.cluster_name would print undefined | Plan 03-07 SUMMARY |
+| getSchedule is typed Promise<BackupSchedule \| null>; the VM-detail loader best-effort fetches the admin-only cluster GET for backup_storage | GET .../backup-schedule returns null (not 404) for an unscheduled VM; GET /clusters/{id} is admin-gated so non-admins get backupStorageConfigured:true and the backend 409 enforces D-08 | Plan 03-07 SUMMARY |
+| Restore-as-new requires new_vmid in the dialog (CTA gated on it) | The backend RestoreRequest model validator rejects mode='new' without new_vmid 422 — the field cannot be auto-assigned from the dialog | Plan 03-07 SUMMARY |
 
 ### Open Questions (resolve before/during named phase)
 
@@ -220,12 +223,13 @@ None.
 
 ## Session Continuity
 
-**To resume:** Run `/gsd-execute-phase 3` to continue with Plan 03-07.
+**To resume:** Phase 03 complete (7/7 plans). Run `/gsd-plan-phase 4` to plan Phase 04 — Provisioning, Networking & Console.
 
 **Next milestone:** First end-to-end "click → running VM/LXC" lands at the end of Phase 4.
 
 **Recently completed:**
 
+- 2026-05-16 — Plan 03-07 frontend-backups (the Phase 3 backup UI: a per-VM Backups tab between Snapshots and Console — BackupsTab with a backup-files Card, a "Back up now" Database-icon primary button, 48px file rows with a MoreHorizontal Restore/Delete menu, and the BackupScheduleCard on top — a Switch + Daily/Weekly Select + keep-last-N number input + Save-schedule CTA, the whole card disabled when no backup storage; the D-08 no-storage bg-warning/10 banner; RestoreDialog defaulting to in-place overwrite behind a typed-name confirm — bg-destructive/10 data-loss warning, ENTER does not submit, CTA "Restore (overwrite)" — with a restore-as-new alternative (required New VMID + New name, CTA swaps to "Restore as new VM"); the global /backups page — an auth-gated SSR loader copying the audit-page analog + a shadcn table of the team-scoped scheduled-backup list, with a CalendarClock "Backups" sidebar nav item; the admin per-cluster backup-storage Select on the cluster edit form with a "None — backups disabled" option saved via the existing Save-changes CTA; the ActionToolbar "Back up now" More-menu item wired; api/lifecycle.ts + api/clusters.ts extended; 3 auto-fixed deviations aligning the plan's interface sketch to the live Plan 03-04 backend contracts; 11 new tests, 121 frontend tests green; LIFE-05/06/07 frontend-completed — Phase 3 complete)
 - 2026-05-16 — Plan 03-06 frontend-snapshots-lifecycle-bulk (the lifecycle UI for snapshots + the resize/clone/migrate operation set + inventory bulk actions: a hand-rolled recursive SnapshotTree — D-05, no tree-view npm dependency, role=tree/treeitem + aria-expanded + roving tabindex + 24px CSS indent guides — with a pure snapshot-tree.ts builder for node-env unit testing; the Snapshots tab filling the formerly-disabled Phase 2 placeholder, with the Snapshots-trigger Lock removed; SnapshotCreateDialog + restore/delete typed-name ConfirmByNameDialog wiring; ResizeDialog with hotplug-driven reboot-required warnings + disk-shrink inline error + persistent bg-destructive/10 notice + CTA-blocked-while-invalid + no lock-override field; MigrateDialog keeping bwlimit visible inside an always-present Advanced collapsible + 409 pre-flight inline notice; CloneDialog with linked/full mode + node/storage + overridable Auto-assigned VMID; ConvertTemplateDialog one-way warning; the ActionToolbar More menu wired to all five dialogs with Convert disabled+tooltipped for LXC; the inventory per-row MoreHorizontal power menu + Select toggle + 40px checkbox column + sticky bulk-action bar fanning out one bulkPower job per VM under a single batch confirm; 10 new snapshot-tree tests, 110 frontend tests green; LIFE-03/04/08/09/10/11 frontend-completed)
 - 2026-05-16 — Plan 03-05 frontend-power-vertical-slice (the frontend half of the power-action slice: api/jobs + api/lifecycle clients registered in the api namespace; utils/elapsed.ts no-date-library formatter; stores/jobs.svelte.ts WebSocket rune-store — backfill reconcile-by-id, exponential-backoff reconnect, derived running/failed counts, completion toasts; Tasks drawer — 420px right Sheet with the live WebSocket job feed, batch grouping, 1s elapsed-timer tick, disconnected strip; JobRow + JobErrorDetail — state-tinted rows, friendly-error-first + "Show technical details" collapsible, idempotent-only Retry; Topbar ListChecks Tasks icon + 18px count badge red-on-unacked-failure; ActionToolbar on the VM detail page — Start/Stop/Reboot/Shutdown + More menu + typed-name Delete with PowerConfirmDialog; QuotaIndicator/Tasks drawers made mutually exclusive; 26 new tests, 100 frontend tests green; LIFE-01/02/12/13 + UI-06 frontend-completed)
 - 2026-05-16 — Plan 03-04 backups-clone-migrate (backup lifecycle: manual vzdump 202 + 409 D-08 no-storage guard, backup-file list, restore in-place/as-new with quota admission, backup-schedule CRUD, global /backups page; fire_due_scheduled_backups arq cron firing due BackupSchedule rows every 5 min + keep-last-N prune on the backup job's success path; clone linked/full with app-reserved VMID + quota admission, template-convert qemu-only/LXC-rejected; migrate live/offline with bwlimit + quorum & node-local-snippet pre-flights; BackupSchedule ORM model + 0005_phase3_backup_storage migration; admin per-cluster backup-storage designation; 24 new tests, 369 total green; LIFE-05/06/07/10/11 + API-04 shipped)
@@ -248,8 +252,8 @@ None.
 - 2026-05-14 — Requirements definition (89 v1 requirements across 13 categories)
 - 2026-05-14 — Roadmap (5-phase structure, 100% coverage)
 
-**Last session:** 2026-05-16T13:39:22Z
-**Stopped at:** Completed 03-06-PLAN.md
+**Last session:** 2026-05-16T14:06:00Z
+**Stopped at:** Completed 03-07-PLAN.md
 **Resume file:** None
 
 ---
