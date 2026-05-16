@@ -214,6 +214,7 @@ def create_app() -> FastAPI:
     from app.jobs.routes import router as jobs_router
     from app.jobs.ws import router as jobs_ws_router
     from app.lifecycle.backup_routes import router as backup_router
+    from app.lifecycle.clone_migrate_routes import router as clone_migrate_router
     from app.lifecycle.resize_routes import router as resize_router
     from app.lifecycle.routes import router as lifecycle_router
     from app.lifecycle.snapshot_routes import router as snapshot_router
@@ -265,6 +266,9 @@ def create_app() -> FastAPI:
     # Plan 03-04: backup routes — manual backup, file list, restore (in-place /
     # as-new), backup-schedule CRUD, global /backups page (LIFE-05..07).
     app.include_router(backup_router, prefix="/api/v1", tags=["lifecycle"])
+    # Plan 03-04: clone / template-convert / migrate routes — all 202, with
+    # VMID reservation + quota admission + migrate pre-flights (LIFE-10, LIFE-11).
+    app.include_router(clone_migrate_router, prefix="/api/v1", tags=["lifecycle"])
     # Plan 03-02: jobs API (list/get/retry) + the Tasks-drawer WebSocket
     # (/api/v1/jobs, /api/v1/ws/jobs).
     app.include_router(jobs_router, prefix="/api/v1", tags=["jobs"])

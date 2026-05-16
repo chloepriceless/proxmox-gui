@@ -142,9 +142,14 @@ def _make_config(db_url: str) -> Config:
 
 
 def test_0004_phase3_round_trips(fresh_db: str) -> None:
-    """upgrade head → downgrade -1 → upgrade head round-trips cleanly."""
+    """upgrade 0004 → downgrade -1 → upgrade 0004 round-trips cleanly.
+
+    Pinned to ``0004_phase3`` (not ``head``) so the ``downgrade -1`` reverts
+    0004 — Plan 03-04 added 0005_phase3_backup_storage on top of head, so a
+    bare ``downgrade -1`` from head would only revert 0005.
+    """
     cfg = _make_config(fresh_db)
-    command.upgrade(cfg, "head")
+    command.upgrade(cfg, "0004_phase3")
 
     engine = sa.create_engine(fresh_db)
     insp = sa.inspect(engine)
@@ -167,7 +172,7 @@ def test_0004_phase3_round_trips(fresh_db: str) -> None:
     engine2.dispose()
 
     # Re-upgrade — proves the migration is replayable.
-    command.upgrade(cfg, "head")
+    command.upgrade(cfg, "0004_phase3")
     engine3 = sa.create_engine(fresh_db)
     assert "backup_schedules" in sa.inspect(engine3).get_table_names()
     engine3.dispose()

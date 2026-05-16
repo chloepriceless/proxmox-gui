@@ -27,6 +27,11 @@ from arq.connections import RedisSettings
 
 from app.jobs.backup_functions import run_backup, run_backup_delete, run_restore
 from app.jobs.backups_cron import fire_due_scheduled_backups
+from app.jobs.clone_migrate_functions import (
+    run_clone,
+    run_migrate,
+    run_template_convert,
+)
 from app.jobs.functions import noop_job, run_power_action
 from app.jobs.reaper import reap_orphans
 from app.jobs.resize_functions import run_resize
@@ -124,6 +129,11 @@ class WorkerSettings:
         func(run_backup, name='vm.backup', max_tries=1, timeout=14400),
         func(run_restore, name='vm.restore', max_tries=1, timeout=14400),
         func(run_backup_delete, name='vm.backup.delete', max_tries=1, timeout=300),
+        # Plan 03-04: clone / template-convert / migrate. Non-idempotent —
+        # max_tries=1; clone/migrate can run for hours.
+        func(run_clone, name='vm.clone', max_tries=1, timeout=14400),
+        func(run_template_convert, name='vm.template', max_tries=1, timeout=300),
+        func(run_migrate, name='vm.migrate', max_tries=1, timeout=14400),
     ]
     # Plan 03-04: scheduled-backup cron — fire due schedules every 5 minutes
     # (RESEARCH §Pattern 1). The cron entry point enqueues vm.backup jobs.
