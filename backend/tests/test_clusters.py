@@ -737,3 +737,140 @@ async def test_delete_cluster_stops_health_probe(session_factory):
         async with session_factory() as session:
             await delete_cluster(session, registry, cluster_id=cluster.id)
         assert cluster.id not in registry._probes
+
+
+# ----------------------------------------------------------------------------
+# GET /{id}/nodes/resources — per-node free CPU/RAM for the node-fit hint (VM-10)
+# ----------------------------------------------------------------------------
+#
+# The route exposes ``connector.node_resources()`` (a thin read of PVE's
+# ``/cluster/resources?type=node``) so the create wizard's node-fit hint can
+# compare a requested size against each node's LIVE free capacity. The
+# connector reads ``cluster.resources.get`` under the hood, so FakeProxmox is
+# keyed on that dotted path.
+
+# A canned ``/cluster/resources?type=node`` payload. The first row is the
+# unit-math anchor from the plan's <behavior> block: maxcpu=8, cpu=0.25 →
+# free_cpu == 6.0; maxmem=16 GiB, mem=4 GiB → free_ram_mb == 12288.
+_NODE_RESOURCE_ROWS = [
+    {
+        "node": "node-1", "type": "node", "status": "online",
+        "maxcpu": 8, "cpu": 0.25,
+        "maxmem": 16 * 1024 ** 3, "mem": 4 * 1024 ** 3,
+    },
+    {
+        "node": "node-2", "type": "node", "status": "offline",
+        "maxcpu": 4, "cpu": 0.0,
+        "maxmem": 8 * 1024 ** 3, "mem": 0,
+    },
+]
+
+
+async def _register_cluster_for_resources(client, session_factory, suffix):
+    """Register a cluster (admin) and return its id + the admin cookies."""
+    _, cookies = await _login_admin(client, session_factory, f"admin_{suffix}")
+    csrf = cookies["csrf_token"]
+    fake = FakeProxmox(responses={"version.get": VERSION_OK})
+    with patch("app.clusters.connector.ProxmoxAPI", return_value=fake):
+        created = (await client.post(
+            "/api/v1/clusters/",
+            cookies=cookies, headers={"X-CSRF-Token": csrf},
+            json=_valid_cluster_payload(),
+        )).json()
+    return created["id"], cookies
+
+
+@pytest.mark.asyncio
+async def test_node_resources_returns_per_node_free_capacity(
+    client, session_factory,
+):
+    """GET /{id}/nodes/resources → 200 with per-node free CPU/RAM figures."""
+    cid, cookies = await _register_cluster_for_resources(
+        client, session_factory, "nr1",
+    )
+    fake = FakeProxmox(responses={"cluster.resources.get": _NODE_RESOURCE_ROWS})
+    with patch("app.clusters.connector.ProxmoxAPI", return_value=fake):
+        response = await client.get(
+            f"/api/v1/clusters/{cid}/nodes/resources", cookies=cookies,
+        )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert isinstance(body, list)
+    by_node = {row["node"]: row for row in body}
+    assert set(by_node) == {"node-1", "node-2"}
+    # Every row carries the four fields the node-fit hint consumes.
+    for row in body:
+        assert set(row) >= {"node", "free_cpu", "free_ram_mb", "status"}
+
+
+@pytest.mark.asyncio
+async def test_node_resources_unit_math(client, session_factory):
+    """The route performs the byte→MB / load-fraction→free-cores conversion.
+
+    node-1: maxcpu=8, cpu=0.25 → free_cpu == 6.0;
+            maxmem=16 GiB, mem=4 GiB → free_ram_mb == 12288.
+    """
+    cid, cookies = await _register_cluster_for_resources(
+        client, session_factory, "nr2",
+    )
+    fake = FakeProxmox(responses={"cluster.resources.get": _NODE_RESOURCE_ROWS})
+    with patch("app.clusters.connector.ProxmoxAPI", return_value=fake):
+        response = await client.get(
+            f"/api/v1/clusters/{cid}/nodes/resources", cookies=cookies,
+        )
+    assert response.status_code == 200, response.text
+    by_node = {row["node"]: row for row in response.json()}
+    assert by_node["node-1"]["free_cpu"] == 6.0
+    assert by_node["node-1"]["free_ram_mb"] == 12288
+
+
+@pytest.mark.asyncio
+async def test_node_resources_includes_offline_node(client, session_factory):
+    """An offline node is still returned — the frontend, not the route, decides."""
+    cid, cookies = await _register_cluster_for_resources(
+        client, session_factory, "nr3",
+    )
+    fake = FakeProxmox(responses={"cluster.resources.get": _NODE_RESOURCE_ROWS})
+    with patch("app.clusters.connector.ProxmoxAPI", return_value=fake):
+        response = await client.get(
+            f"/api/v1/clusters/{cid}/nodes/resources", cookies=cookies,
+        )
+    assert response.status_code == 200, response.text
+    by_node = {row["node"]: row for row in response.json()}
+    assert "node-2" in by_node
+    assert by_node["node-2"]["status"] == "offline"
+
+
+@pytest.mark.asyncio
+async def test_node_resources_requires_authentication(client, session_factory):
+    """An unauthenticated request to the node-resources route gets 401."""
+    # Register the cluster as admin so a valid id exists, then call WITHOUT
+    # cookies — the route must reject an anonymous caller.
+    cid, _ = await _register_cluster_for_resources(
+        client, session_factory, "nr4",
+    )
+    response = await client.get(f"/api/v1/clusters/{cid}/nodes/resources")
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_node_resources_allows_non_admin_user(client, session_factory):
+    """A regular (non-admin) user can read node resources — the create wizard
+    is run by regular users, so the route is NOT admin-gated."""
+    # First register a cluster as admin.
+    cid, _ = await _register_cluster_for_resources(
+        client, session_factory, "nr5",
+    )
+    # Now log in as a plain user and hit the route.
+    await make_user(
+        session_factory, username="plainuser", password="userpass12345",
+    )
+    user_cookies = await login_as(
+        client, username="plainuser", password="userpass12345",
+    )
+    fake = FakeProxmox(responses={"cluster.resources.get": _NODE_RESOURCE_ROWS})
+    with patch("app.clusters.connector.ProxmoxAPI", return_value=fake):
+        response = await client.get(
+            f"/api/v1/clusters/{cid}/nodes/resources", cookies=user_cookies,
+        )
+    assert response.status_code == 200, response.text
