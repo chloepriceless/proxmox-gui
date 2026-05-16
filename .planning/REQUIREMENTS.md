@@ -278,10 +278,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | VM-02 | Phase 4 | Complete (Plan 04-12 template-clone wizard path) |
 | VM-03 | Phase 4 | Complete (Plan 04-05 backend + 04-12 blank-iso wizard path) |
 | VM-04 | Phase 4 | Complete (Plan 04-12 vm-clone wizard path) |
-| VM-05 | Phase 4 | Pending |
-| VM-06 | Phase 4 | Pending |
-| VM-07 | Phase 4 | Pending |
-| VM-08 | Phase 4 | Pending |
+| VM-05 | Phase 4 | Complete (Plan 04-05 backend + 04-13 Cloud-Init two-pane editor) |
+| VM-06 | Phase 4 | Complete (Plan 04-13 PVE-injected-line marking in the YAML pane) |
+| VM-07 | Phase 4 | Complete (Plan 04-05 validator + 04-13 block-hard/warn-soft verdict UI) |
+| VM-08 | Phase 4 | Complete (Plan 04-05 backend + 04-13 ISO library browser) |
 | VM-09 | Phase 4 | Complete (Plan 04-12 VM Resources step) |
 | VM-10 | Phase 4 | Complete (Plan 04-12 node-fit selector + quota-delta line) |
 | NET-01 | Phase 4 | Complete (Plan 04-07 backend + 04-12 SDN network picker) |

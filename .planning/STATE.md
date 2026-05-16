@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_plan: 13
+current_plan: 14
 status: executing
-stopped_at: Completed 04-12-PLAN.md
-last_updated: "2026-05-16T22:00:00.000Z"
+stopped_at: Completed 04-13-PLAN.md
+last_updated: "2026-05-16T22:15:00.000Z"
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 38
-  completed_plans: 37
-  percent: 97
+  completed_plans: 38
+  percent: 100
 ---
 
 # STATE: Proxmox Self-Service GUI
@@ -30,13 +30,13 @@ progress:
 
 Phase: 04 (provisioning-networking-console) — EXECUTING
 Plan: 14 of 14
-Current Plan: 13
+Current Plan: 14
 
 - **Milestone:** v1
 - **Phase:** 4
-- **Plan:** 04-12 frontend-vm-wizard ✅ complete
-- **Status:** Executing Phase 04 — Wave 6 complete (04-12 VM wizard: 4 paths + node-fit selector + quota-delta line + SDN-aware network picker); only 04-13 Cloud-Init editor remains
-- **Progress:** [█████████▋] 97%
+- **Plan:** 04-13 frontend-cloudinit-iso ✅ complete
+- **Status:** Executing Phase 04 — Wave 7 complete (04-13 Cloud-Init two-pane editor + ISO library browser); all 14 phase-04 plans executed — phase ready for verification/transition
+- **Progress:** [██████████] 100%
 
 ## Phases at a Glance
 
@@ -92,6 +92,7 @@ Current Plan: 13
 | Phase 04 P11 | ~11 min | 2 tasks | 9 files | 37 new / 208 frontend |
 | Phase 04 P14 | ~30 min | 2 tasks | 21 files | 8 new / 485 backend + 43 new / 251 frontend |
 | Phase 04 P12 | ~12 min | 2 tasks | 11 files | 55 new / 306 frontend |
+| Phase 04 P13 | ~10 min | 2 tasks | 9 files | 48 new / 354 frontend |
 
 ## Accumulated Context
 
@@ -236,6 +237,9 @@ Current Plan: 13
 | `NodeSelect` is pure-prop-driven — it takes a `NodeResource[]` prop; Phase 4 ships no team-scoped node-free-resource API, so node-fit is advisory (a `null` free figure keeps the node pickable) | The backend's row-locked quota admission + PVE remain the real placement gate (T-04-12-02); the node-fit logic ships complete + tested, only the live-data feed awaits a future endpoint | Plan 04-12 SUMMARY |
 | The LXC Resources step is retro-enriched by composing `NodeSelect`+`QuotaDeltaLine` in the `/create` route ALONGSIDE `LxcResourcesStep` | That file is Plan 04-11's and exposes comment-only mount markers (not prop slots); composing in the route satisfies the enrichment with no cross-wave file edit (the approach the 04-11 SUMMARY offered) | Plan 04-12 SUMMARY |
 | `vm-wizard.ts` owns the network-picker logic (`networkGroups`/`isNetworkPickable`/`defaultIpAssignment`/`buildNetworkConfig`) and the quota-delta logic (`computeQuotaDelta`) | Both are framework-free and unit-testable in the `node` env; the `.svelte` files are thin render shells (the 04-10 `wizard-model.ts` discipline) | Plan 04-12 SUMMARY |
+| The Cloud-Init editor's SSH-key multi-select takes its catalogue as a typed `SshKeyChoice[]` prop; the `/create` route passes an EMPTY catalogue for now | No team-wide SSH-keys-with-public-key read endpoint exists in the Phase-4 frontend surface — `/me/ssh-keys` is per-user and its list response carries no public-key body by design. The editor's grouping/selection/resolution logic ships complete + tested; the `cipassword` path (the required credential D-11) works fully end-to-end. Populating the catalogue from a future team-scoped endpoint is a clean follow-on with no component change — the established Plan 04-12 graceful-degradation pattern | Plan 04-13 SUMMARY |
+| The Cloud-Init YAML pane is a hand-rolled styled `<pre>` with per-line `Badge` spans — NO code-editor / syntax-highlighter dependency (monaco/codemirror/prismjs/shiki) | The UI-SPEC Design System forbids them; `YamlLine.text` renders as auto-escaped Svelte text bindings (never `{@html}` — T-04-13-03); the `cloudinit-editor.test.ts` no-import assertion (comment-stripped) guards it | Plan 04-13 SUMMARY |
+| The ISO library + Cloud-Init editor logic lives in `node`-testable `iso-library.ts` / `cloudinit-form.ts` modules; the `.svelte` files are thin render shells | The vitest env is `node`-only (no DOM) — the established Phase-4 discipline; the pure helpers (filters, request builders, verdict predicates) carry every DOM-free decision and are fully unit-tested, `svelte-check` exercises the rendered props | Plan 04-13 SUMMARY |
 
 ### Open Questions (resolve before/during named phase)
 
@@ -267,11 +271,13 @@ None.
 
 ## Session Continuity
 
-**To resume:** Phase 04 executing — Wave 6 complete (04-12 VM wizard: the four VM source paths + the shared node-fit selector + quota-delta line + SDN-aware network picker, all wired into `/create` and retro-fitted into the LXC paths). Only Wave 7 remains: Plan 04-13 (Cloud-Init two-pane editor + ISO library browser) — it plugs the Cloud-Init step body into the marked VM-path mount point in `create/+page.svelte`. After 04-13, Phase 4 is complete.
+**To resume:** Phase 04 fully executed — all 14 plans complete. Wave 7 (04-13: the Cloud-Init two-pane editor + the ISO library browser) just landed, filling the last placeholder in `create/+page.svelte`. The phase is ready for verification / transition (`/gsd-verify-phase` or `/gsd-transition`). After Phase 4 ships its verification, Phase 5 (Polish & Operational Hardening) begins.
 
-**Next milestone:** First end-to-end "click → running VM/LXC" lands at the end of Phase 4.
+**Next milestone:** First end-to-end "click → running VM/LXC" lands at the end of Phase 4 — all the provisioning UI surface is now in place.
 
 **Recently completed:**
+
+- 2026-05-16 — Plan 04-13 frontend-cloudinit-iso (the Wave-7 Cloud-Init two-pane editor + ISO library browser — the two non-spike-gated VM sub-systems whose backends shipped in Plan 04-05: `cloudinit-form.ts` — the framework-free editor-form helper: the `CloudInitEditorForm` shape + `cloudInitFormDefaults()`, `toCloudInitPreviewRequest` (form → the `cloudinitPreview` body) + `toQemuCloudInitFields` (form → the `ci_user`/`ci_password`/`ssh_public_keys` `CreateQemuRequest` fields `buildQemuRequest` carries), `resolveSshKeys`/`groupSshKeysByOwner` (the team-wide SSH-key resolution + owner grouping D-11), `cloudInitBlocksNext`/`hardErrorFor`/`hasSoftWarnings` (the block-hard/warn-soft verdict predicates D-12), `linesToList`/`listToLines` (the multi-line textarea fields); `CloudInitYamlPane.svelte` — the hand-rolled read-only YAML render pane: a styled scrollable `<pre>` rendering `YamlLine[]`, each `injected:true` line dimmed `text-muted-foreground` + an inline `Badge variant="outline"` "PVE default" (D-10, VM-06), `YamlLine.text` as auto-escaped text bindings never `{@html}` (T-04-13-03), NO code-editor library; `CloudInitEditor.svelte` — the full-width two-pane wizard step: the form left (`ciuser`, `cipassword` via `PasswordInput` required D-11, the team-wide SSH-key multi-select grouped by owner, the IP-mode select + static-IP fields, DNS/packages/runcmd textareas) + `CloudInitYamlPane` right, calling `api.provisioning.cloudinitPreview` (debounced) on every change for the live `lines` + `verdict`, a `bg-destructive/10` hard-error block disabling the wizard `Next` + inline `text-destructive` field messages, a `bg-warning/10` non-blocking soft-warning block (D-12, VM-07), `HelpTooltip`s on the PVE fields; `iso-library.ts` — the framework-free ISO-browser logic: `filterIsos` (the command-search filter), `buildIsoUrlDownload`/`buildCloudImageDownload` (the free-URL D-16 + curated-image D-15 `IsoDownloadRequest` builders), `filenameFromUrl`, `looksLikeHttpUrl` (a light client-side check — the backend `enqueue_iso_download` is the real SSRF guard T-04-13-04), `isIsoLibraryEmpty`; `IsoLibrary.svelte` — the three-region ISO browser: an on-storage ISO `table` (48px rows — filename Mono / size `tabular-nums` / storage) with a `command` search calling `api.iso.listIsos`, the curated ISO list, the free-URL `input` + "Download ISO" calling `api.iso.downloadIso` (a 202 the Tasks drawer tracks), the no-on-storage-ISOs `EmptyState`, NO admin gate — open to any user D-17; `create/+page.svelte` fills the Cloud-Init mount point on all four VM paths with `CloudInitEditor` (the cloud-init create fields fold into `vmFormBag` via `toQemuCloudInitFields`, the hard-error verdict gates `Next`); `VmSourceStep.svelte` replaces the Plan-04-12 basic ISO `Select` placeholder in the blank-iso branch with the full `IsoLibrary`; 1 auto-fixed bug — `filenameFromUrl` returned the host for a tail-less URL (the scheme+authority was not stripped before the path split — fixed); 1 interface adjustment — the SSH-key catalogue is an empty typed prop (no team-wide keys-with-public-key endpoint exists, the established 04-12 graceful-degradation pattern); 48 new tests, 354 frontend tests green, `svelte-check` 0/0; VM-05/06/07/08 frontend-completed)
 
 - 2026-05-16 — Plan 04-12 frontend-vm-wizard (the Wave-6 VM wizard paths + the shared node-fit/quota/network building blocks: `node-fit.ts` — the pure `computeNodeFit` returning per-node `{fits, reason}` (a node with insufficient free RAM/CPU → `fits:false` + a human reason like "node-1 — 2 GB free, needs 4 GB", a `null` free figure → fit-unknown/pickable) + `allBlocked`; `vm-wizard.ts` — the framework-free VM-wizard logic: `vmStepsForPath` (every VM path `Path → Source → Resources → Network → Cloud-Init → Review`, D-13), `sourceKindForPath`/`isClonePath`, `validateVmStep` (per-`source_kind` source rules; clone paths need only name+node, non-clone need full sizing+storage), `buildQemuRequest` (the discriminated `CreateQemuRequest` per `source_kind`), `mapQemuCreateError`, the network-picker helpers (`networkGroups`/`isNetworkPickable` — a non-`applied` VNet non-pickable T-04-12-04 — `defaultIpAssignment` — Auto-pick for an IPAM VNet D-20 — `findNetworkOption`/`buildNetworkConfig`), and `computeQuotaDelta` (the live "+N vCPU, +N GB RAM" delta + over-quota verdict, D-08); `NodeSelect.svelte` — the shared node-fit selector disabling unfit nodes (`opacity-50` + disabled option) with the reason inline, an `bg-warning/10` all-blocked notice + a `blocked` signal, a free-text fallback (D-24, VM-10); `QuotaDeltaLine.svelte` — the live quota-delta line (`text-muted-foreground` in-budget, `text-destructive` + a `HelpTooltip` over-quota); `NetworkPicker.svelte` — the SDN-aware grouped `radio-group` (SDN VNets + Legacy bridges under 32px `bg-muted/40` headers) calling `api.networks.listNetworks`, an IP-assignment radio with IPAM auto-pick pre-filling `suggested_ip` (editable), a `bg-warning/10` no-networks notice (NET-01..04); `VmSourceStep.svelte` — the four per-path source steps switching on `source_kind` (cloud-image picker VM-01, template-clone `Select`+clone-mode radio VM-02, blank-iso picker VM-03, vm-clone `Select`+clone-mode radio VM-04); `VmResourcesStep.svelte` — the VM Resources step embedding `NodeSelect`+`QuotaDeltaLine`+storage+sizing, `Next` gated on all-blocked/over-quota, clone paths hiding sizing; `ReviewStep.svelte` — the shared read-only `card`-section Review with "Edit" jump-back links + the repeated quota-delta line (VM + LXC paths); `create/+page.svelte` wires the four VM paths into the 04-10 orchestration surface (Source → Resources → NetworkPicker → Cloud-Init mount point → Review), submitting via `createQemu` + routing to `/inventory/{cluster}/{vmid}` on the 202 (D-04), a 409/4xx surfacing inline via `mapQemuCreateError` (T-04-12-02) — and retro-enriches the LXC Resources step with `NodeSelect`+`QuotaDeltaLine` + the LXC Network step with `NetworkPicker` (composed in the route alongside `LxcResourcesStep`, NO cross-wave edit to that 04-11 file); 0 auto-fixed bugs, 3 interface adjustments matching established Phase-4 patterns — `NodeSelect` takes node data as a prop (no node-free-resource API exists, node-fit is advisory), tests are node-env logic-only, the Cloud-Init step is a 04-13 placeholder; 1 `svelte-check` warning resolved (`state_referenced_locally` on `NetworkPicker`'s `value` seed, fixed with `untrack`); 55 new tests, 306 frontend tests green, `svelte-check` 0/0; VM-01/02/03/04/09/10 + NET-01/02/03/04 frontend-completed)
 - 2026-05-16 — Plan 04-14 console-bell-networks-banner (the final Wave-5 Phase-4 UX surfaces: a new `notifications/` backend module — `service.list_notifications`/`mark_seen` serve a DERIVED completions feed over the existing `jobs` table (D-23, no new storage): the recent terminal `succeeded`/`failed` rows for the caller's teams (D-22 — completions only, in-flight excluded) + an `unread_count` derived from the per-user `NotificationSeen` cursor; `routes.py` exposes `GET /notifications` + the CSRF-protected `POST /notifications/seen` (returns the refreshed feed); `api/notifications.ts` the typed `listNotifications`/`markSeen` client re-exported on the `api` namespace; `NotificationBell.svelte` — a 36px ghost bell left of the Tasks icon in `Topbar.svelte` with a 20px unread badge (hidden at 0, `9+` overflow, `bg-primary` normally, `bg-destructive` when any unread item is a failed job), a 380px popover feed reconciled from the REST feed + the live `jobsStore`, opening calls `markSeen` (UI-07); `ConsoleTab.svelte` — the embedded noVNC console tab filling the formerly-disabled placeholder: on mount ONLY a centered placeholder, NO `<iframe>` (CON-02 — never mint on page load), on "Open console" `mintVncProxy` is called and the iframe renders at the returned `relay_url` — `consoleIframeSrc` throws on any `:8006`/`vncwebsocket` URL so the Proxmox host never reaches the browser (CON-03) — plus Reconnect + a `Maximize2` Fullscreen control; `NetworksTab.svelte` — a third "Networks" tab on `admin/teams/[id]` parallel to Quotas (D-18), per-cluster SDN-VNet (unchecked until granted) + legacy-bridge (checked-by-default — D-19) checkbox groups saved via `setTeamNetworkScope` (NET-02); the VM-detail provisioning banner (`bg-primary/10`+`Loader2` while a create job runs, `bg-destructive/10`+friendly-error+"View in Tasks" on failure, NO Retry — provisioning is non-idempotent D-16, self-dismisses on success); the Console `Tabs.Trigger`'s `Lock` marker + tooltip removed; component logic extracted to four `node`-testable `.ts` modules (`notification-feed.ts`/`console-tab.ts`/`networks-tab.ts`/`provisioning-banner.ts`); 2 auto-fixed `svelte-check` deviations — `.ts` import extensions dropped, a `$state` var named `state` renamed to `phase`; 8 new backend tests (485 total) + 43 new frontend tests (251 total), `svelte-check` clean; CON-01/02/03 + NET-02 + UI-04/UI-07 frontend-completed)
