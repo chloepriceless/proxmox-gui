@@ -19,6 +19,7 @@
   import ThemeToggle from '$lib/components/layout/ThemeToggle.svelte';
   import ClusterContextPicker from '$lib/components/inventory/ClusterContextPicker.svelte';
   import QuotaIndicator from '$lib/components/quotas/QuotaIndicator.svelte';
+  import NotificationBell from '$lib/components/notifications/NotificationBell.svelte';
   import ListChecks from '@lucide/svelte/icons/list-checks';
   import { api } from '$lib/api/client';
   import { jobsStore } from '$lib/stores/jobs.svelte';
@@ -94,6 +95,8 @@
   </div>
 
   <div class="flex items-center gap-2">
+    <!-- Notification bell — Plan 04-14, left of the Tasks icon (UI-07). -->
+    <NotificationBell />
     <!-- Tasks icon — left of QuotaIndicator. Click opens the Tasks drawer. -->
     <button
       type="button"

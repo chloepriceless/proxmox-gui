@@ -4,9 +4,9 @@
   import * as Tabs from '$lib/components/ui/tabs';
   import * as Card from '$lib/components/ui/card';
   import { Button } from '$lib/components/ui/button';
-  import * as Tooltip from '$lib/components/ui/tooltip';
+  import Loader2 from '@lucide/svelte/icons/loader-2';
+  import CircleAlert from '@lucide/svelte/icons/circle-alert';
   import { toast } from 'svelte-sonner';
-  import Lock from '@lucide/svelte/icons/lock';
   import TagPill from '$lib/components/inventory/TagPill.svelte';
   import TagInput from '$lib/components/inventory/TagInput.svelte';
   import MarkdownNotes from '$lib/components/inventory/MarkdownNotes.svelte';
@@ -14,6 +14,14 @@
   import ActionToolbar from '$lib/components/lifecycle/ActionToolbar.svelte';
   import SnapshotsTab from '$lib/components/lifecycle/SnapshotsTab.svelte';
   import BackupsTab from '$lib/components/lifecycle/BackupsTab.svelte';
+  import ConsoleTab from '$lib/components/console/ConsoleTab.svelte';
+  import {
+    bannerState,
+    findCreateJob,
+    provisioningFailureText,
+    provisioningRunningText
+  } from '$lib/components/inventory/provisioning-banner';
+  import { jobsStore } from '$lib/stores/jobs.svelte';
   import { api } from '$lib/api/client';
   import type { PageData } from './$types';
   import type { RRDSample, ResourceKind } from '$lib/api/types';
@@ -104,6 +112,15 @@
   const maxNet = $derived(Math.max(...rrd.map((s) => s.netin + s.netout), 1));
   // Shared timestamp axis for sparkline hover tooltips.
   const rrdTimes = $derived(rrd.map((s) => s.time));
+
+  // Provisioning banner (D-04) — shown while this VM's create job runs. The
+  // create job is read live from the jobsStore; on success the banner
+  // self-dismisses, on failure it switches to the error state (NO Retry —
+  // provisioning is non-idempotent, Phase-3 D-16).
+  const createJob = $derived(
+    detail ? findCreateJob(jobsStore.jobs, detail.cluster_id) : null
+  );
+  const provisioningState = $derived(bannerState(createJob));
 </script>
 
 {#if !detail || data.loadError}
@@ -131,6 +148,32 @@
     </p>
   </header>
 
+  <!-- Provisioning banner (D-04) — a 48px strip while this VM's create job is
+       in flight; switches to the error state on failure (no Retry — Phase-3
+       D-16); self-dismisses on success. -->
+  {#if provisioningState === 'running'}
+    <div
+      class="mb-6 flex h-12 items-center gap-2 rounded-md bg-primary/10 px-4 text-[14px]"
+    >
+      <Loader2 class="size-4 animate-spin text-primary" aria-hidden="true" />
+      <span>{provisioningRunningText(detail.name ?? `VM ${detail.vmid}`)}</span>
+    </div>
+  {:else if provisioningState === 'failed'}
+    <div
+      class="mb-6 flex h-12 items-center gap-2 rounded-md bg-destructive/10 px-4 text-[14px]"
+    >
+      <CircleAlert class="size-4 text-destructive" aria-hidden="true" />
+      <span class="text-foreground">{provisioningFailureText(createJob)}</span>
+      <button
+        type="button"
+        class="text-primary ml-auto hover:underline"
+        onclick={() => jobsStore.openDrawer()}
+      >
+        View in Tasks
+      </button>
+    </div>
+  {/if}
+
   <!-- Lifecycle action toolbar — between the header block and the tab strip. -->
   <div class="mb-8">
     <ActionToolbar
@@ -154,18 +197,9 @@
       <Tabs.Trigger value="snapshots">Snapshots</Tabs.Trigger>
       <!-- Backups tab — new in Phase 3, between Snapshots and Console. -->
       <Tabs.Trigger value="backups">Backups</Tabs.Trigger>
-      <Tooltip.Provider>
-        <Tooltip.Root>
-          <Tooltip.Trigger>
-            {#snippet child({ props })}
-              <Tabs.Trigger value="console" disabled {...props}>
-                <Lock class="size-3 mr-1" aria-hidden="true" /> Console
-              </Tabs.Trigger>
-            {/snippet}
-          </Tooltip.Trigger>
-          <Tooltip.Content>Console ships in Phase 4</Tooltip.Content>
-        </Tooltip.Root>
-      </Tooltip.Provider>
+      <!-- Console tab — Phase 4 (Plan 04-14): the Phase 2/3 Lock marker +
+           "ships in Phase 4" tooltip are removed; the tab activates. -->
+      <Tabs.Trigger value="console">Console</Tabs.Trigger>
     </Tabs.List>
 
     <!-- Overview tab -->
@@ -368,6 +402,19 @@
           type={toResourceKind(detail.type)}
           vmName={detail.name ?? `VM ${detail.vmid}`}
           {backupStorageConfigured}
+        />
+      </div>
+    </Tabs.Content>
+
+    <!-- Console tab — embedded noVNC (Plan 04-14, CON-01/02/03). The iframe
+         is minted on click only, never on tab load. -->
+    <Tabs.Content value="console">
+      <div class="mt-6">
+        <ConsoleTab
+          clusterId={detail.cluster_id}
+          vmid={detail.vmid}
+          kind={toResourceKind(detail.type)}
+          name={detail.name ?? `VM ${detail.vmid}`}
         />
       </div>
     </Tabs.Content>
