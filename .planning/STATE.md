@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_plan: 6
+current_plan: 7
 status: executing
-stopped_at: Completed 03-05-PLAN.md
-last_updated: "2026-05-16T13:24:59.401Z"
+stopped_at: Completed 03-06-PLAN.md
+last_updated: "2026-05-16T13:39:22Z"
 progress:
   total_phases: 5
   completed_phases: 2
   total_plans: 24
-  completed_plans: 23
-  percent: 96
+  completed_plans: 24
+  percent: 100
 ---
 
 # STATE: Proxmox Self-Service GUI
@@ -29,14 +29,14 @@ progress:
 ## Current Position
 
 Phase: 03 (job-queue-lifecycle) — EXECUTING
-Plan: 6 of 7
-Current Plan: 6
+Plan: 7 of 7
+Current Plan: 7
 
 - **Milestone:** v1
 - **Phase:** 03 — Job Queue & Lifecycle (executing)
-- **Plan:** 03-05 frontend-power-vertical-slice ✅ complete
-- **Status:** Executing Phase 03 — ready for Plan 03-06
-- **Progress:** [█████████░] 96%
+- **Plan:** 03-06 frontend-snapshots-lifecycle-bulk ✅ complete
+- **Status:** Executing Phase 03 — ready for Plan 03-07
+- **Progress:** [██████████] 100%
 
 ## Phases at a Glance
 
@@ -81,6 +81,8 @@ Current Plan: 6
 | Phase 03 P03 | 12min | 2 tasks | 11 files |
 | Phase 03 P04 | 17min | 3 tasks | 23 files |
 | Phase 03 P05 | 8min | 2 tasks | 17 files |
+| Phase 03 P06 | 9min | 2 tasks | 14 files |
+| Phase 03 P06 | 9min | 2 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -184,6 +186,9 @@ Current Plan: 6
 | QuotaIndicator's `open` lifted from internal $state to a $bindable prop | UI-SPEC Implementation Note 3 — AppShell must keep the Quota + Tasks right-side Sheets mutually exclusive; coordination needs the open-state visible to the shell | Plan 03-05 SUMMARY |
 | ActionToolbar's More menu ships the structure now, dispatches via an onMoreAction prop callback with TODO(03-06/07) markers | The Resize/Clone/Migrate/Snapshot/Backup dialogs are owned by Plans 06/07; the menu is real, only the dialogs are deferred | Plan 03-05 SUMMARY |
 | TasksDrawer disconnected strip is a hand-rolled bg-warning/10 div, not Alert variant=warning | The installed shadcn alert block ships only default/destructive variants; warning is composed from existing --warning tokens | Plan 03-05 SUMMARY |
+| SnapshotTree's parent-pointer → hierarchy transform lives in a pure snapshot-tree.ts module imported by the component | The `node` vitest env cannot mount Svelte components; extracting the builder makes the tested logic the rendered logic — same constraint as the jobs-store injectable factory | Plan 03-06 SUMMARY |
+| Clone/Migrate node lists are derived from the cluster inventory's unique `node` values | The frontend has no dedicated node-listing endpoint and Plan 04 added no nextid helper; the clone backend auto-assigns the VMID server-side when new_vmid is omitted | Plan 03-06 SUMMARY |
+| The recursive snapshot tree is a self-rendering `{#snippet}` (treeNodes), not recursive component instantiation | A snippet that calls itself is the cleaner Svelte 5 idiom and keeps the roving-tabindex $state in one component instance | Plan 03-06 SUMMARY |
 
 ### Open Questions (resolve before/during named phase)
 
@@ -215,12 +220,13 @@ None.
 
 ## Session Continuity
 
-**To resume:** Run `/gsd-execute-phase 3` to continue with Plan 03-06.
+**To resume:** Run `/gsd-execute-phase 3` to continue with Plan 03-07.
 
 **Next milestone:** First end-to-end "click → running VM/LXC" lands at the end of Phase 4.
 
 **Recently completed:**
 
+- 2026-05-16 — Plan 03-06 frontend-snapshots-lifecycle-bulk (the lifecycle UI for snapshots + the resize/clone/migrate operation set + inventory bulk actions: a hand-rolled recursive SnapshotTree — D-05, no tree-view npm dependency, role=tree/treeitem + aria-expanded + roving tabindex + 24px CSS indent guides — with a pure snapshot-tree.ts builder for node-env unit testing; the Snapshots tab filling the formerly-disabled Phase 2 placeholder, with the Snapshots-trigger Lock removed; SnapshotCreateDialog + restore/delete typed-name ConfirmByNameDialog wiring; ResizeDialog with hotplug-driven reboot-required warnings + disk-shrink inline error + persistent bg-destructive/10 notice + CTA-blocked-while-invalid + no lock-override field; MigrateDialog keeping bwlimit visible inside an always-present Advanced collapsible + 409 pre-flight inline notice; CloneDialog with linked/full mode + node/storage + overridable Auto-assigned VMID; ConvertTemplateDialog one-way warning; the ActionToolbar More menu wired to all five dialogs with Convert disabled+tooltipped for LXC; the inventory per-row MoreHorizontal power menu + Select toggle + 40px checkbox column + sticky bulk-action bar fanning out one bulkPower job per VM under a single batch confirm; 10 new snapshot-tree tests, 110 frontend tests green; LIFE-03/04/08/09/10/11 frontend-completed)
 - 2026-05-16 — Plan 03-05 frontend-power-vertical-slice (the frontend half of the power-action slice: api/jobs + api/lifecycle clients registered in the api namespace; utils/elapsed.ts no-date-library formatter; stores/jobs.svelte.ts WebSocket rune-store — backfill reconcile-by-id, exponential-backoff reconnect, derived running/failed counts, completion toasts; Tasks drawer — 420px right Sheet with the live WebSocket job feed, batch grouping, 1s elapsed-timer tick, disconnected strip; JobRow + JobErrorDetail — state-tinted rows, friendly-error-first + "Show technical details" collapsible, idempotent-only Retry; Topbar ListChecks Tasks icon + 18px count badge red-on-unacked-failure; ActionToolbar on the VM detail page — Start/Stop/Reboot/Shutdown + More menu + typed-name Delete with PowerConfirmDialog; QuotaIndicator/Tasks drawers made mutually exclusive; 26 new tests, 100 frontend tests green; LIFE-01/02/12/13 + UI-06 frontend-completed)
 - 2026-05-16 — Plan 03-04 backups-clone-migrate (backup lifecycle: manual vzdump 202 + 409 D-08 no-storage guard, backup-file list, restore in-place/as-new with quota admission, backup-schedule CRUD, global /backups page; fire_due_scheduled_backups arq cron firing due BackupSchedule rows every 5 min + keep-last-N prune on the backup job's success path; clone linked/full with app-reserved VMID + quota admission, template-convert qemu-only/LXC-rejected; migrate live/offline with bwlimit + quorum & node-local-snippet pre-flights; BackupSchedule ORM model + 0005_phase3_backup_storage migration; admin per-cluster backup-storage designation; 24 new tests, 369 total green; LIFE-05/06/07/10/11 + API-04 shipped)
 - 2026-05-16 — Plan 03-03 snapshots-resize (snapshot lifecycle: GET flat parent-pointer list for the client-built tree + 202 create/rollback/delete VM+LXC mirrors; run_snapshot_create/rollback/delete arq job functions over a shared kind-dispatched body; resize lifecycle: GET resize-info with hotplug-derived cpu/memory reboot-required flags + 202 resize; run_resize synchronous config write with NO poll loop — marks the job succeeded directly, still surfaced in the Tasks drawer; server-side disk-shrink rejection 422 — the API is the LIFE-09 enforcement point; 15 new tests, 346 total green; LIFE-04/08/09 + API-04 shipped)
@@ -242,8 +248,8 @@ None.
 - 2026-05-14 — Requirements definition (89 v1 requirements across 13 categories)
 - 2026-05-14 — Roadmap (5-phase structure, 100% coverage)
 
-**Last session:** 2026-05-16T13:24:00.000Z
-**Stopped at:** Completed 03-05-PLAN.md
+**Last session:** 2026-05-16T13:39:22Z
+**Stopped at:** Completed 03-06-PLAN.md
 **Resume file:** None
 
 ---
