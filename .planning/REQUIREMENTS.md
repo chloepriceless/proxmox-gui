@@ -102,9 +102,9 @@ Requirements for initial release. Each maps to roadmap phases via the Traceabili
 
 ### Lifecycle Management
 
-- [ ] **LIFE-01**: User can Start, Stop (graceful), Reboot, Shutdown (hard), and Delete VMs and LXCs
-- [ ] **LIFE-02**: Destructive actions require typed-name confirmation (Delete) or OK/Cancel (Force-Stop)
-- [ ] **LIFE-03**: User can bulk Start/Stop/Reboot from list (bulk Delete deliberately excluded)
+- [x] **LIFE-01**: User can Start, Stop (graceful), Reboot, Shutdown (hard), and Delete VMs and LXCs
+- [x] **LIFE-02**: Destructive actions require typed-name confirmation (Delete) or OK/Cancel (Force-Stop)
+- [x] **LIFE-03**: User can bulk Start/Stop/Reboot from list (bulk Delete deliberately excluded)
 - [ ] **LIFE-04**: User can create, restore, and delete manual snapshots; snapshot tree visible
 - [ ] **LIFE-05**: User can create a manual backup (vzdump or PBS target)
 - [ ] **LIFE-06**: User can create scheduled backup jobs (systemd-calendar) and view retention
@@ -113,10 +113,9 @@ Requirements for initial release. Each maps to roadmap phases via the Traceabili
 - [ ] **LIFE-09**: User can grow disk online (shrink explicitly unsupported, warn user)
 - [ ] **LIFE-10**: User can clone a VM (linked or full, pick target node) and convert a VM to template
 - [ ] **LIFE-11**: User can migrate a VM between cluster nodes (live or offline, surface bwlimit)
-- [ ] **LIFE-12**: Long-running tasks show progress via a Tasks drawer (poll UPID, surface stderr)
-- [ ] **LIFE-13**: Failed tasks offer a one-click retry where safe
-- [x] **LIFE-14
-**: Orphaned tasks (UPIDs from before a restart) are re-attached on app boot
+- [x] **LIFE-12**: Long-running tasks show progress via a Tasks drawer (poll UPID, surface stderr)
+- [x] **LIFE-13**: Failed tasks offer a one-click retry where safe
+- [x] **LIFE-14**: Orphaned tasks (UPIDs from before a restart) are re-attached on app boot
 
 ### Console
 
@@ -127,12 +126,10 @@ Requirements for initial release. Each maps to roadmap phases via the Traceabili
 ### REST API
 
 - [x] **API-01**: REST API exposes every UI capability (UI consumes the same API — no UI-only backdoors)
-- [x] **API-02
-**: API auth via per-user Personal Access Tokens
+- [x] **API-02**: API auth via per-user Personal Access Tokens
 - [x] **API-03**: OpenAPI spec auto-generated from code and served at a documented path
-- [ ] **API-04**: Mutating endpoints return `202 Accepted` with a job ID; clients poll job status
-- [x] **API-05
-**: API enforces the same quotas and tenancy as the UI
+- [x] **API-04**: Mutating endpoints return `202 Accepted` with a job ID; clients poll job status
+- [x] **API-05**: API enforces the same quotas and tenancy as the UI
 
 ### Audit Log
 
@@ -266,9 +263,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | NET-02 | Phase 4 | Pending |
 | NET-03 | Phase 4 | Pending |
 | NET-04 | Phase 4 | Pending |
-| LIFE-01 | Phase 3 | Pending |
-| LIFE-02 | Phase 3 | Pending |
-| LIFE-03 | Phase 3 | Pending |
+| LIFE-01 | Phase 3 | Complete (Plan 03-02) |
+| LIFE-02 | Phase 3 | Complete (Plan 03-02) |
+| LIFE-03 | Phase 3 | Complete (Plan 03-02) |
 | LIFE-04 | Phase 3 | Pending |
 | LIFE-05 | Phase 3 | Pending |
 | LIFE-06 | Phase 3 | Pending |
@@ -277,8 +274,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | LIFE-09 | Phase 3 | Pending |
 | LIFE-10 | Phase 3 | Pending |
 | LIFE-11 | Phase 3 | Pending |
-| LIFE-12 | Phase 3 | Pending |
-| LIFE-13 | Phase 3 | Pending |
+| LIFE-12 | Phase 3 | Complete (Plan 03-02) |
+| LIFE-13 | Phase 3 | Complete (Plan 03-02) |
 | LIFE-14 | Phase 3 | Complete (Plan 03-01) |
 | CON-01 | Phase 4 | Pending |
 | CON-02 | Phase 4 | Pending |
@@ -286,8 +283,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | API-01 | Phase 1 | Complete (01-05) |
 | API-02 | Phase 1 | Complete (01-05) |
 | API-03 | Phase 1 | Complete (01-05) |
-| API-04 | Phase 3 | Pending |
-| API-05 | Phase 2 | Pending |
+| API-04 | Phase 3 | Complete (Plan 03-02) |
+| API-05 | Phase 2 | Complete (Plan 02-03) |
 | AUDIT-01 | Phase 2 | Pending |
 | AUDIT-02 | Phase 2 | Pending |
 | AUDIT-03 | Phase 2 | Pending |

@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_plan: 2
+current_plan: 3
 status: executing
-stopped_at: Completed 03-01-PLAN.md
-last_updated: "2026-05-16T12:15:29.500Z"
+stopped_at: Completed 03-02-PLAN.md
+last_updated: "2026-05-16T12:30:13Z"
 progress:
   total_phases: 5
   completed_phases: 2
   total_plans: 24
-  completed_plans: 18
-  percent: 75
+  completed_plans: 20
+  percent: 83
 ---
 
 # STATE: Proxmox Self-Service GUI
@@ -29,14 +29,14 @@ progress:
 ## Current Position
 
 Phase: 03 (job-queue-lifecycle) — EXECUTING
-Plan: 2 of 7
-Current Plan: 2
+Plan: 3 of 7
+Current Plan: 3
 
 - **Milestone:** v1
 - **Phase:** 03 — Job Queue & Lifecycle (executing)
-- **Plan:** 03-01 job-queue-infrastructure ✅ complete
-- **Status:** Executing Phase 03 — ready for Plan 03-02
-- **Progress:** [████████░░] 75%
+- **Plan:** 03-02 power-vertical-slice ✅ complete
+- **Status:** Executing Phase 03 — ready for Plan 03-03
+- **Progress:** [████████░░] 83%
 
 ## Phases at a Glance
 
@@ -77,6 +77,7 @@ Current Plan: 2
 | Phase 02 P05 | 35 | 2 tasks | 29 files |
 | Phase 02-multi-cluster-inventory-quotas-audit P02-06-frontend-audit-quotas | 25 | 2 tasks | 14 files |
 | Phase 03 P01 | 17 min | 3 tasks | 22 files |
+| 03    | 02   | 11 min   | 2     | 11    | 331 pass |
 
 ## Accumulated Context
 
@@ -159,6 +160,12 @@ Current Plan: 2
 | `WARNINGS:` exitstatus maps to succeeded (warning surfaced in friendly_error), not failed | RESEARCH A3 — a backup that finishes with warnings still has a valid backup file; hard-failing it would confuse users | Plan 03-01 SUMMARY |
 | arq worker is a separate process: on_startup installs the cipher itself + aliases ctx['redis'] to ctx['arq_pool'] | The worker decrypts cluster tokens and so needs the same cipher the API installs; reaper/poller read a stable ctx['arq_pool'] key | Plan 03-01 SUMMARY |
 | bootstrap.sh idempotent-exit branch re-runs pip install + provisions redis-server | Pitfall 10 — the branch previously ran only `alembic upgrade head`, so a Phase-3 upgrade deploy left the worker crashing on a missing arq import | Plan 03-01 SUMMARY |
+| Lifecycle routes capture cluster_id/team_id/actor_user_id from ResolvedResource BEFORE enqueue_job | enqueue_job's idempotency-collision rollback expires resolved.cluster; a later lazy attribute read raises MissingGreenlet | Plan 03-02 SUMMARY |
+| Lifecycle/retry routes raise a clean 503 when app.state.arq_pool is None | Redis down at boot is best-effort (Plan 03-01); surface a clear error instead of crashing in enqueue_job | Plan 03-02 SUMMARY |
+| run_power_action serves both vm.power and vm.delete via one function + per-kind dispatch closure; worker registers it under both arq names | One audit path, less code; the two kinds share the claim → connector → dispatch_and_poll → audit shape | Plan 03-02 SUMMARY |
+| POST /jobs/{id}/retry re-arms the SAME job row (state→pending, clear upid/error/finished_at) and enqueues a FRESH arq job id | UI-SPEC — retry re-uses identity, never spawns a second drawer row; the original job-{id} arq key may still linger | Plan 03-02 SUMMARY |
+| IDEMPOTENT_KINDS = {vm.power, vm.snapshot.delete, vm.resize, vm.backup}; delete/clone/migrate/restore excluded → 409 | D-16 — non-idempotent retries could duplicate a VM or corrupt state; the UI must re-issue them from a form | Plan 03-02 SUMMARY |
+| /ws/jobs WebSocket authenticates the access_token cookie before accept(); cookie session only, no Bearer PAT | T-03-02-05 — never register an unauthenticated socket; the Tasks drawer is a browser-session feature | Plan 03-02 SUMMARY |
 
 ### Open Questions (resolve before/during named phase)
 
@@ -190,12 +197,14 @@ None.
 
 ## Session Continuity
 
-**To resume:** Run `/gsd-execute-phase 2` to continue with Plan 02-04 (quotas-backend).
+**To resume:** Run `/gsd-execute-phase 3` to continue with Plan 03-03 (snapshots + resize).
 
 **Next milestone:** First end-to-end "click → running VM/LXC" lands at the end of Phase 4.
 
 **Recently completed:**
 
+- 2026-05-16 — Plan 03-02 power-vertical-slice (the first full pipeline slice: power lifecycle routes — Start/Stop/Reboot/Shutdown/Delete + bulk-power — all 202; run_power_action arq job function dispatching vm.power + vm.delete via the UPID poller; jobs API GET /jobs + GET /jobs/{id} + POST /jobs/{id}/retry with idempotent-only retry gate; /api/v1/ws/jobs WebSocket — authenticated handshake + recent-window backfill + team-scoped fan-out; 17 new tests, 331 total green; LIFE-01/02/03/12/13 + API-04 shipped)
+- 2026-05-16 — Plan 03-01 job-queue-infrastructure
 - 2026-05-14 — Plan 02-03 inventory-backend (28 new tests; 249 total; inventory read/write API with per-team privsep RBAC, pool-match defense-in-depth, stale-cache graceful degradation, token-scrubbing before audit persistence; commit-before-raise on failure paths; 10 endpoints shipped; INV-01..08 + TENT-06 + API-05 marked complete)
 - 2026-05-14 — Plan 02-02 audit-schema-writer (Alembic 0003_phase2 migration with per-cluster quota columns and composite partial UNIQUE indices; full audit subsystem: audit_write FLUSH-not-COMMIT writer, RBAC reader list_audit/count_export, streaming CSV exporter with UTF-8 BOM and OWASP CSV-injection mitigation, GET /api/v1/audit + GET /api/v1/audit/export.csv with 409 hard-limit guard, csv_safe.escape_cell, extract_source_ip X-Forwarded-For trust; 4 TDD commits; 221 tests passing; AUDIT-01..05 marked complete)
 - 2026-05-14 — Plan 02-01 connector-extension
@@ -212,8 +221,8 @@ None.
 - 2026-05-14 — Requirements definition (89 v1 requirements across 13 categories)
 - 2026-05-14 — Roadmap (5-phase structure, 100% coverage)
 
-**Last session:** 2026-05-16T12:15:29.492Z
-**Stopped at:** Completed 03-01-PLAN.md
+**Last session:** 2026-05-16T12:30:13Z
+**Stopped at:** Completed 03-02-PLAN.md
 **Resume file:** None
 
 ---
