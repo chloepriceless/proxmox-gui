@@ -20,6 +20,7 @@
   import Server from '@lucide/svelte/icons/server';
   import ListChecks from '@lucide/svelte/icons/list-checks';
   import History from '@lucide/svelte/icons/history';
+  import CalendarClock from '@lucide/svelte/icons/calendar-clock';
   import type { Component } from 'svelte';
   import type { CurrentUser } from '$lib/stores/user.svelte';
 
@@ -34,7 +35,8 @@
 
   const resourceItems: NavItem[] = [
     { href: '/inventory', label: 'Inventory', icon: ListChecks },
-    { href: '/audit', label: 'Audit log', icon: History }
+    { href: '/audit', label: 'Audit log', icon: History },
+    { href: '/backups', label: 'Backups', icon: CalendarClock }
   ];
 
   const accountItems: NavItem[] = [

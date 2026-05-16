@@ -19,6 +19,7 @@
   import { toast } from 'svelte-sonner';
   import * as Card from '$lib/components/ui/card';
   import * as Alert from '$lib/components/ui/alert';
+  import * as Select from '$lib/components/ui/select';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
   import { Label } from '$lib/components/ui/label';
@@ -49,6 +50,33 @@
   let verifySsl = $state(untrack(() => data.cluster.verify_ssl));
   let notes = $state(untrack(() => data.cluster.notes ?? ''));
   let isActive = $state(untrack(() => data.cluster.is_active));
+
+  // Backup-storage designation (D-08). The Select binds a string; the
+  // `__none__` sentinel maps to `backup_storage: null` ("None — backups
+  // disabled"). Pre-selected from the stored value.
+  const NONE_STORAGE = '__none__';
+  let backupStorage = $state(
+    untrack(() => data.cluster.backup_storage ?? NONE_STORAGE)
+  );
+  let backupStorages = $state<{ storage: string; type: string | null }[]>([]);
+
+  $effect(() => {
+    // Enumerate the cluster's content=backup storages for the Select.
+    api.clusters
+      .listBackupStorages(data.cluster.id)
+      .then((rows) => {
+        backupStorages = rows;
+      })
+      .catch(() => {
+        backupStorages = [];
+      });
+  });
+
+  const backupStorageLabel = $derived(
+    backupStorage === NONE_STORAGE
+      ? 'None — backups disabled'
+      : backupStorage
+  );
 
   // Token update pattern (UI-SPEC §Required cluster registration form):
   // Field starts hidden (placeholder dots). User clicks "Update token" to
@@ -126,7 +154,11 @@
         token_name: tokenName.trim(),
         tls_fingerprint: tlsFingerprint.trim() || null,
         notes: notes.trim() || null,
-        is_active: isActive
+        is_active: isActive,
+        // D-08: the `__none__` sentinel clears the designation (backups
+        // disabled); any other value sets the storage name.
+        backup_storage:
+          backupStorage === NONE_STORAGE ? null : backupStorage
       };
       // CRITICAL: only include api_token_secret when the user explicitly
       // requested an update. Omitting it tells the backend (Plan 06) to
@@ -409,6 +441,33 @@
           />
           <p class="text-muted-foreground text-[13px]">
             Required only for self-signed certificates.
+          </p>
+        </div>
+
+        <!-- Backup storage designation (D-08, Plan 03-07). A normal config
+             field — saves with the existing "Save changes" CTA. -->
+        <div class="flex flex-col gap-2">
+          <Label for="cluster-edit-backup-storage">Backup storage</Label>
+          <Select.Root type="single" bind:value={backupStorage}>
+            <Select.Trigger
+              id="cluster-edit-backup-storage"
+              class="w-full"
+              disabled={saving}
+            >
+              {backupStorageLabel}
+            </Select.Trigger>
+            <Select.Content>
+              <Select.Item value={NONE_STORAGE}>
+                None — backups disabled
+              </Select.Item>
+              {#each backupStorages as s (s.storage)}
+                <Select.Item value={s.storage}>{s.storage}</Select.Item>
+              {/each}
+            </Select.Content>
+          </Select.Root>
+          <p class="text-muted-foreground text-[13px]">
+            Choose the storage where this GUI runs backups for this cluster.
+            Users select retention; they do not pick storage.
           </p>
         </div>
 

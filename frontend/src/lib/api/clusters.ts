@@ -151,3 +151,30 @@ export async function testExisting(
     withFetch(opts, { method: 'POST' })
   );
 }
+
+// ---------------------------------------------------------------------------
+// Plan 03-07 additions — backup-storage designation (D-08)
+// ---------------------------------------------------------------------------
+
+/** One backup-capable storage from `GET /clusters/{id}/backup-storages`. */
+export interface BackupStorageItem {
+  storage: string;
+  type: string | null;
+}
+
+/**
+ * GET /api/v1/clusters/{id}/backup-storages — the cluster's `content=backup`
+ * storages, for the admin backup-storage Select (D-08). Admin-gated.
+ *
+ * The PATCH that designates the storage uses `update()` with `backup_storage`
+ * in the payload — there is no separate setter.
+ */
+export async function listBackupStorages(
+  clusterId: number,
+  opts?: MaybeFetch
+): Promise<BackupStorageItem[]> {
+  return apiJson<BackupStorageItem[]>(
+    `/clusters/${clusterId}/backup-storages`,
+    withFetch(opts, { method: 'GET' })
+  );
+}
