@@ -105,12 +105,15 @@ Requirements for initial release. Each maps to roadmap phases via the Traceabili
 - [x] **LIFE-01**: User can Start, Stop (graceful), Reboot, Shutdown (hard), and Delete VMs and LXCs
 - [x] **LIFE-02**: Destructive actions require typed-name confirmation (Delete) or OK/Cancel (Force-Stop)
 - [x] **LIFE-03**: User can bulk Start/Stop/Reboot from list (bulk Delete deliberately excluded)
-- [ ] **LIFE-04**: User can create, restore, and delete manual snapshots; snapshot tree visible
+- [x] **LIFE-04
+**: User can create, restore, and delete manual snapshots; snapshot tree visible
 - [ ] **LIFE-05**: User can create a manual backup (vzdump or PBS target)
 - [ ] **LIFE-06**: User can create scheduled backup jobs (systemd-calendar) and view retention
 - [ ] **LIFE-07**: User can restore a VM/LXC from a backup
-- [ ] **LIFE-08**: User can resize CPU and RAM (warn when reboot required based on hotplug)
-- [ ] **LIFE-09**: User can grow disk online (shrink explicitly unsupported, warn user)
+- [x] **LIFE-08
+**: User can resize CPU and RAM (warn when reboot required based on hotplug)
+- [x] **LIFE-09
+**: User can grow disk online (shrink explicitly unsupported, warn user)
 - [ ] **LIFE-10**: User can clone a VM (linked or full, pick target node) and convert a VM to template
 - [ ] **LIFE-11**: User can migrate a VM between cluster nodes (live or offline, surface bwlimit)
 - [x] **LIFE-12**: Long-running tasks show progress via a Tasks drawer (poll UPID, surface stderr)

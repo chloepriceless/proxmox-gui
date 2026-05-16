@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_plan: 3
+current_plan: 4
 status: executing
-stopped_at: Completed 03-02-PLAN.md
-last_updated: "2026-05-16T12:30:13Z"
+stopped_at: Completed 03-03-PLAN.md
+last_updated: "2026-05-16T12:48:07Z"
 progress:
   total_phases: 5
   completed_phases: 2
   total_plans: 24
-  completed_plans: 20
-  percent: 83
+  completed_plans: 21
+  percent: 88
 ---
 
 # STATE: Proxmox Self-Service GUI
@@ -29,14 +29,14 @@ progress:
 ## Current Position
 
 Phase: 03 (job-queue-lifecycle) — EXECUTING
-Plan: 3 of 7
-Current Plan: 3
+Plan: 4 of 7
+Current Plan: 4
 
 - **Milestone:** v1
 - **Phase:** 03 — Job Queue & Lifecycle (executing)
-- **Plan:** 03-02 power-vertical-slice ✅ complete
-- **Status:** Executing Phase 03 — ready for Plan 03-03
-- **Progress:** [████████░░] 83%
+- **Plan:** 03-03 snapshots-resize ✅ complete
+- **Status:** Executing Phase 03 — ready for Plan 03-04
+- **Progress:** [█████████░] 88%
 
 ## Phases at a Glance
 
@@ -78,6 +78,7 @@ Current Plan: 3
 | Phase 02-multi-cluster-inventory-quotas-audit P02-06-frontend-audit-quotas | 25 | 2 tasks | 14 files |
 | Phase 03 P01 | 17 min | 3 tasks | 22 files |
 | 03    | 02   | 11 min   | 2     | 11    | 331 pass |
+| Phase 03 P03 | 12min | 2 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -166,6 +167,11 @@ Current Plan: 3
 | POST /jobs/{id}/retry re-arms the SAME job row (state→pending, clear upid/error/finished_at) and enqueues a FRESH arq job id | UI-SPEC — retry re-uses identity, never spawns a second drawer row; the original job-{id} arq key may still linger | Plan 03-02 SUMMARY |
 | IDEMPOTENT_KINDS = {vm.power, vm.snapshot.delete, vm.resize, vm.backup}; delete/clone/migrate/restore excluded → 409 | D-16 — non-idempotent retries could duplicate a VM or corrupt state; the UI must re-issue them from a form | Plan 03-02 SUMMARY |
 | /ws/jobs WebSocket authenticates the access_token cookie before accept(); cookie session only, no Bearer PAT | T-03-02-05 — never register an unauthenticated socket; the Tasks drawer is a browser-session feature | Plan 03-02 SUMMARY |
+| run_resize does NOT call dispatch_and_poll — a CPU/RAM resize is a synchronous config.put with no UPID; the job is marked succeeded directly via finish_job, still flowing through a vm.resize jobs row for Tasks-drawer consistency | RESEARCH §Resize — resize has no UPID to poll; the drawer still needs the job row | Plan 03-03 SUMMARY |
+| validate_resize rejects a disk shrink (or unknown disk id) 422 server-side BEFORE the job is enqueued; current per-disk sizes are baked into the job payload so the worker computes the +NG delta | LIFE-09 / T-03-03-03 — the API is the shrink enforcement point, the UI min is UX-only; baking sizes avoids a second config read in the worker | Plan 03-03 SUMMARY |
+| The three run_snapshot_* functions share one _run_snapshot_job body, kind-dispatched | Mirrors run_power_action's vm.power+vm.delete reuse — one claim/connector/dispatch_and_poll/audit path | Plan 03-03 SUMMARY |
+| Snapshot list_snapshots is a pure read (no job, no audit) returning the flat parent-pointer list; the client builds the indented tree | D-05 — RESEARCH §Snapshot tree: API returns the flat list, the hand-rolled Svelte component recurses on parent | Plan 03-03 SUMMARY |
+| hotplug parser: hotplug='1' → all flags true; '0'/'' → all false; comma list → token membership (cpu/memory); absent → false | RESEARCH A5 — derives cpu_hotplug/memory_hotplug reboot-required flags; PVE default lacks cpu/memory tokens | Plan 03-03 SUMMARY |
 
 ### Open Questions (resolve before/during named phase)
 
@@ -197,12 +203,13 @@ None.
 
 ## Session Continuity
 
-**To resume:** Run `/gsd-execute-phase 3` to continue with Plan 03-03 (snapshots + resize).
+**To resume:** Run `/gsd-execute-phase 3` to continue with Plan 03-04 (backups).
 
 **Next milestone:** First end-to-end "click → running VM/LXC" lands at the end of Phase 4.
 
 **Recently completed:**
 
+- 2026-05-16 — Plan 03-03 snapshots-resize (snapshot lifecycle: GET flat parent-pointer list for the client-built tree + 202 create/rollback/delete VM+LXC mirrors; run_snapshot_create/rollback/delete arq job functions over a shared kind-dispatched body; resize lifecycle: GET resize-info with hotplug-derived cpu/memory reboot-required flags + 202 resize; run_resize synchronous config write with NO poll loop — marks the job succeeded directly, still surfaced in the Tasks drawer; server-side disk-shrink rejection 422 — the API is the LIFE-09 enforcement point; 15 new tests, 346 total green; LIFE-04/08/09 + API-04 shipped)
 - 2026-05-16 — Plan 03-02 power-vertical-slice (the first full pipeline slice: power lifecycle routes — Start/Stop/Reboot/Shutdown/Delete + bulk-power — all 202; run_power_action arq job function dispatching vm.power + vm.delete via the UPID poller; jobs API GET /jobs + GET /jobs/{id} + POST /jobs/{id}/retry with idempotent-only retry gate; /api/v1/ws/jobs WebSocket — authenticated handshake + recent-window backfill + team-scoped fan-out; 17 new tests, 331 total green; LIFE-01/02/03/12/13 + API-04 shipped)
 - 2026-05-16 — Plan 03-01 job-queue-infrastructure
 - 2026-05-14 — Plan 02-03 inventory-backend (28 new tests; 249 total; inventory read/write API with per-team privsep RBAC, pool-match defense-in-depth, stale-cache graceful degradation, token-scrubbing before audit persistence; commit-before-raise on failure paths; 10 endpoints shipped; INV-01..08 + TENT-06 + API-05 marked complete)
@@ -221,8 +228,8 @@ None.
 - 2026-05-14 — Requirements definition (89 v1 requirements across 13 categories)
 - 2026-05-14 — Roadmap (5-phase structure, 100% coverage)
 
-**Last session:** 2026-05-16T12:30:13Z
-**Stopped at:** Completed 03-02-PLAN.md
+**Last session:** 2026-05-16T12:48:07Z
+**Stopped at:** Completed 03-03-PLAN.md
 **Resume file:** None
 
 ---
