@@ -875,6 +875,83 @@ class PVEConnector:
         return list(result or [])
 
     # ------------------------------------------------------------------
+    # SDN / legacy-bridge read calls (Phase 4, Plan 04-07 — spike 04-02)
+    #
+    # The read-API contract is pinned by ``04-SPIKE-sdn.md`` §7. Every method
+    # routes through ``_call_with_breaker`` (same convention as the Phase-3
+    # lifecycle reads above); these are PURE reads and do NOT clear the
+    # resource cache.
+    #
+    # RBAC (spike §7, load-bearing): the per-team privsep token CANNOT
+    # enumerate SDN — ``GET /cluster/sdn`` → ``403 SDN.Audit`` and
+    # ``GET /nodes/{node}/network`` → ``[]`` for that token. The networks
+    # service therefore drives these reads with the CLUSTER-ADMIN connector
+    # (``registry.get``) and applies per-team scoping APP-SIDE. These methods
+    # are connector-level and token-agnostic — the caller picks the connector.
+    # ------------------------------------------------------------------
+
+    async def sdn_zones(self) -> list[dict]:
+        """GET /cluster/sdn/zones — the SDN zone list (spike §1).
+
+        No ``pending``/``running`` query param, so each item carries its
+        ``state``/``pending`` annotation (spike §2). Each zone carries
+        ``ipam`` (the IPAM id — empty/absent ⇒ DHCP-only), ``dhcp``,
+        ``type``, ``bridge``, ``nodes`` and ``state``. IPAM is a ZONE
+        property, not a VNet property — the service joins a VNet's ``zone``
+        to this list to learn whether the VNet has an IPAM.
+        """
+        result = await self._call_with_breaker(self._client.cluster.sdn.zones.get)
+        return list(result or [])
+
+    async def sdn_vnets(self) -> list[dict]:
+        """GET /cluster/sdn/vnets — the SDN VNet list (spike §1).
+
+        No ``pending``/``running`` query param, so each item carries its
+        ``state``/``pending`` annotation. Each VNet carries ``vnet`` (the
+        name), ``zone`` (the zone-link field — the IPAM-association join
+        key), ``tag`` (VLAN tag / VXLAN VNI), ``type`` and ``state``. A VNet
+        is USABLE only when ``state`` is empty/absent (spike §2, Pitfall 8).
+        """
+        result = await self._call_with_breaker(self._client.cluster.sdn.vnets.get)
+        return list(result or [])
+
+    async def sdn_subnets(self, *, vnet: str) -> list[dict]:
+        """GET /cluster/sdn/vnets/{vnet}/subnets — the VNet's subnet list.
+
+        Each subnet object carries the CIDR plus ``gateway`` and
+        ``dhcp-range`` — enough for the NET-03 app-side free-IP computation
+        (spike §3).
+        """
+        fn = self._client.cluster.sdn.vnets(vnet).subnets.get
+        result = await self._call_with_breaker(fn)
+        return list(result or [])
+
+    async def sdn_ipam_status(self, *, ipam: str) -> list[dict]:
+        """GET /cluster/sdn/ipams/{ipam}/status — the allocated-IP set.
+
+        Returns an array of every IP the IPAM has recorded as allocated
+        (spike §3, IPAM FREE-IP option b). The service computes the lowest
+        unallocated host address from this set + the subnet CIDR. Skip this
+        call entirely when the VNet's zone has no ``ipam`` (DHCP-only degrade).
+        """
+        fn = self._client.cluster.sdn.ipams(ipam).status.get
+        result = await self._call_with_breaker(fn)
+        return list(result or [])
+
+    async def node_bridges(self, *, node: str) -> list[dict]:
+        """GET /nodes/{node}/network?type=any_bridge — legacy Linux/OVS bridges.
+
+        ``type=any_bridge`` includes OVS bridges (``type=bridge`` omits them)
+        — the spike's LEGACY BRIDGE READ verdict (§5). The bridge list is
+        per-node; the networks service dedups by ``iface`` across nodes for
+        the cluster-wide picker. Each item carries ``iface``, ``type``,
+        ``cidr``, ``gateway``, ``bridge_vlan_aware``, ``active``.
+        """
+        fn = self._client.nodes(node).network.get
+        result = await self._call_with_breaker(fn, type="any_bridge")
+        return list(result or [])
+
+    # ------------------------------------------------------------------
     # In-container command execution (Phase 4, Plan 04-06 — spike 04-01)
     #
     # CRITICAL: there is NO PVE REST endpoint for running a command inside an
