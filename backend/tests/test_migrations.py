@@ -56,7 +56,7 @@ def test_alembic_ini_exists() -> None:
     assert ALEMBIC_INI.exists(), f"missing {ALEMBIC_INI}"
 
 
-def test_upgrade_head_creates_all_eleven_tables(fresh_db: str) -> None:
+def test_upgrade_head_creates_all_business_tables(fresh_db: str) -> None:
     cfg = _make_config(fresh_db)
     command.upgrade(cfg, "head")
 
@@ -74,6 +74,8 @@ def test_upgrade_head_creates_all_eleven_tables(fresh_db: str) -> None:
         "audit_log",
         "quotas",
         "jobs",
+        # Phase 3 (0004_phase3) — scheduled-backup table (LIFE-06).
+        "backup_schedules",
     }
     assert expected.issubset(table_names), (
         f"missing tables: {expected - table_names}"
@@ -203,8 +205,11 @@ def test_0003_phase2_round_trip(fresh_db: str) -> None:
     """
     cfg = _make_config(fresh_db)
 
-    # --- Upgrade to head (0001 → 0002 → 0003) ---
-    command.upgrade(cfg, "head")
+    # --- Upgrade to 0003 specifically (0001 → 0002 → 0003) ---
+    # Pinned to 0003_phase2, not "head": head is now 0004_phase3, and a
+    # `downgrade -1` from head would revert 0004 instead of the 0003 this
+    # test targets.
+    command.upgrade(cfg, "0003_phase2")
 
     engine = sa.create_engine(fresh_db)
     insp = sa.inspect(engine)

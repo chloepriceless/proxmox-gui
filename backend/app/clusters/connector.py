@@ -395,3 +395,317 @@ class PVEConnector:
         if tokenid is not None:
             kwargs["tokens"] = f"{userid}!{tokenid}"
         await self._call(self._client.access.acl.put, **kwargs)
+
+    # ------------------------------------------------------------------
+    # Lifecycle mutating + polling calls (Phase 3, Plan 03-01)
+    #
+    # Every method routes through ``_call_with_breaker`` so it inherits the
+    # circuit breaker + the uniform PVEUnreachable/PVEAuthError/PVEAPIError
+    # surface (RESEARCH §"All proxmoxer I/O through _call_with_breaker").
+    # The ``fn = (... lxc ... if is_lxc else ... qemu ...)`` branch shape
+    # mirrors ``get_vm_status``. Mutating calls invalidate the resource
+    # cache (``self._resource_cache.snapshot = None``).
+    #
+    # The root-only lock-override parameter (Pitfall 17 / T-03-01-04) is
+    # never sent — the GUI uses privsep tokens, so no method exposes it.
+    # ------------------------------------------------------------------
+
+    async def vm_power(
+        self, *, node: str, vmid: int, is_lxc: bool, action: str
+    ) -> str:
+        """POST /nodes/{node}/{qemu|lxc}/{vmid}/status/{action} — returns a UPID.
+
+        ``action`` ∈ {start, stop, reboot, shutdown}. ``stop`` is force-stop;
+        ``shutdown`` is graceful ACPI.
+        """
+        base = (
+            self._client.nodes(node).lxc(vmid)
+            if is_lxc
+            else self._client.nodes(node).qemu(vmid)
+        )
+        fn = getattr(base.status, action).post
+        upid = await self._call_with_breaker(fn)
+        self._resource_cache.snapshot = None
+        return upid
+
+    async def vm_delete(self, *, node: str, vmid: int, is_lxc: bool) -> str:
+        """DELETE /nodes/{node}/{qemu|lxc}/{vmid} with purge=1 — returns a UPID.
+
+        ``purge=1`` also drops the VM from backup/replication jobs. The
+        root-only lock-override parameter is never passed (privsep tokens).
+        """
+        fn = (
+            self._client.nodes(node).lxc(vmid).delete
+            if is_lxc
+            else self._client.nodes(node).qemu(vmid).delete
+        )
+        upid = await self._call_with_breaker(fn, purge=1)
+        self._resource_cache.snapshot = None
+        return upid
+
+    async def task_status(self, *, node: str, upid: str) -> dict:
+        """GET /nodes/{node}/tasks/{upid}/status.
+
+        Returns ``{"status": "running"|"stopped", "exitstatus": "<str>", ...}``.
+        ``exitstatus`` is present only when ``status == "stopped"``.
+        """
+        fn = self._client.nodes(node).tasks(upid).status.get
+        return await self._call_with_breaker(fn)
+
+    async def task_log(self, *, node: str, upid: str, limit: int = 200) -> str:
+        """GET /nodes/{node}/tasks/{upid}/log — joined into a single string.
+
+        ``Tasks.decode_log`` joins the JSON log-line array into a plain
+        string for the "Show technical details" panel.
+        """
+        from proxmoxer.tools import Tasks
+
+        fn = self._client.nodes(node).tasks(upid).log.get
+        raw = await self._call_with_breaker(fn, limit=limit)
+        return Tasks.decode_log(raw)
+
+    async def snapshot_list(
+        self, *, node: str, vmid: int, is_lxc: bool
+    ) -> list[dict]:
+        """GET /nodes/{node}/{qemu|lxc}/{vmid}/snapshot — sync snapshot list.
+
+        Each item carries a ``parent`` field; the tree is built from it.
+        """
+        fn = (
+            self._client.nodes(node).lxc(vmid).snapshot.get
+            if is_lxc
+            else self._client.nodes(node).qemu(vmid).snapshot.get
+        )
+        result = await self._call_with_breaker(fn)
+        return list(result or [])
+
+    async def snapshot_create(
+        self,
+        *,
+        node: str,
+        vmid: int,
+        is_lxc: bool,
+        snapname: str,
+        description: str = "",
+        vmstate: bool = False,
+    ) -> str:
+        """POST .../snapshot — create a snapshot, returns a UPID.
+
+        ``vmstate=1`` includes RAM state (qemu only).
+        """
+        base = (
+            self._client.nodes(node).lxc(vmid)
+            if is_lxc
+            else self._client.nodes(node).qemu(vmid)
+        )
+        kwargs: dict[str, Any] = {"snapname": snapname}
+        if description:
+            kwargs["description"] = description
+        if vmstate and not is_lxc:
+            kwargs["vmstate"] = 1
+        upid = await self._call_with_breaker(base.snapshot.post, **kwargs)
+        self._resource_cache.snapshot = None
+        return upid
+
+    async def snapshot_rollback(
+        self, *, node: str, vmid: int, is_lxc: bool, name: str
+    ) -> str:
+        """POST .../snapshot/{name}/rollback — destructive, returns a UPID."""
+        base = (
+            self._client.nodes(node).lxc(vmid)
+            if is_lxc
+            else self._client.nodes(node).qemu(vmid)
+        )
+        fn = base.snapshot(name).rollback.post
+        upid = await self._call_with_breaker(fn)
+        self._resource_cache.snapshot = None
+        return upid
+
+    async def snapshot_delete(
+        self, *, node: str, vmid: int, is_lxc: bool, name: str
+    ) -> str:
+        """DELETE .../snapshot/{name} — idempotent, returns a UPID."""
+        base = (
+            self._client.nodes(node).lxc(vmid)
+            if is_lxc
+            else self._client.nodes(node).qemu(vmid)
+        )
+        fn = base.snapshot(name).delete
+        upid = await self._call_with_breaker(fn)
+        self._resource_cache.snapshot = None
+        return upid
+
+    async def vzdump(
+        self,
+        *,
+        node: str,
+        vmid: int,
+        storage: str,
+        mode: str = "snapshot",
+        compress: str = "zstd",
+    ) -> str:
+        """POST /nodes/{node}/vzdump — manual backup, returns a UPID.
+
+        A PBS target is just a ``storage`` whose type is ``pbs`` — same call.
+        """
+        fn = self._client.nodes(node).vzdump.post
+        return await self._call_with_breaker(
+            fn, vmid=vmid, storage=storage, mode=mode, compress=compress
+        )
+
+    async def restore(
+        self,
+        *,
+        node: str,
+        vmid: int,
+        archive: str,
+        is_lxc: bool,
+        force: bool = False,
+        storage: str | None = None,
+    ) -> str:
+        """POST /nodes/{node}/{qemu|lxc} restoring from an archive — UPID.
+
+        ``force=1`` + the same vmid overwrites in place (data-loss op).
+        """
+        kwargs: dict[str, Any] = {"vmid": vmid}
+        if force:
+            kwargs["force"] = 1
+        if storage:
+            kwargs["storage"] = storage
+        if is_lxc:
+            kwargs["ostemplate"] = archive
+            kwargs["restore"] = 1
+            fn = self._client.nodes(node).lxc.post
+        else:
+            kwargs["archive"] = archive
+            fn = self._client.nodes(node).qemu.post
+        upid = await self._call_with_breaker(fn, **kwargs)
+        self._resource_cache.snapshot = None
+        return upid
+
+    async def resize_disk(
+        self, *, node: str, vmid: int, is_lxc: bool, disk: str, size: str
+    ) -> Any:
+        """PUT .../resize — grow a disk (sync). ``size`` is a delta (``+10G``).
+
+        Shrink is rejected app-side; never send a smaller absolute size.
+        """
+        base = (
+            self._client.nodes(node).lxc(vmid)
+            if is_lxc
+            else self._client.nodes(node).qemu(vmid)
+        )
+        result = await self._call_with_breaker(base.resize.put, disk=disk, size=size)
+        self._resource_cache.snapshot = None
+        return result
+
+    async def clone(
+        self,
+        *,
+        node: str,
+        vmid: int,
+        newid: int,
+        name: str | None = None,
+        full: bool = True,
+        target: str | None = None,
+        storage: str | None = None,
+        is_lxc: bool = False,
+    ) -> str:
+        """POST .../clone — clone a VM/LXC, returns a UPID.
+
+        ``full=1`` full clone, ``full=0`` linked clone.
+        """
+        base = (
+            self._client.nodes(node).lxc(vmid)
+            if is_lxc
+            else self._client.nodes(node).qemu(vmid)
+        )
+        kwargs: dict[str, Any] = {"newid": newid, "full": int(full)}
+        if name:
+            kwargs["name"] = name
+        if target:
+            kwargs["target"] = target
+        if storage:
+            kwargs["storage"] = storage
+        upid = await self._call_with_breaker(base.clone.post, **kwargs)
+        self._resource_cache.snapshot = None
+        return upid
+
+    async def to_template(self, *, node: str, vmid: int) -> str:
+        """POST /nodes/{node}/qemu/{vmid}/template — qemu-only (A7), UPID.
+
+        Template conversion is one-way and qemu-only in Phase 3.
+        """
+        fn = self._client.nodes(node).qemu(vmid).template.post
+        upid = await self._call_with_breaker(fn)
+        self._resource_cache.snapshot = None
+        return upid
+
+    async def migrate(
+        self,
+        *,
+        node: str,
+        vmid: int,
+        is_lxc: bool,
+        target: str,
+        online: bool = False,
+        bwlimit: int | None = None,
+    ) -> str:
+        """POST .../migrate — migrate to another node, returns a UPID.
+
+        ``online=1`` live migration. ``bwlimit`` is in KiB/s (0 = unlimited).
+        """
+        base = (
+            self._client.nodes(node).lxc(vmid)
+            if is_lxc
+            else self._client.nodes(node).qemu(vmid)
+        )
+        kwargs: dict[str, Any] = {"target": target, "online": int(online)}
+        if bwlimit is not None:
+            kwargs["bwlimit"] = bwlimit
+        upid = await self._call_with_breaker(base.migrate.post, **kwargs)
+        self._resource_cache.snapshot = None
+        return upid
+
+    async def cluster_status(self) -> list[dict]:
+        """GET /cluster/status — sync. Find the ``type=='cluster'`` item to
+        read ``quorate`` for the migration/write quorum pre-flight."""
+        result = await self._call_with_breaker(self._client.cluster.status.get)
+        return list(result or [])
+
+    async def cluster_nextid(self) -> int:
+        """GET /cluster/nextid — sync. NOT atomic on older PVE (Pitfall 1);
+        callers add an app-level reservation/lock."""
+        result = await self._call_with_breaker(self._client.cluster.nextid.get)
+        return int(result)
+
+    async def node_storages(
+        self, *, node: str, content: str = "backup"
+    ) -> list[dict]:
+        """GET /nodes/{node}/storage?content= — sync storage list.
+
+        Used for the backup-storage admin picker (D-08) and restore-archive
+        listing.
+        """
+        fn = self._client.nodes(node).storage.get
+        result = await self._call_with_breaker(fn, content=content)
+        return list(result or [])
+
+    async def unlock(self, *, node: str, vmid: int, is_lxc: bool) -> Any:
+        """Best-effort plain unlock — clears the ``lock`` config field.
+
+        RESEARCH Open Question Q1: a privsep ``PVEVMAdmin`` token *may* be
+        able to clear a plain lock via ``config.put(lock='')``; some PVE
+        versions reject any ``config.put`` on a locked VM. The root-only
+        lock-override parameter is never sent. A PVE rejection surfaces as
+        a normal ``PVEAPIError`` through ``_call_with_breaker`` — the caller
+        maps it to the curated "VM is locked" message.
+        """
+        base = (
+            self._client.nodes(node).lxc(vmid)
+            if is_lxc
+            else self._client.nodes(node).qemu(vmid)
+        )
+        result = await self._call_with_breaker(base.config.put, lock="")
+        self._resource_cache.snapshot = None
+        return result

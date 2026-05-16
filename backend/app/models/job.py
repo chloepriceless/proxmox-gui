@@ -21,6 +21,14 @@ State machine (column ``state``):
   unknown until PVE confirms
 - ``needs_review`` → orphan reaper couldn't determine the outcome; admin
   must check
+
+Phase 3 additions (Plan 03-01):
+- ``batch_id`` (String(64), nullable, indexed) — D-11 bulk grouping. Bulk
+  Start/Stop/Reboot fans out one Job row per VM; rows sharing a ``batch_id``
+  are grouped under a single batch header in the Tasks drawer.
+- ``friendly_error`` (Text, nullable) — D-13 curated PVE-error message. The
+  raw PVE ``exitstatus`` stays in ``error``; ``friendly_error`` holds the
+  human-readable mapping (raw is never swallowed — D-13 / Pitfall 24).
 """
 
 from __future__ import annotations
@@ -66,6 +74,11 @@ class Job(Base):
     started_at: Mapped[datetime | None] = mapped_column(nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # D-11: bulk power actions fan out one row per VM; rows sharing a
+    # batch_id are grouped under one batch header in the Tasks drawer.
+    batch_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # D-13: curated friendly message; raw exitstatus stays in `error`.
+    friendly_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         nullable=False,
         server_default=text("CURRENT_TIMESTAMP"),
@@ -74,6 +87,7 @@ class Job(Base):
     __table_args__ = (
         Index("ix_jobs_state", "state"),
         Index("ix_jobs_team_created", "team_id", "created_at"),
+        Index("ix_jobs_batch_id", "batch_id"),
     )
 
     def __repr__(self) -> str:  # pragma: no cover - debug aid
