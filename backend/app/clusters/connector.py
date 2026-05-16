@@ -730,6 +730,83 @@ class PVEConnector:
         fn = self._client.nodes(node).storage(storage).content(volid).delete
         return await self._call_with_breaker(fn)
 
+    # ------------------------------------------------------------------
+    # Provisioning create + download + node-fit calls (Phase 4, Plan 04-04)
+    #
+    # Same convention as the Phase-3 lifecycle calls above: every method
+    # routes through ``_call_with_breaker``; mutating creates invalidate the
+    # resource cache; reads do not. The root-only lock-override parameter is
+    # never sent — provisioning runs as the per-team privsep token.
+    # ------------------------------------------------------------------
+
+    async def create_qemu(self, *, node: str, vmid: int, **config: Any) -> str:
+        """POST /nodes/{node}/qemu — create a VM, returns a UPID.
+
+        ``config`` carries the full proxmoxer kwargs the provisioning service
+        translated from the wizard (``cores``/``memory``/``net0``/``ide2``/
+        ``pool``/...). PVE creates the VM atomically from this single call
+        (RESEARCH Pitfall 8) — there is no second mutating step.
+        """
+        fn = self._client.nodes(node).qemu.post
+        upid = await self._call_with_breaker(fn, vmid=vmid, **config)
+        self._resource_cache.snapshot = None
+        return upid
+
+    async def create_lxc(
+        self, *, node: str, vmid: int, ostemplate: str, **config: Any
+    ) -> str:
+        """POST /nodes/{node}/lxc — create a container, returns a UPID.
+
+        ``ostemplate`` is the ``<storage>:vztmpl/<file>`` template volid;
+        ``config`` carries the remaining proxmoxer kwargs (``cores``/
+        ``memory``/``rootfs``/``net0``/``unprivileged``/``features``/``pool``).
+        """
+        fn = self._client.nodes(node).lxc.post
+        upid = await self._call_with_breaker(
+            fn, vmid=vmid, ostemplate=ostemplate, **config
+        )
+        self._resource_cache.snapshot = None
+        return upid
+
+    async def download_url(
+        self,
+        *,
+        node: str,
+        storage: str,
+        content: str,
+        url: str,
+        filename: str,
+        **opts: Any,
+    ) -> str:
+        """POST /nodes/{node}/storage/{storage}/download-url — returns a UPID.
+
+        PVE fetches the file (ISO / cloud image / vztmpl) directly to its own
+        storage and returns a UPID — the GUI never proxies the bytes
+        (Pitfall 7). ``content`` is the PVE content type (``iso`` / ``vztmpl``
+        / ``import``). The endpoint segment carries a hyphen, so it is reached
+        via the call-style path step ``storage(storage)("download-url")``.
+        """
+        fn = self._client.nodes(node).storage(storage)("download-url").post
+        upid = await self._call_with_breaker(
+            fn, content=content, url=url, filename=filename, **opts
+        )
+        self._resource_cache.snapshot = None
+        return upid
+
+    async def node_resources(self) -> list[dict]:
+        """GET /cluster/resources?type=node — per-node CPU/RAM capacity.
+
+        Returns the ``type=node`` rows of ``/cluster/resources``, each
+        carrying ``maxcpu``/``cpu``/``maxmem``/``mem`` — the live free-capacity
+        figures the provisioning wizard's node-fit hint reads (VM-09/VM-10).
+        This is a pure read: it routes through ``_call_with_breaker`` but does
+        NOT clear the resource cache.
+        """
+        result = await self._call_with_breaker(
+            self._client.cluster.resources.get, type="node"
+        )
+        return list(result or [])
+
     async def unlock(self, *, node: str, vmid: int, is_lxc: bool) -> Any:
         """Best-effort plain unlock — clears the ``lock`` config field.
 

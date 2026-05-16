@@ -18,8 +18,11 @@ from __future__ import annotations
 from app.models.audit_log import AuditLog
 from app.models.backup_schedule import BackupSchedule
 from app.models.base import Base, TimestampMixin
+from app.models.catalog_pin import CatalogPin
 from app.models.cluster import Cluster
 from app.models.job import Job
+from app.models.network_scope import NetworkScope
+from app.models.notification_seen import NotificationSeen
 from app.models.pat import PersonalAccessToken
 from app.models.quota import Quota
 from app.models.refresh_token import RefreshToken
@@ -44,4 +47,7 @@ __all__ = [
     "Quota",
     "Job",
     "BackupSchedule",
+    "NetworkScope",
+    "CatalogPin",
+    "NotificationSeen",
 ]

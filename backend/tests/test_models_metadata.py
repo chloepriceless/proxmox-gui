@@ -44,7 +44,9 @@ def test_metadata_has_exactly_all_business_tables() -> None:
 
     11 Phase-1 tables + the Phase-3 ``backup_schedules`` table (Plan 03-04 adds
     the ``BackupSchedule`` ORM model — the table itself shipped in the
-    0004_phase3 migration in Plan 03-01).
+    0004_phase3 migration in Plan 03-01) + the three Phase-4 tables
+    (``network_scope`` / ``catalog_pin`` / ``notification_seen``, shipped by
+    the 0006_phase4 migration in Plan 04-04).
 
     Test-only models (those whose ``__tablename__`` starts with ``_test_``)
     are filtered out — :mod:`tests.test_cipher` declares a ``_test_secret_row``
@@ -69,6 +71,10 @@ def test_metadata_has_exactly_all_business_tables() -> None:
         "jobs",
         # Phase 3 (Plan 03-04 — the ORM model for the 0004_phase3 table).
         "backup_schedules",
+        # Phase 4 (Plan 04-04 — provisioning / networking / console).
+        "network_scope",
+        "catalog_pin",
+        "notification_seen",
     }
     business = {
         name for name in Base.metadata.tables if not name.startswith("_test_")
@@ -77,7 +83,7 @@ def test_metadata_has_exactly_all_business_tables() -> None:
         f"business tables mismatch; missing={expected - business} "
         f"extra={business - expected}"
     )
-    assert len(business) == 12
+    assert len(business) == 15
 
 
 def test_cluster_api_token_secret_uses_encrypted_secret() -> None:

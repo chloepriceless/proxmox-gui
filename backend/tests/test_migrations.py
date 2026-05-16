@@ -76,6 +76,10 @@ def test_upgrade_head_creates_all_business_tables(fresh_db: str) -> None:
         "jobs",
         # Phase 3 (0004_phase3) — scheduled-backup table (LIFE-06).
         "backup_schedules",
+        # Phase 4 (0006_phase4) — provisioning / networking / console.
+        "network_scope",
+        "catalog_pin",
+        "notification_seen",
     }
     assert expected.issubset(table_names), (
         f"missing tables: {expected - table_names}"

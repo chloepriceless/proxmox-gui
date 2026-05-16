@@ -43,6 +43,15 @@ from app.models._types import EncryptedSecret
 #                            Same reasoning as ssh_keys.
 # - refresh_tokens         : per-session credential bound to a user; tenants
 #                            don't share refresh tokens.
+# - catalog_pin            : global config (Phase 4 — D-06). The
+#                            community-scripts catalog pin is operator
+#                            configuration, not tenant data: one row, shared
+#                            by every team, cluster-agnostic.
+# - notification_seen      : per-user row (Phase 4 — D-23). The notification
+#                            bell's unread cursor is owned by a single user;
+#                            user_id is the tenant boundary. Same reasoning as
+#                            refresh_tokens / ssh_keys — no team_id because
+#                            notifications are per-user, not per-team.
 # - alembic_version        : Alembic housekeeping, not application data.
 #
 ALLOWLIST: frozenset[str] = frozenset(
@@ -55,6 +64,8 @@ ALLOWLIST: frozenset[str] = frozenset(
         "ssh_keys",
         "personal_access_tokens",
         "refresh_tokens",
+        "catalog_pin",
+        "notification_seen",
         "alembic_version",
     }
 )
