@@ -105,10 +105,14 @@ Requirements for initial release. Each maps to roadmap phases via the Traceabili
 
 ### Networking (SDN)
 
-- [ ] **NET-01**: System lists Proxmox SDN zones, VNets, and subnets in the network picker
-- [ ] **NET-02**: Admin can scope which SDN zones/VNets a team can see and use
-- [ ] **NET-03**: Network picker auto-picks a free IP from IPAM where available
-- [ ] **NET-04**: Fallback: legacy bridge selection still works for non-SDN setups
+- [x] **NET-01
+**: System lists Proxmox SDN zones, VNets, and subnets in the network picker
+- [x] **NET-02
+**: Admin can scope which SDN zones/VNets a team can see and use
+- [x] **NET-03
+**: Network picker auto-picks a free IP from IPAM where available
+- [x] **NET-04
+**: Fallback: legacy bridge selection still works for non-SDN setups
 
 ### Lifecycle Management
 

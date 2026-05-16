@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_plan: 7
+current_plan: 8
 status: executing
-stopped_at: Completed 04-06-PLAN.md
-last_updated: "2026-05-16T20:03:55.567Z"
+stopped_at: Completed 04-07-PLAN.md
+last_updated: "2026-05-16T20:17:22.118Z"
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 38
-  completed_plans: 30
-  percent: 79
+  completed_plans: 31
+  percent: 82
 ---
 
 # STATE: Proxmox Self-Service GUI
@@ -29,14 +29,14 @@ progress:
 ## Current Position
 
 Phase: 04 (provisioning-networking-console) — EXECUTING
-Plan: 6 of 14
-Current Plan: 7
+Plan: 7 of 14
+Current Plan: 8
 
 - **Milestone:** v1
 - **Phase:** 4
-- **Plan:** 04-06 community-scripts-catalog ✅ complete
+- **Plan:** 04-07 networks-backend ✅ complete
 - **Status:** Executing Phase 04 — Wave 2
-- **Progress:** [████████░░] 79%
+- **Progress:** [████████░░] 82%
 
 ## Phases at a Glance
 
@@ -85,6 +85,7 @@ Current Plan: 7
 | Phase 03 P07 | 18min | 2 tasks | 14 files |
 | Phase 04 P05 | ~10 min | 2 tasks | 10 files |
 | Phase 04 P06 | ~13 min | 2 tasks | 12 files |
+| Phase 04 P04-07 | ~9 min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -200,12 +201,16 @@ Current Plan: 7
 | `lxc_exec` is SSH `pct exec`, NOT a proxmoxer REST call | `POST .../lxc/{vmid}/status/exec` returns 501 on PVE 9.1.2 (spike 04-01 §3); implemented as an OS `ssh`-binary subprocess shell-out so no Python SSH dependency is added | Plan 04-06 SUMMARY |
 | Community-scripts catalog content is the vendored `snapshot.json` floor; `sync_catalog` re-pins only the commit SHA | D-05 keeps the GUI on a reviewed, trusted copy — the admin sync records which upstream commit the operator chose, never auto-importing unreviewed upstream JSON (Pitfall 10 / T-04-06-02) | Plan 04-06 SUMMARY |
 | `run_community_script` is the one provisioning job that is NOT a plain `_run_polled_job` — two stages | Stage 1 `dispatch_and_poll` the LXC create, re-open the job to `running`, stage 2 synchronous `lxc_exec` install; a stage-2 failure marks the job failed but NEVER deletes the LXC (Pitfall 8 / T-04-06-05) | Plan 04-06 SUMMARY |
+| `networks/service.py` drives every SDN/bridge read with the cluster-admin connector (`registry.get`), never the per-team privsep token | Spike 04-02 §7: a privsep team token returns `403 SDN.Audit` on `/cluster/sdn` and `[]` on `/nodes/{node}/network`; per-team visibility is filtered app-side via `NetworkScope` grants — granting team tokens `SDN.Audit` was rejected (would break D-18 isolation) | Plan 04-07 SUMMARY |
+| SDN-capable detection (D-21) = PVE release ≥ 8.1 AND `sdn_zones()` returns ≥1 APPLIED zone | An unparseable release tuple or a 403/unreachable SDN read degrades to legacy-bridges-only rather than mis-detecting SDN | Plan 04-07 SUMMARY |
+| Applied-vs-pending uses the per-object `state` field — empty/absent ⇒ applied (usable); any non-empty ⇒ `applied=False` | Pitfall 8 — the GUI never offers a VNet whose Linux bridge is not yet on the nodes; a pending VNet is still surfaced, flagged non-pickable | Plan 04-07 SUMMARY |
+| IPAM free-IP is computed app-side (spike §3 option b): zone.ipam → `sdn_ipam_status` allocated set + the VNet's first subnet CIDR → lowest unallocated host | No single-call PVE next-free-IP endpoint exists; a no-`ipam` zone or any IPAM read failure degrades to DHCP-only (D-20) | Plan 04-07 SUMMARY |
 
 ### Open Questions (resolve before/during named phase)
 
 - **Phase 1 ADR:** Single super-token vs. per-tenant privilege-separated Proxmox tokens — research strongly favors per-tenant; complexity tradeoff must be weighed.
 - **Phase 1 ADR:** `asyncio.to_thread()` vs. async proxmoxer backend — confirm thread-pool sizing for concurrent calls.
-- **Phase 4 spike:** SDN reload/applied semantics through proxmoxer (MEDIUM-LOW confidence).
+- ~~**Phase 4 spike:** SDN reload/applied semantics through proxmoxer (MEDIUM-LOW confidence).~~ — RESOLVED by spike 04-02 (`04-SPIKE-sdn.md`), implemented in Plan 04-07.
 - **Phase 4 spike:** noVNC vncticket single-encoding verification.
 - ~~**Phase 4 spike:** Community-scripts non-interactive execution mechanics.~~ — RESOLVED by spike 04-01 (`04-SPIKE-community-scripts.md`), implemented in Plan 04-06.
 
@@ -262,8 +267,8 @@ None.
 - 2026-05-14 — Requirements definition (89 v1 requirements across 13 categories)
 - 2026-05-14 — Roadmap (5-phase structure, 100% coverage)
 
-**Last session:** 2026-05-16T20:03:55.558Z
-**Stopped at:** Completed 04-06-PLAN.md
+**Last session:** 2026-05-16T20:17:22.109Z
+**Stopped at:** Completed 04-07-PLAN.md
 **Resume file:** None
 
 ---
