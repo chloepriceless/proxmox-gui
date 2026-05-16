@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_plan: 8
+current_plan: 9
 status: executing
-stopped_at: Completed 04-07-PLAN.md
-last_updated: "2026-05-16T20:17:22.118Z"
+stopped_at: Completed 04-08-PLAN.md
+last_updated: "2026-05-16T21:10:00.000Z"
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 38
-  completed_plans: 31
-  percent: 82
+  completed_plans: 32
+  percent: 84
 ---
 
 # STATE: Proxmox Self-Service GUI
@@ -29,14 +29,14 @@ progress:
 ## Current Position
 
 Phase: 04 (provisioning-networking-console) — EXECUTING
-Plan: 7 of 14
-Current Plan: 8
+Plan: 8 of 14
+Current Plan: 9
 
 - **Milestone:** v1
 - **Phase:** 4
-- **Plan:** 04-07 networks-backend ✅ complete
-- **Status:** Executing Phase 04 — Wave 2
-- **Progress:** [████████░░] 82%
+- **Plan:** 04-08 console-backend ✅ complete
+- **Status:** Executing Phase 04 — Wave 2 complete (04-08 was the final Wave-2 plan)
+- **Progress:** [████████░░] 84%
 
 ## Phases at a Glance
 
@@ -86,6 +86,7 @@ Current Plan: 8
 | Phase 04 P05 | ~10 min | 2 tasks | 10 files |
 | Phase 04 P06 | ~13 min | 2 tasks | 12 files |
 | Phase 04 P04-07 | ~9 min | 2 tasks | 8 files |
+| Phase 04 P08 | ~38 min | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -205,13 +206,18 @@ Current Plan: 8
 | SDN-capable detection (D-21) = PVE release ≥ 8.1 AND `sdn_zones()` returns ≥1 APPLIED zone | An unparseable release tuple or a 403/unreachable SDN read degrades to legacy-bridges-only rather than mis-detecting SDN | Plan 04-07 SUMMARY |
 | Applied-vs-pending uses the per-object `state` field — empty/absent ⇒ applied (usable); any non-empty ⇒ `applied=False` | Pitfall 8 — the GUI never offers a VNet whose Linux bridge is not yet on the nodes; a pending VNet is still surfaced, flagged non-pickable | Plan 04-07 SUMMARY |
 | IPAM free-IP is computed app-side (spike §3 option b): zone.ipam → `sdn_ipam_status` allocated set + the VNet's first subnet CIDR → lowest unallocated host | No single-call PVE next-free-IP endpoint exists; a no-`ipam` zone or any IPAM read failure degrades to DHCP-only (D-20) | Plan 04-07 SUMMARY |
+| The console relay mints its OWN fresh `vncproxy` ticket just-in-time inside the WS endpoint (spike §3 shape a) — the browser never holds a Proxmox ticket; the `console/routes.py` mint route exists only for the early ownership check + handing the frontend the GUI relay URL | Minimises the mint→use gap against the live-measured ~30-40s ticket expiry; keeps the ticket entirely server-side (CON-02, T-04-08-05) | Plan 04-08 SUMMARY |
+| `PVEConnector` gained explicit `host`/`port`/`verify_ssl`/`tls_fingerprint` instance attributes | proxmoxer's `ProxmoxAPI` consumes these in its constructor and discards them; the console relay's upstream `wss://...:8006` leg needs them as a stable contract | Plan 04-08 SUMMARY |
+| The `vncticket` is URL-encoded exactly once via `urllib.parse.quote(ticket, safe="")` in `console/proxy.py`; `safe=""` is load-bearing | Python's `quote` leaves `/` raw by default and the base64 ticket body contains `/`; double-encoding (`%253A`) makes PVE reject the ticket with a useless 401 (Pitfall 2 / T-04-08-04) | Plan 04-08 SUMMARY |
+| The console relay's ownership-check failure (`resolve_resource` raising `HTTPException 403`) is translated to a WebSocket `close(1008)` | A WS handshake cannot return an HTTP status; the relay reuses `jobs/ws.py`'s auth-before-accept + close-1008 convention for both the auth gate and the ownership gate | Plan 04-08 SUMMARY |
+| The console WS path `/api/v1/ws/console*` gets its own Caddy `handle` block with `flush_interval -1`, placed before the generic `/api/*` block | Disables Caddy response buffering for the latency-sensitive VNC framebuffer (the nginx `proxy_buffering off` equivalent); Caddy matches `handle` blocks in declared order so the specific path must come first (spike 04-03 §4) | Plan 04-08 SUMMARY |
 
 ### Open Questions (resolve before/during named phase)
 
 - **Phase 1 ADR:** Single super-token vs. per-tenant privilege-separated Proxmox tokens — research strongly favors per-tenant; complexity tradeoff must be weighed.
 - **Phase 1 ADR:** `asyncio.to_thread()` vs. async proxmoxer backend — confirm thread-pool sizing for concurrent calls.
 - ~~**Phase 4 spike:** SDN reload/applied semantics through proxmoxer (MEDIUM-LOW confidence).~~ — RESOLVED by spike 04-02 (`04-SPIKE-sdn.md`), implemented in Plan 04-07.
-- **Phase 4 spike:** noVNC vncticket single-encoding verification.
+- ~~**Phase 4 spike:** noVNC vncticket single-encoding verification.~~ — RESOLVED by spike 04-03 (`04-SPIKE-novnc.md`), implemented in Plan 04-08.
 - ~~**Phase 4 spike:** Community-scripts non-interactive execution mechanics.~~ — RESOLVED by spike 04-01 (`04-SPIKE-community-scripts.md`), implemented in Plan 04-06.
 
 ### Todos
@@ -242,6 +248,7 @@ None.
 
 **Recently completed:**
 
+- 2026-05-16 — Plan 04-08 console-backend (the spike-gated embedded-noVNC console backend — the final Wave-2 plan: `connector.vncproxy` minting a console ticket via the spike-confirmed `POST /nodes/{node}/{qemu|lxc}/{vmid}/vncproxy` with `websocket=1` through `_call_with_breaker` — a synchronous mint, not a UPID job; `PVEConnector` gained explicit `host`/`port`/`verify_ssl`/`tls_fingerprint` instance attributes because proxmoxer discards them and the relay's upstream leg needs them; `console/routes.py` — `POST .../{vms|lxcs}/{vmid}/console/vncproxy` minting the ticket ON the click behind `require_resource_access` (cross-tenant → 403, CON-01/02), returning a `VncProxyResponse` whose `relay_url` is the GUI's own `/api/v1/ws/console/...` path — never the Proxmox host:8006 URL (CON-03); `console/proxy.py` — the reverse-proxied bidirectional WebSocket relay: auth-before-`accept()` via `jobs/ws._resolve_ws_user` (cookie-only, `close(1008)` on failure, T-04-08-02), an ownership check via `resolve_resource` before accept (cross-tenant → close, T-04-08-03), a just-in-time `vncproxy` mint inside the relay so the browser never holds a ticket (spike §3 shape a, CON-02), the `vncticket` URL-encoded EXACTLY ONCE via `quote(ticket, safe="")` when building the upstream `wss://...:8006/.../vncwebsocket` URL — `safe=""` is load-bearing because the base64 ticket body contains `/` (Pitfall 2 / T-04-08-04), the upstream leg's `ssl.SSLContext` built from the per-cluster `verify_ssl` posture (`CERT_NONE` when `verify_ssl=False`, spike §5 / T-04-08-06), and a two-pump `FIRST_COMPLETED` relay loop that cleanly closes the browser when the upstream closes; `deploy/caddy/Caddyfile.template` gained a `handle /api/v1/ws/console*` block with `flush_interval -1` (the nginx `proxy_buffering off` equivalent), placed before the generic `/api/*` block; `websockets==16.0` promoted to an explicit `pyproject.toml` pin (already in the venv via `uvicorn[standard]` — a pin, not an install); zero deviations — plan executed exactly against the APPROVED spike 04-03 contract; 15 new tests, 462 → 477 backend tests green; CON-01/02/03 shipped)
 - 2026-05-16 — Plan 04-06 community-scripts-catalog (the spike-gated half of LXC provisioning: a community-scripts catalog backend — a vendored `snapshot.json` floor pinned to spike floor commit `369f9013` (D-05), `catalog/service.py` exposing `load_catalog` / `curated_shortlist` (featured + admin-override, D-06) / `search_catalog` (case-insensitive substring + category, LXC-02) / `attribution_for` (the LXC-04 source/commit/last-reviewed triple) / `sync_catalog` (admin GitHub-commit re-pin of the `catalog_pin` row), `GET /clusters/{id}/catalog` + `GET /clusters/{id}/catalog/{slug}` open to any authenticated user + `POST /catalog/sync` admin-gated; `connector.lxc_exec` — the spike-confirmed in-container exec mechanism: PVE 9.1.2 has NO LXC `exec` REST endpoint (`POST .../lxc/{vmid}/status/exec` → 501), so `lxc_exec` SSHes to the PVE node and runs the CLI `pct exec` via an OS `ssh`-binary subprocess shell-out — no new Python dependency, chunked output for D-08; `run_community_script` — the two-stage arq job (the one provisioning job that is NOT a plain `_run_polled_job`): stage 1 `create_lxc` UPID-polled via `dispatch_and_poll`, stage 2 starts the container and runs ONLY `install/<slug>-install.sh` at the pinned commit SHA inside it via `lxc_exec` with the `build.func` env block reproduced + affirmative stdin (spike §2 contract, Pitfall 10 — never `ct/<slug>.sh`, never the host, never `main`); a stage-2 failure marks the job failed but issues NO LXC delete (Pitfall 8 / T-04-06-05); the install output is captured to the audit log; `POST /clusters/{id}/provisioning/community-script` 202 endpoint with catalog-slug validation + quota admission before reserve; 2 auto-fixed deviations — no Python SSH library so the transport is an OS `ssh` subprocess shell-out, and a ruff ASYNC109 noqa on the passthrough `timeout` param; 22 new tests, 437 backend tests green; LXC-01/02/03/04 shipped)
 - 2026-05-16 — Plan 04-05 iso-library-cloudinit (the two non-spike-gated provisioning sub-systems: an ISO / cloud-image library backend — two new content-type-filtered PVEConnector reads `storages_for_content` + `list_iso_content` (Pitfall 16, app-side filtered belt-and-braces), a vendored 7-image curated cloud-image catalog (D-15), `enqueue_iso_download` validating http(s)-only URL schemes (SSRF — T-04-05-01) then enqueuing the Plan-04-04 `storage.download` job — PVE fetches the bytes, the GUI never proxies them (Pitfall 7), `GET /iso` + `GET /iso/cloud-images` + `POST /iso/download` with the download NOT admin-gated (D-17); the Cloud-Init render+validation module `provisioning/cloudinit.py` — a pure transform (no DB, no PVE call) with `render_cloudinit_preview` returning `YamlLine(text, injected)` marking PVE-injected lines (D-10) and `validate_cloudinit_form` returning a block-hard/warn-soft `CloudInitVerdict` that never raises — hard errors for missing cipassword/invalid ciuser/unparseable SSH key/malformed static IP/missing ipconfig0 (Pitfall 6), a DHCP-DNS soft warning (Pitfall 14), no cloud-init CLI dependency (A5); `POST /provisioning/cloudinit/preview` wrapping both for the Plan-04-13 editor; 2 auto-fixed deviations — a Pitfall-16 server-side-filter gap and an overly-crude pure-transform test assertion; 28 new tests, 415 backend tests green; VM-08 + VM-01/D-15 + the VM-05/06/07 backend half shipped)
 - 2026-05-16 — Plan 03-07 frontend-backups (the Phase 3 backup UI: a per-VM Backups tab between Snapshots and Console — BackupsTab with a backup-files Card, a "Back up now" Database-icon primary button, 48px file rows with a MoreHorizontal Restore/Delete menu, and the BackupScheduleCard on top — a Switch + Daily/Weekly Select + keep-last-N number input + Save-schedule CTA, the whole card disabled when no backup storage; the D-08 no-storage bg-warning/10 banner; RestoreDialog defaulting to in-place overwrite behind a typed-name confirm — bg-destructive/10 data-loss warning, ENTER does not submit, CTA "Restore (overwrite)" — with a restore-as-new alternative (required New VMID + New name, CTA swaps to "Restore as new VM"); the global /backups page — an auth-gated SSR loader copying the audit-page analog + a shadcn table of the team-scoped scheduled-backup list, with a CalendarClock "Backups" sidebar nav item; the admin per-cluster backup-storage Select on the cluster edit form with a "None — backups disabled" option saved via the existing Save-changes CTA; the ActionToolbar "Back up now" More-menu item wired; api/lifecycle.ts + api/clusters.ts extended; 3 auto-fixed deviations aligning the plan's interface sketch to the live Plan 03-04 backend contracts; 11 new tests, 121 frontend tests green; LIFE-05/06/07 frontend-completed — Phase 3 complete)
@@ -267,8 +274,8 @@ None.
 - 2026-05-14 — Requirements definition (89 v1 requirements across 13 categories)
 - 2026-05-14 — Roadmap (5-phase structure, 100% coverage)
 
-**Last session:** 2026-05-16T20:17:22.109Z
-**Stopped at:** Completed 04-07-PLAN.md
+**Last session:** 2026-05-16T21:10:00.000Z
+**Stopped at:** Completed 04-08-PLAN.md
 **Resume file:** None
 
 ---

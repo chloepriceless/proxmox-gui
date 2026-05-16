@@ -141,9 +141,12 @@ Requirements for initial release. Each maps to roadmap phases via the Traceabili
 
 ### Console
 
-- [ ] **CON-01**: User can open an embedded noVNC console in an iframe for any VM/LXC they own
-- [ ] **CON-02**: vncticket is generated on user click (not page load) and refreshed before expiry
-- [ ] **CON-03**: Console works through the GUI's reverse-proxied WebSocket (no direct Proxmox exposure required to the browser)
+- [x] **CON-01
+**: User can open an embedded noVNC console in an iframe for any VM/LXC they own
+- [x] **CON-02
+**: vncticket is generated on user click (not page load) and refreshed before expiry
+- [x] **CON-03
+**: Console works through the GUI's reverse-proxied WebSocket (no direct Proxmox exposure required to the browser)
 
 ### REST API
 

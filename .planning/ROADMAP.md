@@ -104,7 +104,7 @@ Plans:
 - [x] 04-05-PLAN.md — ISO library + Cloud-Init render/validation backend
 - [x] 04-06-PLAN.md — Community-scripts catalog backend + two-stage run_community_script job *(completed 2026-05-16, 12 files, 437 tests green; LXC-01/02/03/04 shipped; SUMMARY: .planning/phases/04-provisioning-networking-console/04-06-SUMMARY.md)*
 - [x] 04-07-PLAN.md — Networks backend — SDN reads, picker service, per-team scoping *(completed 2026-05-16, 8 files, 462 tests green; NET-01/02/03/04 shipped; SUMMARY: .planning/phases/04-provisioning-networking-console/04-07-SUMMARY.md)*
-- [ ] 04-08-PLAN.md — Console backend — vncproxy mint + reverse-proxied WebSocket relay
+- [x] 04-08-PLAN.md — Console backend — vncproxy mint + reverse-proxied WebSocket relay *(completed 2026-05-16, 9 files, 477 tests green; CON-01/02/03 shipped; SUMMARY: .planning/phases/04-provisioning-networking-console/04-08-SUMMARY.md)*
 - [ ] 04-09-PLAN.md — Frontend foundation — 5 API modules + EmptyState/HelpTooltip + /inventory Create entry
 - [ ] 04-10-PLAN.md — Wizard shell — /create route, WizardChrome, PathPicker, sessionStorage draft store
 - [ ] 04-11-PLAN.md — LXC wizard paths + community-scripts catalog browser
