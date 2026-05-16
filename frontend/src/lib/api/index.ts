@@ -22,3 +22,4 @@ export * as catalog from './catalog';
 export * as networks from './networks';
 export * as iso from './iso';
 export * as console from './console';
+export * as notifications from './notifications';

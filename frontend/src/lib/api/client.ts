@@ -40,6 +40,7 @@ import * as catalogModule from './catalog';
 import * as networksModule from './networks';
 import * as isoModule from './iso';
 import * as consoleModule from './console';
+import * as notificationsModule from './notifications';
 
 export { ApiError } from '$lib/utils/api';
 export type * from './types';
@@ -61,6 +62,7 @@ export const api = {
   networks: networksModule,
   iso: isoModule,
   console: consoleModule,
+  notifications: notificationsModule,
 } as const;
 
 export type Api = typeof api;

@@ -223,6 +223,7 @@ def create_app() -> FastAPI:
     from app.lifecycle.snapshot_routes import router as snapshot_router
     from app.me.routes import router as me_router
     from app.networks.routes import router as networks_router
+    from app.notifications.routes import router as notifications_router
     from app.pats.routes import router as pats_router
     from app.provisioning.routes import router as provisioning_router
     from app.quotas.routes import router as quotas_router
@@ -294,6 +295,11 @@ def create_app() -> FastAPI:
     # (.../console/vncproxy) + the reverse-proxied WebSocket relay
     # (/api/v1/ws/console/...) (CON-01, CON-02, CON-03).
     app.include_router(console_router, prefix="/api/v1", tags=["console"])
+    # Plan 04-14: notification bell — a derived completions feed over the
+    # jobs table + a per-user last-seen cursor (UI-07, D-22/D-23).
+    app.include_router(
+        notifications_router, prefix="/api/v1", tags=["notifications"]
+    )
 
     return app
 

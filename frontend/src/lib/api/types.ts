@@ -1003,3 +1003,37 @@ export interface VncProxyResponse {
   port: number;
   relay_url: string;
 }
+
+// --- Notifications (Plan 04-14 backend) ------------------------------------
+
+/**
+ * One completion in the notification-bell feed — mirrors
+ * `app.notifications.routes.NotificationItem`.
+ *
+ * The feed is a *derived view* over the `jobs` table (D-23): each item is a
+ * terminal job row (`succeeded` / `failed` — completions only, D-22). There is
+ * no separate notification store.
+ */
+export interface NotificationItem {
+  id: number;
+  /** e.g. "vm.create", "lxc.start", "vm.backup". */
+  kind: string;
+  /** Always terminal — `succeeded` or `failed`. */
+  state: JobState;
+  cluster_id: number | null;
+  team_id: number | null;
+  /** Curated human-readable error — shown on a failed-job row. */
+  friendly_error: string | null;
+  created_at: string | null;
+  finished_at: string | null;
+}
+
+/**
+ * `200` body of `GET /notifications` (and `POST /notifications/seen`) — mirrors
+ * `app.notifications.routes.NotificationFeed`. `unread_count` is the number of
+ * feed rows newer than the caller's per-user last-seen cursor.
+ */
+export interface NotificationFeed {
+  items: NotificationItem[];
+  unread_count: number;
+}
