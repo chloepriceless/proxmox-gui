@@ -115,7 +115,8 @@ Requirements for initial release. Each maps to roadmap phases via the Traceabili
 - [ ] **LIFE-11**: User can migrate a VM between cluster nodes (live or offline, surface bwlimit)
 - [ ] **LIFE-12**: Long-running tasks show progress via a Tasks drawer (poll UPID, surface stderr)
 - [ ] **LIFE-13**: Failed tasks offer a one-click retry where safe
-- [ ] **LIFE-14**: Orphaned tasks (UPIDs from before a restart) are re-attached on app boot
+- [x] **LIFE-14
+**: Orphaned tasks (UPIDs from before a restart) are re-attached on app boot
 
 ### Console
 
@@ -156,7 +157,8 @@ Requirements for initial release. Each maps to roadmap phases via the Traceabili
 - [ ] **UI-03**: Mobile-responsive (list, detail, and console reflow; wizards may be desktop-only)
 - [ ] **UI-04**: Distinct empty states with CTAs (e.g., "You have no VMs yet — Create one")
 - [ ] **UI-05**: Inline help (`?` icons) for every PVE-specific field with link to docs
-- [ ] **UI-06**: Error messages map PVE errors to human-readable text (no raw "operation failed")
+- [x] **UI-06
+**: Error messages map PVE errors to human-readable text (no raw "operation failed")
 - [ ] **UI-07**: In-app notification bell shows task completions
 
 ### Deployment
@@ -277,7 +279,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | LIFE-11 | Phase 3 | Pending |
 | LIFE-12 | Phase 3 | Pending |
 | LIFE-13 | Phase 3 | Pending |
-| LIFE-14 | Phase 3 | Pending |
+| LIFE-14 | Phase 3 | Complete (Plan 03-01) |
 | CON-01 | Phase 4 | Pending |
 | CON-02 | Phase 4 | Pending |
 | CON-03 | Phase 4 | Pending |
@@ -297,7 +299,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | UI-03 | Phase 5 | Pending |
 | UI-04 | Phase 4 | Pending |
 | UI-05 | Phase 4 | Pending |
-| UI-06 | Phase 3 | Pending |
+| UI-06 | Phase 3 | Complete (Plan 03-01) |
 | UI-07 | Phase 4 | Pending |
 | DEPLOY-01 | Phase 1 | Complete (Plan 01-04) |
 | DEPLOY-02 | Phase 1 | Complete (Plan 01-04) |

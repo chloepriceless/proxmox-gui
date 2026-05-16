@@ -75,7 +75,7 @@ Users can self-provision and manage VMs/LXCs on Proxmox through a polished, opin
   4. Every mutation returns 202 Accepted with a job ID; the Tasks drawer shows live progress streamed via WebSocket from the UPID polling worker; failed tasks expose stderr and offer one-click retry where safe; an app restart mid-task does not lose the operation — the orphan reaper re-attaches it on boot.
   5. When a Proxmox operation fails, the user sees a human-readable explanation (e.g. "VM is locked — unlock from detail page") instead of a raw "operation failed" — error mapping covers the common PVE error surface.
 **Plans**: 7 plans
-- [ ] 03-01-PLAN.md — Job-queue infrastructure: arq worker, UPID poller, orphan reaper, Redis pub/sub events, 202 enqueue helper, curated PVE-error map, connector lifecycle/polling methods, 0004_phase3 migration, Redis + worker-unit deploy wiring
+- [x] 03-01-PLAN.md — Job-queue infrastructure: arq worker, UPID poller, orphan reaper, Redis pub/sub events, 202 enqueue helper, curated PVE-error map, connector lifecycle/polling methods, 0004_phase3 migration, Redis + worker-unit deploy wiring
 - [ ] 03-02-PLAN.md — Power vertical slice: Start/Stop/Reboot/Shutdown/Delete + bulk power (202 + batch_id), run_power_action job function, jobs API (list/get/retry), Tasks-drawer WebSocket endpoint
 - [ ] 03-03-PLAN.md — Snapshots (create/rollback/delete + flat tree reader) and resize (CPU/RAM config write, hotplug reboot detection, online disk grow with server-side shrink block)
 - [ ] 03-04-PLAN.md — Backups (manual vzdump + scheduled arq-cron with keep-last-N + restore in-place/as-new), clone (VMID reservation + quota admission), template-convert, migrate (quorum + node-local snippet pre-flights + bwlimit), admin backup-storage config
@@ -140,7 +140,7 @@ Users can self-provision and manage VMs/LXCs on Proxmox through a polished, opin
 |-------|----------------|--------|-----------|
 | 1. Foundation | 9/10 | Executing | - |
 | 2. Multi-Cluster Inventory, Quotas & Audit | 0/TBD | Not started | - |
-| 3. Job Queue & Lifecycle | 0/7 | Not started | - |
+| 3. Job Queue & Lifecycle | 1/7 | In Progress | - |
 | 4. Provisioning, Networking & Console | 0/TBD | Not started | - |
 | 5. Polish & Operational Hardening | 0/TBD | Not started | - |
 

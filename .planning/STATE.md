@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_plan: 4
+current_plan: 2
 status: executing
-stopped_at: Phase 3 UI-SPEC approved
-last_updated: "2026-05-16T01:38:02.170Z"
+stopped_at: Completed 03-01-PLAN.md
+last_updated: "2026-05-16T12:15:29.500Z"
 progress:
   total_phases: 5
   completed_phases: 2
-  total_plans: 17
-  completed_plans: 17
-  percent: 100
+  total_plans: 24
+  completed_plans: 18
+  percent: 75
 ---
 
 # STATE: Proxmox Self-Service GUI
@@ -24,27 +24,19 @@ progress:
 
 **Core value:** Users can self-provision and manage VMs/LXCs on Proxmox through a polished, opinionated UI — without ever needing to open the Proxmox web interface.
 
-**Current focus:** Phase 02 — multi-cluster-inventory-quotas-audit
+**Current focus:** Phase 03 — job-queue-lifecycle
 
 ## Current Position
 
-Phase: 02 (multi-cluster-inventory-quotas-audit) — EXECUTING
-Plan: 4 of 7
-Current Plan: 4
+Phase: 03 (job-queue-lifecycle) — EXECUTING
+Plan: 2 of 7
+Current Plan: 2
 
 - **Milestone:** v1
-- **Phase:** 01 — Foundation (executing)
-- **Plan:** 01-01 backend-scaffold ✅ complete
-- **Plan:** 01-02 db-schema ✅ complete
-- **Plan:** 01-03 frontend-scaffold ✅ complete
-- **Plan:** 01-04 deployment-skeleton ✅ complete
-- **Plan:** 01-05 auth-subsystem ✅ complete
-- **Plan:** 01-06 clusters-tenant-bootstrap ✅ complete
-- **Plan:** 01-07 users-admin-setup ✅ complete
-- **Plan:** 01-08 frontend-auth-shell ✅ complete
-- **Plan:** 01-09 frontend-account ✅ complete
-- **Status:** Executing Phase 02
-- **Progress:** [█████████░] 94%
+- **Phase:** 03 — Job Queue & Lifecycle (executing)
+- **Plan:** 03-01 job-queue-infrastructure ✅ complete
+- **Status:** Executing Phase 03 — ready for Plan 03-02
+- **Progress:** [████████░░] 75%
 
 ## Phases at a Glance
 
@@ -84,6 +76,7 @@ Current Plan: 4
 | Phase 02 P02-04-quotas-backend | ~75 min | 2 tasks | 11 files |
 | Phase 02 P05 | 35 | 2 tasks | 29 files |
 | Phase 02-multi-cluster-inventory-quotas-audit P02-06-frontend-audit-quotas | 25 | 2 tasks | 14 files |
+| Phase 03 P01 | 17 min | 3 tasks | 22 files |
 
 ## Accumulated Context
 
@@ -161,6 +154,11 @@ Current Plan: 4
 | Composite partial UNIQUE indices replace flat UniqueConstraints on quotas.team_id / quotas.user_id | Enables per-cluster quota rows (one quota per team+cluster pair); SQLite batch_alter_table drops old named constraints and creates new index | Plan 02-02 SUMMARY |
 | Static code inspection for FLUSH-not-COMMIT test: inspect.getsource(audit_write) asserts 'await db.commit()' absent | SQLite in-memory DB shares state across aiosqlite sessions making transaction isolation untestable; static analysis is the only reliable gate | Plan 02-02 SUMMARY |
 | PersonalAccessToken exposes lookup_prefix (not prefix_preview) for PAT actor attribution in audit reader | Confirmed field name from Phase 1 PAT model; reader LEFT JOINs PAT table on actor_pat_id and surfaces as actor_pat_prefix in AuditEntry | Plan 02-02 SUMMARY |
+| enqueue_job commits the jobs row BEFORE the arq enqueue; idempotency key = sha256(kind+actor+payload) | Commit-before-enqueue: the worker must be able to SELECT the row. Actor in the hash means a forged key cannot replay another user's job (T-03-01-02) | Plan 03-01 SUMMARY |
+| UPID poller persists upid+upid_node BEFORE the poll loop; first stopped status is authoritative | Pitfall 12 (crash-safety — the reaper re-attaches a job whose upid is persisted) + Pitfall 2 (fast ops are already stopped on poll #1) | Plan 03-01 SUMMARY |
+| `WARNINGS:` exitstatus maps to succeeded (warning surfaced in friendly_error), not failed | RESEARCH A3 — a backup that finishes with warnings still has a valid backup file; hard-failing it would confuse users | Plan 03-01 SUMMARY |
+| arq worker is a separate process: on_startup installs the cipher itself + aliases ctx['redis'] to ctx['arq_pool'] | The worker decrypts cluster tokens and so needs the same cipher the API installs; reaper/poller read a stable ctx['arq_pool'] key | Plan 03-01 SUMMARY |
+| bootstrap.sh idempotent-exit branch re-runs pip install + provisions redis-server | Pitfall 10 — the branch previously ran only `alembic upgrade head`, so a Phase-3 upgrade deploy left the worker crashing on a missing arq import | Plan 03-01 SUMMARY |
 
 ### Open Questions (resolve before/during named phase)
 
@@ -214,11 +212,11 @@ None.
 - 2026-05-14 — Requirements definition (89 v1 requirements across 13 categories)
 - 2026-05-14 — Roadmap (5-phase structure, 100% coverage)
 
-**Last session:** --stopped-at
-**Stopped at:** Phase 3 UI-SPEC approved
-**Resume file:** --resume-file
+**Last session:** 2026-05-16T12:15:29.492Z
+**Stopped at:** Completed 03-01-PLAN.md
+**Resume file:** None
 
 ---
 *State managed by GSD; do not edit phase counts manually — use `/gsd-transition` and `/gsd-progress`.*
 
-**Planned Phase:** 2 (Multi-Cluster Inventory, Quotas & Audit) — 7 plans — 2026-05-14T16:21:02.171Z
+**Planned Phase:** 3 (Job Queue & Lifecycle) — 7 plans — 2026-05-16T02:19:10.274Z
