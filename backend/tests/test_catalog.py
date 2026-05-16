@@ -784,4 +784,231 @@ def test_worker_registers_community_script_kind() -> None:
 
     src = inspect.getsource(worker)
     assert "func(run_community_script, name='lxc.community-script'" in src
+
+
+# ===========================================================================
+# WR-01 — commit_sha + slug validation guards (Plan 04-17)
+#
+# CLAUDE.md constraint #8 ("Pin to commit hashes"): _build_install_command
+# interpolates commit_sha + slug into a raw GitHub URL and a `bash -c` shell
+# command. A malformed/malicious value is a supply-chain / path-traversal /
+# shell-injection surface; both inputs must be validated against strict
+# charsets before they can ever reach interpolation.
+# ===========================================================================
+
+
+def test_validate_commit_sha_accepts_a_real_sha() -> None:
+    """A 40-char lowercase hex SHA passes and is returned unchanged."""
+    from app.jobs.provisioning_functions import _validate_commit_sha
+
+    assert _validate_commit_sha("a" * 40) == "a" * 40
+    assert _validate_commit_sha(_FLOOR_SHA) == _FLOOR_SHA
+
+
+def test_validate_commit_sha_rejects_uppercase() -> None:
+    """An uppercase SHA is rejected — git SHAs are lowercase hex."""
+    from app.jobs.provisioning_functions import _validate_commit_sha
+
+    with pytest.raises(ValueError):
+        _validate_commit_sha("A" * 40)
+
+
+def test_validate_commit_sha_rejects_too_short() -> None:
+    """A SHA shorter than 40 chars is rejected."""
+    from app.jobs.provisioning_functions import _validate_commit_sha
+
+    with pytest.raises(ValueError):
+        _validate_commit_sha("abc")
+
+
+def test_validate_commit_sha_rejects_non_hex() -> None:
+    """A 40-char string with a non-hex character is rejected."""
+    from app.jobs.provisioning_functions import _validate_commit_sha
+
+    with pytest.raises(ValueError):
+        _validate_commit_sha("a" * 39 + "g")
+
+
+def test_validate_commit_sha_rejects_shell_metacharacters() -> None:
+    """A commit_sha carrying shell metacharacters is rejected."""
+    from app.jobs.provisioning_functions import _validate_commit_sha
+
+    with pytest.raises(ValueError):
+        _validate_commit_sha("369f9013088f19771a1b95c40ee252fd; rm -rf /")
+
+
+def test_validate_commit_sha_rejects_non_string() -> None:
+    """A non-string commit_sha is rejected, not crashed on."""
+    from app.jobs.provisioning_functions import _validate_commit_sha
+
+    with pytest.raises(ValueError):
+        _validate_commit_sha(None)  # type: ignore[arg-type]
+
+
+def test_validate_slug_accepts_a_real_slug() -> None:
+    """A lowercase-alphanumeric-plus-hyphen slug passes unchanged."""
+    from app.jobs.provisioning_functions import _validate_slug
+
+    assert _validate_slug("home-assistant") == "home-assistant"
+    assert _validate_slug("plex") == "plex"
+    assert _validate_slug("nextcloud") == "nextcloud"
+
+
+def test_validate_slug_rejects_path_traversal() -> None:
+    """A slug carrying `../` path traversal is rejected."""
+    from app.jobs.provisioning_functions import _validate_slug
+
+    with pytest.raises(ValueError):
+        _validate_slug("../../etc/passwd")
+
+
+def test_validate_slug_rejects_shell_metacharacters() -> None:
+    """A slug carrying shell metacharacters is rejected."""
+    from app.jobs.provisioning_functions import _validate_slug
+
+    with pytest.raises(ValueError):
+        _validate_slug("plex; curl evil")
+
+
+def test_validate_slug_rejects_leading_hyphen() -> None:
+    """A slug must start with an alphanumeric — a leading hyphen is rejected."""
+    from app.jobs.provisioning_functions import _validate_slug
+
+    with pytest.raises(ValueError):
+        _validate_slug("-leading-hyphen")
+
+
+def test_validate_slug_rejects_empty() -> None:
+    """An empty slug is rejected."""
+    from app.jobs.provisioning_functions import _validate_slug
+
+    with pytest.raises(ValueError):
+        _validate_slug("")
+
+
+def test_build_install_command_rejects_bad_commit_sha() -> None:
+    """_build_install_command validates the SHA before building the URL."""
+    from app.jobs.provisioning_functions import _build_install_command
+
+    with pytest.raises(ValueError):
+        _build_install_command(slug="plex", commit_sha="not-a-sha")
+
+
+def test_build_install_command_rejects_bad_slug() -> None:
+    """_build_install_command validates the slug before building the URL."""
+    from app.jobs.provisioning_functions import _build_install_command
+
+    with pytest.raises(ValueError):
+        _build_install_command(slug="../evil", commit_sha=_FLOOR_SHA)
+
+
+async def _seed_community_script_job_with(
+    session_factory, *, vmid: int = 151, slug: str = "pihole",
+    commit_sha: str = _FLOOR_SHA,
+):
+    """Insert a pending lxc.community-script Job with the given slug/SHA."""
+    from app.models import Job
+
+    payload = {
+        "node": "pve-01", "vmid": vmid, "is_lxc": True,
+        "config": {
+            "hostname": "ct-pihole", "cores": 1, "memory": 512,
+            "rootfs": "local:4", "unprivileged": 1, "pool": "gui-team-90",
+            "ostemplate": "local:vztmpl/debian-12-standard_amd64.tar.zst",
+            "net0": "name=eth0,bridge=vmbr0,ip=dhcp",
+        },
+        "script_slug": slug, "script_options": {},
+        "commit_sha": commit_sha, "application": "Pi-hole",
+    }
+    async with session_factory() as session:
+        job = Job(
+            kind="lxc.community-script", cluster_id=1, team_id=90,
+            actor_user_id=1, payload=json.dumps(payload),
+            idempotency_key=f"cs-bad-{vmid}", state="pending",
+        )
+        session.add(job)
+        await session.commit()
+        await session.refresh(job)
+        return job.id
+
+
+@pytest.mark.asyncio
+async def test_run_community_script_malformed_commit_sha_fails_fast(
+    session_factory,
+) -> None:
+    """A malformed commit_sha fails the job fast — no LXC create dispatched."""
+    from app.jobs.provisioning_functions import run_community_script
+    from app.jobs.service import get_job
+
+    fake = FakeProxmox(
+        responses={"nodes.pve-01.lxc.post": {"data": _VZCREATE_UPID}}
+    )
+    conn = _connector(fake)
+    job_id = await _seed_community_script_job_with(
+        session_factory, vmid=161, commit_sha="not-a-real-sha",
+    )
+    ctx = await _build_worker_ctx(session_factory, conn)
+    await run_community_script(ctx, job_id)
+
+    async with session_factory() as db:
+        final = await get_job(db, job_id)
+    # The job failed with an explanatory friendly message...
+    assert final.state == "failed"
+    assert final.friendly_error and "commit" in final.friendly_error.lower()
+    # ...and stage 1 (the LXC create) was NEVER dispatched.
+    assert fake.find_calls("nodes.pve-01.lxc.post") == []
+
+
+@pytest.mark.asyncio
+async def test_run_community_script_malformed_slug_fails_fast(
+    session_factory,
+) -> None:
+    """A malformed slug fails the job fast — no LXC create dispatched."""
+    from app.jobs.provisioning_functions import run_community_script
+    from app.jobs.service import get_job
+
+    fake = FakeProxmox(
+        responses={"nodes.pve-01.lxc.post": {"data": _VZCREATE_UPID}}
+    )
+    conn = _connector(fake)
+    job_id = await _seed_community_script_job_with(
+        session_factory, vmid=162, slug="../../etc/passwd",
+    )
+    ctx = await _build_worker_ctx(session_factory, conn)
+    await run_community_script(ctx, job_id)
+
+    async with session_factory() as db:
+        final = await get_job(db, job_id)
+    assert final.state == "failed"
+    assert final.friendly_error and "slug" in final.friendly_error.lower()
+    assert fake.find_calls("nodes.pve-01.lxc.post") == []
+
+
+@pytest.mark.asyncio
+async def test_run_community_script_malformed_input_is_audited(
+    session_factory,
+) -> None:
+    """A fail-fast rejection is recorded to the audit log (threat T-04-17-04)."""
+    from app.jobs.provisioning_functions import run_community_script
+    from app.models import AuditLog
+
+    fake = FakeProxmox(
+        responses={"nodes.pve-01.lxc.post": {"data": _VZCREATE_UPID}}
+    )
+    conn = _connector(fake)
+    job_id = await _seed_community_script_job_with(
+        session_factory, vmid=163, slug="plex; curl evil",
+    )
+    ctx = await _build_worker_ctx(session_factory, conn)
+    await run_community_script(ctx, job_id)
+
+    async with session_factory() as db:
+        rows = (await db.execute(
+            sa.select(AuditLog).where(
+                AuditLog.action == "lxc.community-script"
+            )
+        )).scalars().all()
+    assert any(r.result == "failure" for r in rows), (
+        "the rejected malformed-input job was not audited"
+    )
     assert "max_tries=1" in src
