@@ -27,6 +27,7 @@
   import { api } from '$lib/api/client';
   import type { ResourceKind } from '$lib/api/types';
   import {
+    consoleEmbedSrc,
     consoleIframeSrc,
     iframeVisible,
     placeholderBody,
@@ -63,10 +64,13 @@
     errorMessage = null;
     try {
       const res = await api.console.mintVncProxy({ clusterId, vmid, kind });
-      // CON-03 — refuse to point the iframe at the Proxmox host. A relay URL
-      // carrying `:8006` / `vncwebsocket` throws here and surfaces the error
-      // state rather than ever leaking the PVE host to the browser.
-      iframeSrc = consoleIframeSrc(res.relay_url);
+      // An iframe cannot load a raw WebSocket path — it needs an HTML
+      // document. `consoleEmbedSrc` composes the GUI-origin `/console/embed`
+      // route (which hosts the vendored noVNC client) from the relay path;
+      // `consoleIframeSrc` then gates that composed URL. CON-03 — a relay URL
+      // carrying `:8006` / `vncwebsocket` throws in `consoleEmbedSrc` and
+      // surfaces the error state rather than ever leaking the PVE host.
+      iframeSrc = consoleIframeSrc(consoleEmbedSrc(res.relay_url));
       iframeKey += 1;
       phase = 'live';
     } catch {
@@ -155,9 +159,17 @@
 
     {#if showIframe && iframeSrc}
       {#key iframeKey}
+        <!--
+          The iframe loads the GUI-origin /console/embed HTML route (Plan
+          04-15). `sandbox` is the minimum the vendored noVNC RFB client needs
+          (WR-02): `allow-scripts` so the client runs, `allow-same-origin` so
+          it can open the same-origin relay WebSocket. `allow-top-navigation`
+          / `allow-popups` / form submission are deliberately NOT granted.
+        -->
         <iframe
           src={iframeSrc}
           title={`Console — ${name}`}
+          sandbox="allow-scripts allow-same-origin"
           class="aspect-[16/10] min-h-[480px] w-full flex-1 border-0"
           onerror={onIframeError}
         ></iframe>

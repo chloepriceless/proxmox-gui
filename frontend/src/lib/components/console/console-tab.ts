@@ -55,14 +55,43 @@ export function placeholderBody(name: string): string {
   return `Open a live console session to ${name}. The session opens in this panel.`;
 }
 
+/** The GUI-origin HTML route the Console iframe loads (Plan 04-15). */
+const CONSOLE_EMBED_PREFIX = '/console/embed?ws=';
+
 /**
- * Build the iframe `src` from a freshly-minted `relay_url`. Throws when the
- * URL would expose the Proxmox host (CON-03) — the caller surfaces the error
- * state rather than ever pointing the iframe at `:8006`.
+ * Compose the Console iframe's `src` — the GUI-origin `/console/embed` HTML
+ * route carrying the relay path as its `ws` query value (Plan 04-15, CON-01).
+ *
+ * An `<iframe>` cannot load a raw WebSocket path — it needs an HTML document.
+ * `consoleEmbedSrc` turns a freshly-minted `relay_url` into the
+ * `/console/embed?ws=<encoded relay path>` URL the iframe loads; the embed
+ * page then hosts the vendored noVNC client against that relay path.
+ *
+ * The `relay_url` is first run through `isSafeRelayUrl` (CON-03) — a `:8006`
+ * or `vncwebsocket` Proxmox-host URL throws here and is never composed into a
+ * src. The relay path is URL-encoded exactly once as the `ws` query value.
  */
-export function consoleIframeSrc(relayUrl: string): string {
+export function consoleEmbedSrc(relayUrl: string): string {
   if (!isSafeRelayUrl(relayUrl)) {
     throw new Error('Refusing to render a console iframe at a non-relay URL');
   }
-  return relayUrl;
+  return CONSOLE_EMBED_PREFIX + encodeURIComponent(relayUrl);
+}
+
+/**
+ * Gate the Console iframe's `src` — it MUST be the GUI-origin `/console/embed`
+ * HTML route (Plan 04-15). Throws when the `src` is anything else: a bare
+ * `/api/v1/ws/console/...` WebSocket path is no longer a valid iframe src (an
+ * iframe needs an HTML document), and any `:8006` URL is refused (CON-03 — the
+ * Proxmox host must never reach the browser).
+ *
+ * `consoleEmbedSrc` composes the URL from a relay path; `consoleIframeSrc`
+ * is the final guard the composed URL passes through before it is assigned to
+ * the `<iframe>`.
+ */
+export function consoleIframeSrc(src: string): string {
+  if (!src.startsWith(CONSOLE_EMBED_PREFIX) || src.includes(':8006')) {
+    throw new Error('Refusing to render a console iframe at a non-embed URL');
+  }
+  return src;
 }
