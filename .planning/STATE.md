@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 current_plan: 14
-status: executing
-stopped_at: Completed 04-13-PLAN.md
-last_updated: "2026-05-16T22:15:00.000Z"
+status: planned
+stopped_at: Phase 04 gap-closure planned (04-15/16/17)
+last_updated: "2026-05-16T23:30:00.000Z"
 progress:
   total_phases: 5
   completed_phases: 3
-  total_plans: 38
+  total_plans: 41
   completed_plans: 38
-  percent: 100
+  percent: 93
 ---
 
 # STATE: Proxmox Self-Service GUI
@@ -28,15 +28,15 @@ progress:
 
 ## Current Position
 
-Phase: 04 (provisioning-networking-console) — EXECUTING
-Plan: 14 of 14
-Current Plan: 14
+Phase: 04 (provisioning-networking-console) — GAP CLOSURE PLANNED
+Plan: 14 of 17 executed
+Current Plan: 04-15 (next to execute)
 
 - **Milestone:** v1
 - **Phase:** 4
-- **Plan:** 04-13 frontend-cloudinit-iso ✅ complete
-- **Status:** Executing Phase 04 — Wave 7 complete (04-13 Cloud-Init two-pane editor + ISO library browser); all 14 phase-04 plans executed — phase ready for verification/transition
-- **Progress:** [██████████] 100%
+- **Plan:** 04-15/16/17 gap-closure plans ✅ planned, ready to execute
+- **Status:** Phase 04 verified 3/5 must-haves (gaps_found). 3 gap-closure plans created — 04-15 (CON-01 noVNC console via SvelteKit /console/embed route + vendored noVNC), 04-16 (VM-10 node-resources route + wizard wiring), 04-17 (WR-01 commit-hash/slug validation). All Wave 1, parallelizable. LXC-03 SSH key trust deferred to Phase 5 (deployment gap, not code).
+- **Progress:** [█████████░] 93%
 
 ## Phases at a Glance
 
