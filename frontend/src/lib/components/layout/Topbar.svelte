@@ -19,12 +19,20 @@
   import ThemeToggle from '$lib/components/layout/ThemeToggle.svelte';
   import ClusterContextPicker from '$lib/components/inventory/ClusterContextPicker.svelte';
   import QuotaIndicator from '$lib/components/quotas/QuotaIndicator.svelte';
+  import ListChecks from '@lucide/svelte/icons/list-checks';
   import { api } from '$lib/api/client';
+  import { jobsStore } from '$lib/stores/jobs.svelte';
   import type { CurrentUser } from '$lib/stores/user.svelte';
 
   type ClusterSummary = { id: number; name: string };
 
-  let { user, clusters = [] }: { user: CurrentUser; clusters?: ClusterSummary[] } = $props();
+  // `quotaOpen` is bindable so AppShell can keep the Quota drawer and the
+  // Tasks drawer mutually exclusive (UI-SPEC Implementation Note 3).
+  let {
+    user,
+    clusters = [],
+    quotaOpen = $bindable(false),
+  }: { user: CurrentUser; clusters?: ClusterSummary[]; quotaOpen?: boolean } = $props();
 
   function initials(u: NonNullable<CurrentUser>): string {
     const name = u.username || u.email || '?';
@@ -40,6 +48,21 @@
     await invalidateAll();
     await goto('/login');
   }
+
+  // Tasks-icon count badge (UI-SPEC §"Topbar — Tasks icon" + §"Tasks count
+  // badge color"). The badge shows the in-flight count; it turns destructive
+  // when there is an unacknowledged failure, primary while running.
+  const taskCount = $derived(jobsStore.inFlightCount);
+  const hasUnackedFailure = $derived(
+    jobsStore.failedCount > 0 && !jobsStore.failuresAcknowledged
+  );
+  const badgeVisible = $derived(taskCount > 0 || hasUnackedFailure);
+  const badgeLabel = $derived(taskCount > 9 ? '9+' : String(taskCount));
+  const badgeClass = $derived(
+    hasUnackedFailure
+      ? 'bg-destructive text-destructive-foreground'
+      : 'bg-primary text-primary-foreground'
+  );
 </script>
 
 <header
@@ -71,7 +94,24 @@
   </div>
 
   <div class="flex items-center gap-2">
-    <QuotaIndicator />
+    <!-- Tasks icon — left of QuotaIndicator. Click opens the Tasks drawer. -->
+    <button
+      type="button"
+      class="relative inline-flex size-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+      aria-label={`Tasks: ${jobsStore.runningCount} running, ${jobsStore.failedCount} failed. Open task drawer.`}
+      onclick={() => jobsStore.openDrawer()}
+    >
+      <ListChecks class="size-4" aria-hidden="true" />
+      {#if badgeVisible}
+        <span
+          class={`absolute -right-1 -top-1 inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1 text-[11px] font-semibold ${badgeClass}`}
+          aria-hidden="true"
+        >
+          {badgeLabel}
+        </span>
+      {/if}
+    </button>
+    <QuotaIndicator bind:open={quotaOpen} />
     <ThemeToggle />
     <DropdownMenu.Root>
       <DropdownMenu.Trigger>

@@ -8,7 +8,10 @@
   import { api } from '$lib/api/client';
   import type { MyQuotasResponse, ClusterQuotaRow } from '$lib/api/types';
 
-  let open = $state(false);
+  // `open` is bindable so AppShell can keep the two right-side Sheets
+  // (this + the Tasks drawer) mutually exclusive — UI-SPEC Implementation
+  // Note 3. Callers that don't need coordination simply omit the prop.
+  let { open = $bindable(false) }: { open?: boolean } = $props();
   let data = $state<MyQuotasResponse | null>(null);
   let loadError = $state<string | null>(null);
 

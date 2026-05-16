@@ -11,6 +11,7 @@
   import TagInput from '$lib/components/inventory/TagInput.svelte';
   import MarkdownNotes from '$lib/components/inventory/MarkdownNotes.svelte';
   import Sparkline from '$lib/components/inventory/Sparkline.svelte';
+  import ActionToolbar from '$lib/components/lifecycle/ActionToolbar.svelte';
   import { api } from '$lib/api/client';
   import type { PageData } from './$types';
   import type { RRDSample, ResourceKind } from '$lib/api/types';
@@ -124,6 +125,17 @@
       {detail.vmid} · cluster {detail.cluster_id} · {detail.node}
     </p>
   </header>
+
+  <!-- Lifecycle action toolbar — between the header block and the tab strip. -->
+  <div class="mb-8">
+    <ActionToolbar
+      clusterId={detail.cluster_id}
+      vmid={detail.vmid}
+      type={toResourceKind(detail.type)}
+      status={detail.status}
+      vmName={detail.name ?? `VM ${detail.vmid}`}
+    />
+  </div>
 
   <!-- Tab strip -->
   <Tabs.Root value={tabValue} onValueChange={setTab}>
