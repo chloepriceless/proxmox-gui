@@ -16,7 +16,13 @@ If everything else fails, this must work: a non-admin user logs in, picks a temp
 
 <!-- Shipped and confirmed valuable. -->
 
-(None yet — ship to validate)
+**Lifecycle Management** — Validated in Phase 3: Job Queue & Lifecycle
+- [x] Start / Stop / Reboot / Shutdown / Delete VMs and LXCs (single + bulk)
+- [x] Manual snapshots: create, restore, delete (with snapshot tree)
+- [x] Backup jobs: manual + scheduled (vzdump / PBS target) with retention + restore
+- [x] Resize CPU / RAM / Disk on existing instances (online disk grow; shrink blocked)
+- [x] Clone VM (linked / full) / convert VM to template
+- [x] Live + offline migration between cluster nodes
 
 ### Active
 
@@ -48,13 +54,7 @@ If everything else fails, this must work: a non-admin user logs in, picks a temp
 - [ ] Pick target host, storage, network (SDN zone/VNet), CPU/RAM/disk
 
 **Lifecycle Management**
-- [ ] Start / Stop / Reboot / Delete VMs and LXCs
-- [ ] Manual snapshots: create, restore, delete
-- [ ] Backup jobs: manual + scheduled (vzdump / PBS integration)
-- [ ] Resize CPU / RAM / Disk on existing instances
-- [ ] Clone VM / convert VM to template
-- [ ] Live + offline migration between cluster nodes
-- [ ] Embedded noVNC console (iframe)
+- [ ] Embedded noVNC console (iframe) — Phase 4
 
 **Networking**
 - [ ] Full Proxmox SDN integration (Zones, VNets, Subnets)
@@ -142,4 +142,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-14 after initialization*
+*Last updated: 2026-05-16 — Phase 3 (Job Queue & Lifecycle) complete*
