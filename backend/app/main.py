@@ -211,6 +211,7 @@ def create_app() -> FastAPI:
     from app.auth.routes import router as auth_router
     from app.catalog.routes import router as catalog_router
     from app.clusters.routes import router as clusters_router
+    from app.console.routes import router as console_router
     from app.inventory.routes import router as inventory_router
     from app.iso.routes import router as iso_router
     from app.jobs.routes import router as jobs_router
@@ -289,6 +290,10 @@ def create_app() -> FastAPI:
     # (/api/v1/jobs, /api/v1/ws/jobs).
     app.include_router(jobs_router, prefix="/api/v1", tags=["jobs"])
     app.include_router(jobs_ws_router, prefix="/api/v1", tags=["jobs"])
+    # Plan 04-08: embedded-noVNC console — the vncproxy ticket mint
+    # (.../console/vncproxy) + the reverse-proxied WebSocket relay
+    # (/api/v1/ws/console/...) (CON-01, CON-02, CON-03).
+    app.include_router(console_router, prefix="/api/v1", tags=["console"])
 
     return app
 

@@ -124,6 +124,17 @@ class PVEConnector:
         self.last_error: str | None = None
         self.status: str = "untested"  # 'ok' | 'failed' | 'untested'
 
+        # Phase 4 (Plan 04-08): the console relay's upstream WebSocket leg
+        # (``console/proxy.py``) opens ``wss://{host}:{port}/.../vncwebsocket``
+        # directly — proxmoxer does not do WebSocket — so it needs the host /
+        # port / TLS posture. ``ProxmoxAPI`` consumes these in its constructor
+        # and does not re-expose them; we keep our own copy as the single
+        # source of truth for the relay (spike 04-03 §5).
+        self.host: str = host
+        self.port: int = port
+        self.verify_ssl: bool = verify_ssl
+        self.tls_fingerprint: str | None = tls_fingerprint
+
     # ------------------------------------------------------------------
     # Private executor bridges
     # ------------------------------------------------------------------
@@ -442,6 +453,25 @@ class PVEConnector:
         upid = await self._call_with_breaker(fn, purge=1)
         self._resource_cache.snapshot = None
         return upid
+
+    async def vncproxy(self, *, node: str, vmid: int, is_lxc: bool) -> dict:
+        """POST /nodes/{node}/{qemu|lxc}/{vmid}/vncproxy — mint a console ticket (spike 04-03).
+
+        Returns the raw PVE response dict — ``{ticket, port, user, cert, upid}``
+        (``password`` is optional/deprecated and never present for a pure-VNC
+        websocket upgrade). The caller (the console relay) needs only ``ticket``
+        and ``port``. ``websocket=1`` is always passed — it is the spike-confirmed
+        request param for the websocket upgrade and is harmless on every guest
+        type.
+
+        This is a synchronous *mint*, not a long-running resource mutation: it
+        returns data directly (not a UPID) and so does NOT clear the resource
+        cache. The ~30-40s ticket lifetime is why it is minted on click only
+        (CON-02, Pitfall 3).
+        """
+        base = self._client.nodes(node)
+        ep = (base.lxc(vmid) if is_lxc else base.qemu(vmid)).vncproxy
+        return await self._call_with_breaker(ep.post, websocket=1)
 
     async def task_status(self, *, node: str, upid: str) -> dict:
         """GET /nodes/{node}/tasks/{upid}/status.
