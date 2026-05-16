@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_plan: 9
+current_plan: 10
 status: executing
-stopped_at: Completed 04-08-PLAN.md
-last_updated: "2026-05-16T21:10:00.000Z"
+stopped_at: Completed 04-09-PLAN.md
+last_updated: "2026-05-16T20:51:58.000Z"
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 38
-  completed_plans: 32
-  percent: 84
+  completed_plans: 33
+  percent: 87
 ---
 
 # STATE: Proxmox Self-Service GUI
@@ -29,14 +29,14 @@ progress:
 ## Current Position
 
 Phase: 04 (provisioning-networking-console) — EXECUTING
-Plan: 8 of 14
-Current Plan: 9
+Plan: 9 of 14
+Current Plan: 10
 
 - **Milestone:** v1
 - **Phase:** 4
-- **Plan:** 04-08 console-backend ✅ complete
-- **Status:** Executing Phase 04 — Wave 2 complete (04-08 was the final Wave-2 plan)
-- **Progress:** [████████░░] 84%
+- **Plan:** 04-09 frontend-api-foundation ✅ complete
+- **Status:** Executing Phase 04 — Wave 3 complete (04-09 was the only Wave-3 plan)
+- **Progress:** [████████▋░] 87%
 
 ## Phases at a Glance
 
@@ -87,6 +87,7 @@ Current Plan: 9
 | Phase 04 P06 | ~13 min | 2 tasks | 12 files |
 | Phase 04 P04-07 | ~9 min | 2 tasks | 8 files |
 | Phase 04 P08 | ~38 min | 2 tasks | 9 files |
+| Phase 04 P09 | ~6 min | 2 tasks | 12 files | 18 new / 157 frontend |
 
 ## Accumulated Context
 
@@ -211,6 +212,9 @@ Current Plan: 9
 | The `vncticket` is URL-encoded exactly once via `urllib.parse.quote(ticket, safe="")` in `console/proxy.py`; `safe=""` is load-bearing | Python's `quote` leaves `/` raw by default and the base64 ticket body contains `/`; double-encoding (`%253A`) makes PVE reject the ticket with a useless 401 (Pitfall 2 / T-04-08-04) | Plan 04-08 SUMMARY |
 | The console relay's ownership-check failure (`resolve_resource` raising `HTTPException 403`) is translated to a WebSocket `close(1008)` | A WS handshake cannot return an HTTP status; the relay reuses `jobs/ws.py`'s auth-before-accept + close-1008 convention for both the auth gate and the ownership gate | Plan 04-08 SUMMARY |
 | The console WS path `/api/v1/ws/console*` gets its own Caddy `handle` block with `flush_interval -1`, placed before the generic `/api/*` block | Disables Caddy response buffering for the latency-sensitive VNC framebuffer (the nginx `proxy_buffering off` equivalent); Caddy matches `handle` blocks in declared order so the specific path must come first (spike 04-03 §4) | Plan 04-08 SUMMARY |
+| `api/index.ts` re-exports the `api` namespace + the five Phase-4 modules, while `api/client.ts` stays the canonical page-import surface — both ship | The plan mandated an `index.ts` artifact, but every page imports `from '$lib/api/client'`; shipping both satisfies the plan's artifact requirement AND the existing client.ts contract without breaking either | Plan 04-09 SUMMARY |
+| `iso.listIsos` / `listCloudImages` unwrap the backend `{isos}` / `{images}` envelope inside the client so callers consume a flat `IsoItem[]` / `CloudImage[]` | The backend wraps the lists; the plan typed the client functions as returning flat arrays — the unwrap keeps the typed signature the wizard plans build against | Plan 04-09 SUMMARY |
+| `HelpTooltip` uses a `popover` (not a `tooltip`) when `learnMoreHref` is set | Tooltip content is not reliably interactive/keyboard-reachable; the "Learn more" link must be clickable + tab-reachable, which a popover guarantees (D-25) | Plan 04-09 SUMMARY |
 
 ### Open Questions (resolve before/during named phase)
 
@@ -242,12 +246,13 @@ None.
 
 ## Session Continuity
 
-**To resume:** Phase 03 complete (7/7 plans). Run `/gsd-plan-phase 4` to plan Phase 04 — Provisioning, Networking & Console.
+**To resume:** Phase 04 executing — Wave 3 complete (04-09 frontend API foundation + shared primitives). Next is Wave 4: Plan 04-10 (wizard shell — `/create` route, WizardChrome, PathPicker, sessionStorage draft store).
 
 **Next milestone:** First end-to-end "click → running VM/LXC" lands at the end of Phase 4.
 
 **Recently completed:**
 
+- 2026-05-16 — Plan 04-09 frontend-api-foundation (the Wave-3 frontend API foundation + shared primitives: five typed API client modules — `api/provisioning.ts` (`createLxc`/`createQemu`/`createCommunityScript` all → the 202 `ProvisioningJobAccepted` carrying the reserved `vmid` for the D-04 post-submit route, + `cloudinitPreview`), `api/catalog.ts` (`listCatalog` curated/full + `getCatalogEntry` + admin `syncCatalog`), `api/networks.ts` (`listNetworks` + admin `getTeamNetworkScope`/`setTeamNetworkScope`), `api/iso.ts` (`listIsos`/`listCloudImages` — both unwrap the backend `{isos}`/`{images}` envelope to a flat array — + `downloadIso` → 202), `api/console.ts` (`mintVncProxy`, VM+LXC) — every module mirrors `lifecycle.ts` verbatim (`withFetch` helper, `MaybeFetch` opts, `apiJson<T>`, per-fn JSDoc); the Phase-4 request/response types appended to `api/types.ts` field-for-field against the shipped Wave-2 backend Pydantic schemas; `api/index.ts` re-exports the `api` namespace + the five modules, `api/client.ts` wires the five into the `api` namespace; the two UI-SPEC shared primitives — `EmptyState.svelte` (UI-04: a centered card-less block, 24px muted icon + Heading 18/600 + Body 14/400 + an optional primary CTA rendered as an `<a href>`, CTA shows only when both `ctaLabel`+`ctaHref` set, a `fullPage` prop for the 3xl top margin) and `HelpTooltip.svelte` (UI-05/D-25: a 14px `HelpCircle` inside a real focusable `<button>` with a `Help: <label>` aria-label, a plain tooltip for short text and a popover with a clickable "Learn more" `ExternalLink` link when `learnMoreHref` is set, content `role="tooltip"`, keyboard-reachable); `/inventory` gained a primary "Create" button (`Plus` icon → `/create`, D-02 no global topbar "+") and the zero-resources list now renders the `EmptyState` with the pinned copy; 1 auto-fixed deviation — a Svelte-5 `state_referenced_locally` on `HelpTooltip`'s `triggerClass` fixed with `$derived`; 18 new tests, 157 frontend tests green, `svelte-check` clean; UI-04 + UI-05 frontend-completed)
 - 2026-05-16 — Plan 04-08 console-backend (the spike-gated embedded-noVNC console backend — the final Wave-2 plan: `connector.vncproxy` minting a console ticket via the spike-confirmed `POST /nodes/{node}/{qemu|lxc}/{vmid}/vncproxy` with `websocket=1` through `_call_with_breaker` — a synchronous mint, not a UPID job; `PVEConnector` gained explicit `host`/`port`/`verify_ssl`/`tls_fingerprint` instance attributes because proxmoxer discards them and the relay's upstream leg needs them; `console/routes.py` — `POST .../{vms|lxcs}/{vmid}/console/vncproxy` minting the ticket ON the click behind `require_resource_access` (cross-tenant → 403, CON-01/02), returning a `VncProxyResponse` whose `relay_url` is the GUI's own `/api/v1/ws/console/...` path — never the Proxmox host:8006 URL (CON-03); `console/proxy.py` — the reverse-proxied bidirectional WebSocket relay: auth-before-`accept()` via `jobs/ws._resolve_ws_user` (cookie-only, `close(1008)` on failure, T-04-08-02), an ownership check via `resolve_resource` before accept (cross-tenant → close, T-04-08-03), a just-in-time `vncproxy` mint inside the relay so the browser never holds a ticket (spike §3 shape a, CON-02), the `vncticket` URL-encoded EXACTLY ONCE via `quote(ticket, safe="")` when building the upstream `wss://...:8006/.../vncwebsocket` URL — `safe=""` is load-bearing because the base64 ticket body contains `/` (Pitfall 2 / T-04-08-04), the upstream leg's `ssl.SSLContext` built from the per-cluster `verify_ssl` posture (`CERT_NONE` when `verify_ssl=False`, spike §5 / T-04-08-06), and a two-pump `FIRST_COMPLETED` relay loop that cleanly closes the browser when the upstream closes; `deploy/caddy/Caddyfile.template` gained a `handle /api/v1/ws/console*` block with `flush_interval -1` (the nginx `proxy_buffering off` equivalent), placed before the generic `/api/*` block; `websockets==16.0` promoted to an explicit `pyproject.toml` pin (already in the venv via `uvicorn[standard]` — a pin, not an install); zero deviations — plan executed exactly against the APPROVED spike 04-03 contract; 15 new tests, 462 → 477 backend tests green; CON-01/02/03 shipped)
 - 2026-05-16 — Plan 04-06 community-scripts-catalog (the spike-gated half of LXC provisioning: a community-scripts catalog backend — a vendored `snapshot.json` floor pinned to spike floor commit `369f9013` (D-05), `catalog/service.py` exposing `load_catalog` / `curated_shortlist` (featured + admin-override, D-06) / `search_catalog` (case-insensitive substring + category, LXC-02) / `attribution_for` (the LXC-04 source/commit/last-reviewed triple) / `sync_catalog` (admin GitHub-commit re-pin of the `catalog_pin` row), `GET /clusters/{id}/catalog` + `GET /clusters/{id}/catalog/{slug}` open to any authenticated user + `POST /catalog/sync` admin-gated; `connector.lxc_exec` — the spike-confirmed in-container exec mechanism: PVE 9.1.2 has NO LXC `exec` REST endpoint (`POST .../lxc/{vmid}/status/exec` → 501), so `lxc_exec` SSHes to the PVE node and runs the CLI `pct exec` via an OS `ssh`-binary subprocess shell-out — no new Python dependency, chunked output for D-08; `run_community_script` — the two-stage arq job (the one provisioning job that is NOT a plain `_run_polled_job`): stage 1 `create_lxc` UPID-polled via `dispatch_and_poll`, stage 2 starts the container and runs ONLY `install/<slug>-install.sh` at the pinned commit SHA inside it via `lxc_exec` with the `build.func` env block reproduced + affirmative stdin (spike §2 contract, Pitfall 10 — never `ct/<slug>.sh`, never the host, never `main`); a stage-2 failure marks the job failed but issues NO LXC delete (Pitfall 8 / T-04-06-05); the install output is captured to the audit log; `POST /clusters/{id}/provisioning/community-script` 202 endpoint with catalog-slug validation + quota admission before reserve; 2 auto-fixed deviations — no Python SSH library so the transport is an OS `ssh` subprocess shell-out, and a ruff ASYNC109 noqa on the passthrough `timeout` param; 22 new tests, 437 backend tests green; LXC-01/02/03/04 shipped)
 - 2026-05-16 — Plan 04-05 iso-library-cloudinit (the two non-spike-gated provisioning sub-systems: an ISO / cloud-image library backend — two new content-type-filtered PVEConnector reads `storages_for_content` + `list_iso_content` (Pitfall 16, app-side filtered belt-and-braces), a vendored 7-image curated cloud-image catalog (D-15), `enqueue_iso_download` validating http(s)-only URL schemes (SSRF — T-04-05-01) then enqueuing the Plan-04-04 `storage.download` job — PVE fetches the bytes, the GUI never proxies them (Pitfall 7), `GET /iso` + `GET /iso/cloud-images` + `POST /iso/download` with the download NOT admin-gated (D-17); the Cloud-Init render+validation module `provisioning/cloudinit.py` — a pure transform (no DB, no PVE call) with `render_cloudinit_preview` returning `YamlLine(text, injected)` marking PVE-injected lines (D-10) and `validate_cloudinit_form` returning a block-hard/warn-soft `CloudInitVerdict` that never raises — hard errors for missing cipassword/invalid ciuser/unparseable SSH key/malformed static IP/missing ipconfig0 (Pitfall 6), a DHCP-DNS soft warning (Pitfall 14), no cloud-init CLI dependency (A5); `POST /provisioning/cloudinit/preview` wrapping both for the Plan-04-13 editor; 2 auto-fixed deviations — a Pitfall-16 server-side-filter gap and an overly-crude pure-transform test assertion; 28 new tests, 415 backend tests green; VM-08 + VM-01/D-15 + the VM-05/06/07 backend half shipped)
@@ -274,8 +279,8 @@ None.
 - 2026-05-14 — Requirements definition (89 v1 requirements across 13 categories)
 - 2026-05-14 — Roadmap (5-phase structure, 100% coverage)
 
-**Last session:** 2026-05-16T21:10:00.000Z
-**Stopped at:** Completed 04-08-PLAN.md
+**Last session:** 2026-05-16T20:51:58.000Z
+**Stopped at:** Completed 04-09-PLAN.md
 **Resume file:** None
 
 ---

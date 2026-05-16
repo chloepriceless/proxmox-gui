@@ -177,8 +177,8 @@ Requirements for initial release. Each maps to roadmap phases via the Traceabili
 - [x] **UI-02
 **: Light + dark mode with system preference detection
 - [ ] **UI-03**: Mobile-responsive (list, detail, and console reflow; wizards may be desktop-only)
-- [ ] **UI-04**: Distinct empty states with CTAs (e.g., "You have no VMs yet — Create one")
-- [ ] **UI-05**: Inline help (`?` icons) for every PVE-specific field with link to docs
+- [x] **UI-04**: Distinct empty states with CTAs (e.g., "You have no VMs yet — Create one")
+- [x] **UI-05**: Inline help (`?` icons) for every PVE-specific field with link to docs
 - [x] **UI-06
 **: Error messages map PVE errors to human-readable text (no raw "operation failed")
 - [ ] **UI-07**: In-app notification bell shows task completions
@@ -319,8 +319,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | UI-01 | Phase 1 | Complete (Plan 01-03 shell + Plan 01-08 auth gate / login / setup wizard) |
 | UI-02 | Phase 1 | Complete (Plan 01-03 theme tokens + Plan 01-08 unauth chrome respects theme) |
 | UI-03 | Phase 5 | Pending |
-| UI-04 | Phase 4 | Pending |
-| UI-05 | Phase 4 | Pending |
+| UI-04 | Phase 4 | Done (Plan 04-09 — EmptyState primitive + /inventory empty state) |
+| UI-05 | Phase 4 | Done (Plan 04-09 — HelpTooltip primitive; wizard plans 04-11..13 wire it per field) |
 | UI-06 | Phase 3 | Complete (Plan 03-01) |
 | UI-07 | Phase 4 | Pending |
 | DEPLOY-01 | Phase 1 | Complete (Plan 01-04) |
