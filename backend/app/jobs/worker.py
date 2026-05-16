@@ -27,6 +27,7 @@ from arq.connections import RedisSettings
 
 from app.jobs.functions import noop_job, run_power_action
 from app.jobs.reaper import reap_orphans
+from app.jobs.resize_functions import run_resize
 from app.jobs.snapshot_functions import (
     run_snapshot_create,
     run_snapshot_delete,
@@ -114,6 +115,8 @@ class WorkerSettings:
         func(run_snapshot_create, name='vm.snapshot.create', max_tries=1, timeout=600),
         func(run_snapshot_rollback, name='vm.snapshot.rollback', max_tries=1, timeout=900),
         func(run_snapshot_delete, name='vm.snapshot.delete', max_tries=1, timeout=300),
+        # Plan 03-03: resize — synchronous config write, no UPID poll loop.
+        func(run_resize, name='vm.resize', max_tries=1, timeout=120),
     ]
     cron_jobs: list = []  # Plan 04 adds the scheduled-backup cron.
     on_startup = on_startup

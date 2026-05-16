@@ -213,6 +213,7 @@ def create_app() -> FastAPI:
     from app.inventory.routes import router as inventory_router
     from app.jobs.routes import router as jobs_router
     from app.jobs.ws import router as jobs_ws_router
+    from app.lifecycle.resize_routes import router as resize_router
     from app.lifecycle.routes import router as lifecycle_router
     from app.lifecycle.snapshot_routes import router as snapshot_router
     from app.me.routes import router as me_router
@@ -257,6 +258,9 @@ def create_app() -> FastAPI:
     # Plan 03-03: snapshot lifecycle routes — list (flat parent-pointer tree)
     # + create/rollback/delete, all mutations returning 202 (LIFE-04).
     app.include_router(snapshot_router, prefix="/api/v1", tags=["lifecycle"])
+    # Plan 03-03: resize routes — resize-info (hotplug flags) + 202 resize
+    # (CPU/RAM sync write, online disk grow, shrink rejected) (LIFE-08, LIFE-09).
+    app.include_router(resize_router, prefix="/api/v1", tags=["lifecycle"])
     # Plan 03-02: jobs API (list/get/retry) + the Tasks-drawer WebSocket
     # (/api/v1/jobs, /api/v1/ws/jobs).
     app.include_router(jobs_router, prefix="/api/v1", tags=["jobs"])
