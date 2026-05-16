@@ -321,3 +321,361 @@ async def test_network_scope_is_per_cluster_isolated(session_factory) -> None:
             db, team_id=team_id, cluster_id=cluster_b_id,
         )
     assert scope_b == {"sdn_vnets": [], "bridges": []}
+
+
+# ===========================================================================
+# SDN-aware picker service + the networks routes (Task 2)
+# ===========================================================================
+
+VERSION_PVE9 = {"data": {"version": "9.1.2", "release": "9.1", "repoid": "x"}}
+VERSION_PVE7 = {"data": {"version": "7.4.1", "release": "7.4", "repoid": "y"}}
+
+
+async def _seed_full(session_factory, *, team_id: int, with_membership_user=None):
+    """Seed Team + Cluster + TeamClusterToken (+ optional membership).
+
+    Returns (cluster_id, team_id, poolid).
+    """
+    from app.models import Cluster, Team, TeamClusterToken, TeamMembership
+
+    poolid = f"gui-team-{team_id}"
+    async with session_factory() as session:
+        team = Team(id=team_id, name=f"gui-team-{team_id}", personal=False,
+                    is_active=True)
+        session.add(team)
+        await session.flush()
+        cluster = Cluster(
+            name=f"cluster-{team_id}", host="pve.test", port=8006,
+            verify_ssl=False, token_user="root@pam", token_name="gui",
+            api_token_secret="bootstrap-secret", is_active=True,
+        )
+        session.add(cluster)
+        await session.flush()
+        cid = cluster.id
+        session.add(TeamClusterToken(
+            team_id=team.id, cluster_id=cid,
+            userid=f"gui-team-{team_id}@pve", tokenid="api",
+            token_secret=f"team-{team_id}-secret", poolid=poolid,
+        ))
+        if with_membership_user is not None:
+            session.add(TeamMembership(team_id=team.id,
+                                       user_id=with_membership_user))
+        await session.commit()
+        return cid, team_id, poolid
+
+
+def _fake_sdn_cluster(*, vnets=None, zones=None, version=None,
+                      bridge_nodes=None, ipam_status=None,
+                      subnets_by_vnet=None):
+    """A FakeProxmox pre-wired for the SDN picker reads."""
+    fake = FakeProxmox(responses={
+        "version.get": version or VERSION_PVE9,
+        "cluster.sdn.zones.get": zones if zones is not None else SDN_ZONES,
+        "cluster.sdn.vnets.get": vnets if vnets is not None else SDN_VNETS,
+        "cluster.sdn.ipams.pve.status.get":
+            ipam_status if ipam_status is not None else SDN_IPAM_STATUS,
+        "nodes.get": [{"node": n} for n in (bridge_nodes or {"pve-01"})],
+    })
+    sb = subnets_by_vnet if subnets_by_vnet is not None else {
+        "prod": SDN_SUBNETS_PROD,
+    }
+    for vnet, subnets in sb.items():
+        fake.responses[f"cluster.sdn.vnets.{vnet}.subnets.get"] = subnets
+    for node, bridges in (bridge_nodes or {"pve-01": NODE1_BRIDGES}).items():
+        fake.responses[f"nodes.{node}.network.get"] = bridges
+    return fake
+
+
+@pytest.mark.asyncio
+async def test_picker_unscoped_team_sees_bridges_only(session_factory) -> None:
+    """An un-scoped team on an SDN cluster: legacy bridges (D-19) + EMPTY
+    sdn_vnets group."""
+    from app.networks import service
+
+    cluster_id, team_id, _ = await _seed_full(session_factory, team_id=20)
+    fake = _fake_sdn_cluster(bridge_nodes={"pve-01": NODE1_BRIDGES})
+    from app.clusters.registry import PVEConnectorRegistry
+
+    async with session_factory() as db:
+        registry = PVEConnectorRegistry(None, session_factory)
+        with patch("app.clusters.connector.ProxmoxAPI", return_value=fake):
+            resp = await service.list_networks_for_team(
+                db, registry, cluster_id=cluster_id, team_id=team_id,
+            )
+    assert resp.sdn_vnets == []
+    assert {b.network_id for b in resp.bridges} == {"vmbr0", "vmbr1"}
+    assert resp.sdn_capable is True
+
+
+@pytest.mark.asyncio
+async def test_picker_shows_only_granted_vnets(session_factory) -> None:
+    """After an admin grants a VNet, it appears in the picker; un-granted
+    VNets do not."""
+    from app.networks import scoping, service
+    from app.clusters.registry import PVEConnectorRegistry
+
+    cluster_id, team_id, _ = await _seed_full(session_factory, team_id=21)
+    async with session_factory() as db:
+        await scoping.set_team_network_scope(
+            db, team_id=team_id, cluster_id=cluster_id,
+            sdn_vnets=["prod"], bridges=[],
+        )
+    fake = _fake_sdn_cluster(bridge_nodes={"pve-01": NODE1_BRIDGES})
+    async with session_factory() as db:
+        registry = PVEConnectorRegistry(None, session_factory)
+        with patch("app.clusters.connector.ProxmoxAPI", return_value=fake):
+            resp = await service.list_networks_for_team(
+                db, registry, cluster_id=cluster_id, team_id=team_id,
+            )
+    # Only "prod" was granted — "mail" / "staging" are hidden.
+    assert {v.network_id for v in resp.sdn_vnets} == {"prod"}
+
+
+@pytest.mark.asyncio
+async def test_picker_vnet_carries_applied_and_ipam_flags(
+    session_factory,
+) -> None:
+    """Each VNet carries `applied` (state-derived) + `ipam_available`; a
+    granted IPAM-backed applied VNet gets a suggested_ip."""
+    from app.networks import scoping, service
+    from app.clusters.registry import PVEConnectorRegistry
+
+    cluster_id, team_id, _ = await _seed_full(session_factory, team_id=22)
+    async with session_factory() as db:
+        # Grant prod (applied, dc1 has IPAM) + mail (applied, dmz no IPAM)
+        # + staging (pending).
+        await scoping.set_team_network_scope(
+            db, team_id=team_id, cluster_id=cluster_id,
+            sdn_vnets=["prod", "mail", "staging"], bridges=[],
+        )
+    fake = _fake_sdn_cluster(bridge_nodes={"pve-01": NODE1_BRIDGES})
+    async with session_factory() as db:
+        registry = PVEConnectorRegistry(None, session_factory)
+        with patch("app.clusters.connector.ProxmoxAPI", return_value=fake):
+            resp = await service.list_networks_for_team(
+                db, registry, cluster_id=cluster_id, team_id=team_id,
+            )
+    by_id = {v.network_id: v for v in resp.sdn_vnets}
+    # prod: applied, IPAM-backed (dc1 has ipam=pve) → suggested_ip computed.
+    assert by_id["prod"].applied is True
+    assert by_id["prod"].ipam_available is True
+    # .1 gw + .2 + .3 allocated → lowest free is .4.
+    assert by_id["prod"].suggested_ip == "10.0.0.4"
+    # mail: applied but dmz has NO ipam → DHCP-only degrade (D-20).
+    assert by_id["mail"].applied is True
+    assert by_id["mail"].ipam_available is False
+    assert by_id["mail"].suggested_ip is None
+    # staging: pending (state="changed") → applied False (Pitfall 8).
+    assert by_id["staging"].applied is False
+
+
+@pytest.mark.asyncio
+async def test_picker_non_sdn_cluster_bridges_only(session_factory) -> None:
+    """On a non-SDN cluster (no zones), sdn_vnets is empty + sdn_capable
+    False; legacy bridges only (NET-04, D-21)."""
+    from app.networks import service
+    from app.clusters.registry import PVEConnectorRegistry
+
+    cluster_id, team_id, _ = await _seed_full(session_factory, team_id=23)
+    # Empty zones AND empty vnets — SDN subsystem present but unconfigured.
+    fake = _fake_sdn_cluster(zones=[], vnets=[],
+                             bridge_nodes={"pve-01": NODE1_BRIDGES})
+    async with session_factory() as db:
+        registry = PVEConnectorRegistry(None, session_factory)
+        with patch("app.clusters.connector.ProxmoxAPI", return_value=fake):
+            resp = await service.list_networks_for_team(
+                db, registry, cluster_id=cluster_id, team_id=team_id,
+            )
+    assert resp.sdn_vnets == []
+    assert resp.sdn_capable is False
+    assert {b.network_id for b in resp.bridges} == {"vmbr0", "vmbr1"}
+
+
+@pytest.mark.asyncio
+async def test_picker_pre_8_1_cluster_hides_sdn(session_factory) -> None:
+    """A PVE 7.x cluster is below the SDN floor — sdn_capable False even if
+    SDN endpoints would respond (D-21 version floor)."""
+    from app.networks import service
+    from app.clusters.registry import PVEConnectorRegistry
+
+    cluster_id, team_id, _ = await _seed_full(session_factory, team_id=24)
+    fake = _fake_sdn_cluster(version=VERSION_PVE7,
+                             bridge_nodes={"pve-01": NODE1_BRIDGES})
+    async with session_factory() as db:
+        registry = PVEConnectorRegistry(None, session_factory)
+        with patch("app.clusters.connector.ProxmoxAPI", return_value=fake):
+            resp = await service.list_networks_for_team(
+                db, registry, cluster_id=cluster_id, team_id=team_id,
+            )
+    assert resp.sdn_capable is False
+    assert resp.sdn_vnets == []
+
+
+@pytest.mark.asyncio
+async def test_picker_bridges_deduped_across_nodes(session_factory) -> None:
+    """vmbr0 exists on two nodes — the picker dedups by iface (spike §5)."""
+    from app.networks import service
+    from app.clusters.registry import PVEConnectorRegistry
+
+    cluster_id, team_id, _ = await _seed_full(session_factory, team_id=25)
+    fake = _fake_sdn_cluster(bridge_nodes={
+        "pve-01": NODE1_BRIDGES, "pve-02": NODE2_BRIDGES,
+    })
+    async with session_factory() as db:
+        registry = PVEConnectorRegistry(None, session_factory)
+        with patch("app.clusters.connector.ProxmoxAPI", return_value=fake):
+            resp = await service.list_networks_for_team(
+                db, registry, cluster_id=cluster_id, team_id=team_id,
+            )
+    # vmbr0 (both nodes) + vmbr1 (node-1 only) → one vmbr0 entry, no dup.
+    ids = [b.network_id for b in resp.bridges]
+    assert sorted(ids) == ["vmbr0", "vmbr1"]
+    assert ids.count("vmbr0") == 1
+
+
+@pytest.mark.asyncio
+async def test_picker_degrades_when_a_node_is_offline(session_factory) -> None:
+    """One node's bridge read fails — the picker returns the reachable node's
+    bridges instead of hard-failing (spike §6, Pitfall 8)."""
+    from app.clusters.errors import PVEUnreachable
+    from app.networks import service
+    from app.clusters.registry import PVEConnectorRegistry
+
+    cluster_id, team_id, _ = await _seed_full(session_factory, team_id=26)
+    fake = _fake_sdn_cluster(bridge_nodes={
+        "pve-01": NODE1_BRIDGES, "pve-02": NODE2_BRIDGES,
+    })
+    # pve-02's bridge read raises — the offline node.
+    fake.queue_error("nodes.pve-02.network.get", PVEUnreachable("node down"))
+    async with session_factory() as db:
+        registry = PVEConnectorRegistry(None, session_factory)
+        with patch("app.clusters.connector.ProxmoxAPI", return_value=fake):
+            resp = await service.list_networks_for_team(
+                db, registry, cluster_id=cluster_id, team_id=team_id,
+            )
+    # pve-01 still reachable → vmbr0 + vmbr1 surface; no exception raised.
+    assert {b.network_id for b in resp.bridges} == {"vmbr0", "vmbr1"}
+
+
+# ---- Routes -----------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_get_networks_picker_route(client, session_factory) -> None:
+    """GET /clusters/{id}/networks returns the grouped picker for the
+    principal's team (NOT admin-gated)."""
+    user = await make_user(session_factory, username="netuser",
+                           is_admin=False)
+    cluster_id, team_id, _ = await _seed_full(
+        session_factory, team_id=30, with_membership_user=user.id,
+    )
+    fake = _fake_sdn_cluster(bridge_nodes={"pve-01": NODE1_BRIDGES})
+    with patch("app.clusters.connector.ProxmoxAPI", return_value=fake):
+        cookies = await login_as(client, username="netuser",
+                                 password="testpass12345")
+        resp = await client.get(
+            f"/api/v1/clusters/{cluster_id}/networks", cookies=cookies,
+        )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert "sdn_vnets" in body and "bridges" in body
+    assert {b["network_id"] for b in body["bridges"]} == {"vmbr0", "vmbr1"}
+    assert body["sdn_capable"] is True
+
+
+@pytest.mark.asyncio
+async def test_admin_get_team_network_scope_route(client, session_factory) -> None:
+    """GET /admin/teams/{tid}/clusters/{cid}/networks (admin) returns the
+    cluster inventory + the team's grants."""
+    await make_user(session_factory, username="netadmin", is_admin=True)
+    cluster_id, team_id, _ = await _seed_full(session_factory, team_id=31)
+    fake = _fake_sdn_cluster(bridge_nodes={"pve-01": NODE1_BRIDGES})
+    with patch("app.clusters.connector.ProxmoxAPI", return_value=fake):
+        cookies = await login_as(client, username="netadmin",
+                                 password="testpass12345")
+        resp = await client.get(
+            f"/api/v1/admin/teams/{team_id}/clusters/{cluster_id}/networks",
+            cookies=cookies,
+        )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    # The admin view carries the cluster's full SDN/bridge inventory...
+    assert {v["network_id"] for v in body["available_sdn_vnets"]} >= {"prod"}
+    assert {b["network_id"] for b in body["available_bridges"]} == {"vmbr0",
+                                                                    "vmbr1"}
+    # ...plus the team's current (empty) grants.
+    assert body["granted"] == {"sdn_vnets": [], "bridges": []}
+
+
+@pytest.mark.asyncio
+async def test_admin_get_team_network_scope_non_admin_403(
+    client, session_factory,
+) -> None:
+    """A non-admin GET on the admin scope route → 403 (T-04-07-02)."""
+    await make_user(session_factory, username="netplain", is_admin=False)
+    cluster_id, team_id, _ = await _seed_full(session_factory, team_id=32)
+    cookies = await login_as(client, username="netplain",
+                             password="testpass12345")
+    resp = await client.get(
+        f"/api/v1/admin/teams/{team_id}/clusters/{cluster_id}/networks",
+        cookies=cookies,
+    )
+    assert resp.status_code == 403, resp.text
+
+
+@pytest.mark.asyncio
+async def test_admin_put_team_network_scope_saves_grants(
+    client, session_factory,
+) -> None:
+    """PUT /admin/teams/{tid}/clusters/{cid}/networks (admin) saves grants
+    via set_team_network_scope."""
+    from app.networks import scoping
+
+    await make_user(session_factory, username="netadmin2", is_admin=True)
+    cluster_id, team_id, _ = await _seed_full(session_factory, team_id=33)
+    fake = _fake_sdn_cluster(bridge_nodes={"pve-01": NODE1_BRIDGES})
+    with patch("app.clusters.connector.ProxmoxAPI", return_value=fake):
+        cookies = await login_as(client, username="netadmin2",
+                                 password="testpass12345")
+        csrf = cookies.get("csrf_token", "")
+        resp = await client.put(
+            f"/api/v1/admin/teams/{team_id}/clusters/{cluster_id}/networks",
+            json={"sdn_vnets": ["prod"], "bridges": ["vmbr1"]},
+            cookies=cookies, headers={"X-CSRF-Token": csrf},
+        )
+    assert resp.status_code == 200, resp.text
+    async with session_factory() as db:
+        scope = await scoping.get_team_network_scope(
+            db, team_id=team_id, cluster_id=cluster_id,
+        )
+    assert scope == {"sdn_vnets": ["prod"], "bridges": ["vmbr1"]}
+
+
+@pytest.mark.asyncio
+async def test_admin_put_team_network_scope_non_admin_403(
+    client, session_factory,
+) -> None:
+    """A non-admin PUT on the admin scope route → 403 (T-04-07-02)."""
+    await make_user(session_factory, username="netplain2", is_admin=False)
+    cluster_id, team_id, _ = await _seed_full(session_factory, team_id=34)
+    cookies = await login_as(client, username="netplain2",
+                             password="testpass12345")
+    csrf = cookies.get("csrf_token", "")
+    resp = await client.put(
+        f"/api/v1/admin/teams/{team_id}/clusters/{cluster_id}/networks",
+        json={"sdn_vnets": ["prod"], "bridges": []},
+        cookies=cookies, headers={"X-CSRF-Token": csrf},
+    )
+    assert resp.status_code == 403, resp.text
+
+
+def test_networks_router_is_mounted() -> None:
+    """The networks router is wired into the app (the picker + admin routes)."""
+    from app.main import create_app
+
+    app = create_app()
+    paths = {route.path for route in app.routes}
+    assert "/api/v1/clusters/{cluster_id}/networks" in paths
+    assert (
+        "/api/v1/admin/teams/{team_id}/clusters/{cluster_id}/networks" in paths
+    )
