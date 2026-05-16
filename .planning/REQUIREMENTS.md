@@ -181,7 +181,7 @@ Requirements for initial release. Each maps to roadmap phases via the Traceabili
 - [x] **UI-05**: Inline help (`?` icons) for every PVE-specific field with link to docs
 - [x] **UI-06
 **: Error messages map PVE errors to human-readable text (no raw "operation failed")
-- [ ] **UI-07**: In-app notification bell shows task completions
+- [x] **UI-07**: In-app notification bell shows task completions
 
 ### Deployment
 
@@ -285,7 +285,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | VM-09 | Phase 4 | Pending |
 | VM-10 | Phase 4 | Pending |
 | NET-01 | Phase 4 | Pending |
-| NET-02 | Phase 4 | Pending |
+| NET-02 | Phase 4 | Complete (Plan 04-07 backend + 04-14 Networks admin tab) |
 | NET-03 | Phase 4 | Pending |
 | NET-04 | Phase 4 | Pending |
 | LIFE-01 | Phase 3 | Complete (Plan 03-02) |
@@ -302,9 +302,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | LIFE-12 | Phase 3 | Complete (Plan 03-02) |
 | LIFE-13 | Phase 3 | Complete (Plan 03-02) |
 | LIFE-14 | Phase 3 | Complete (Plan 03-01) |
-| CON-01 | Phase 4 | Pending |
-| CON-02 | Phase 4 | Pending |
-| CON-03 | Phase 4 | Pending |
+| CON-01 | Phase 4 | Complete (Plan 04-08 backend + 04-14 ConsoleTab) |
+| CON-02 | Phase 4 | Complete (Plan 04-08 backend + 04-14 mint-on-click iframe) |
+| CON-03 | Phase 4 | Complete (Plan 04-08 relay + 04-14 relay-URL-only iframe) |
 | API-01 | Phase 1 | Complete (01-05) |
 | API-02 | Phase 1 | Complete (01-05) |
 | API-03 | Phase 1 | Complete (01-05) |
@@ -319,10 +319,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | UI-01 | Phase 1 | Complete (Plan 01-03 shell + Plan 01-08 auth gate / login / setup wizard) |
 | UI-02 | Phase 1 | Complete (Plan 01-03 theme tokens + Plan 01-08 unauth chrome respects theme) |
 | UI-03 | Phase 5 | Pending |
-| UI-04 | Phase 4 | Done (Plan 04-09 — EmptyState primitive + /inventory empty state) |
+| UI-04 | Phase 4 | Complete (Plan 04-09 EmptyState + /inventory empty state; Plan 04-14 provisioning banner) |
 | UI-05 | Phase 4 | Done (Plan 04-09 — HelpTooltip primitive; wizard plans 04-11..13 wire it per field) |
 | UI-06 | Phase 3 | Complete (Plan 03-01) |
-| UI-07 | Phase 4 | Pending |
+| UI-07 | Phase 4 | Complete (Plan 04-14 — notification bell + derived completions feed) |
 | DEPLOY-01 | Phase 1 | Complete (Plan 01-04) |
 | DEPLOY-02 | Phase 1 | Complete (Plan 01-04) |
 | DEPLOY-03 | Phase 1 | Complete (Plan 01-04) |
