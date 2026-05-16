@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_plan: 4
+current_plan: 5
 status: executing
-stopped_at: Completed 03-03-PLAN.md
-last_updated: "2026-05-16T12:48:07Z"
+stopped_at: Completed 03-04-PLAN.md
+last_updated: "2026-05-16T13:12:14.630Z"
 progress:
   total_phases: 5
   completed_phases: 2
   total_plans: 24
-  completed_plans: 21
-  percent: 88
+  completed_plans: 22
+  percent: 92
 ---
 
 # STATE: Proxmox Self-Service GUI
@@ -29,14 +29,14 @@ progress:
 ## Current Position
 
 Phase: 03 (job-queue-lifecycle) — EXECUTING
-Plan: 4 of 7
-Current Plan: 4
+Plan: 5 of 7
+Current Plan: 5
 
 - **Milestone:** v1
 - **Phase:** 03 — Job Queue & Lifecycle (executing)
-- **Plan:** 03-03 snapshots-resize ✅ complete
-- **Status:** Executing Phase 03 — ready for Plan 03-04
-- **Progress:** [█████████░] 88%
+- **Plan:** 03-04 backups-clone-migrate ✅ complete
+- **Status:** Executing Phase 03 — ready for Plan 03-05
+- **Progress:** [█████████░] 92%
 
 ## Phases at a Glance
 
@@ -79,6 +79,7 @@ Current Plan: 4
 | Phase 03 P01 | 17 min | 3 tasks | 22 files |
 | 03    | 02   | 11 min   | 2     | 11    | 331 pass |
 | Phase 03 P03 | 12min | 2 tasks | 11 files |
+| Phase 03 P04 | 17min | 3 tasks | 23 files |
 
 ## Accumulated Context
 
@@ -172,6 +173,12 @@ Current Plan: 4
 | The three run_snapshot_* functions share one _run_snapshot_job body, kind-dispatched | Mirrors run_power_action's vm.power+vm.delete reuse — one claim/connector/dispatch_and_poll/audit path | Plan 03-03 SUMMARY |
 | Snapshot list_snapshots is a pure read (no job, no audit) returning the flat parent-pointer list; the client builds the indented tree | D-05 — RESEARCH §Snapshot tree: API returns the flat list, the hand-rolled Svelte component recurses on parent | Plan 03-03 SUMMARY |
 | hotplug parser: hotplug='1' → all flags true; '0'/'' → all false; comma list → token membership (cpu/memory); absent → false | RESEARCH A5 — derives cpu_hotplug/memory_hotplug reboot-required flags; PVE default lacks cpu/memory tokens | Plan 03-03 SUMMARY |
+| Scheduled-backup retention is an in-job prune — run_backup prunes keep-last-N on success only when the job payload carries scheduled=true + keep_last (the cron stamps both) | Keeps retention in one testable place (RESEARCH recommendation); the prune is best-effort and never flips the succeeded backup | Plan 03-04 SUMMARY |
+| reserve_vmid uses a per-cluster asyncio.Lock + 60s in-process reserved set; run_clone bounded-retries on a PVE "already exists" (5 tries) | Pitfall 1 — /cluster/nextid is not atomic; the API is a single process so an in-process lock is the simplest correct mechanism (RESEARCH Q2) | Plan 03-04 SUMMARY |
+| clone.py owns the shared reserve_vmid + run_quota_admission helpers; ships with the Task 2 commit because restore-as-new depends on it | Restore-as-new (Task 2) and clone (Task 3) both create a resource and both count against quota — one shared admission path | Plan 03-04 SUMMARY |
+| clusters.backup_storage is a nullable-clearable PATCH field via an _UNSET sentinel + backup_storage_set() predicate | A plain str\|None cannot tell "absent" from "explicit null"; the admin must be able to disable backups (D-08 / UI-SPEC "None — backups disabled") | Plan 03-04 SUMMARY |
+| Migrate quorum pre-flight passes when cluster_status has no type=='cluster' item; only an explicit quorate!=1 blocks the migrate | A single-node cluster has no cluster-status row — treating its absence as quorate avoids false rejections (Pitfall 18) | Plan 03-04 SUMMARY |
+| run_backup_delete is a synchronous job (no UPID poll), still flowing through a job row | A storage content delete is a fast op; the job row keeps it in the Tasks drawer, mirroring run_resize | Plan 03-04 SUMMARY |
 
 ### Open Questions (resolve before/during named phase)
 
@@ -203,12 +210,13 @@ None.
 
 ## Session Continuity
 
-**To resume:** Run `/gsd-execute-phase 3` to continue with Plan 03-04 (backups).
+**To resume:** Run `/gsd-execute-phase 3` to continue with Plan 03-05.
 
 **Next milestone:** First end-to-end "click → running VM/LXC" lands at the end of Phase 4.
 
 **Recently completed:**
 
+- 2026-05-16 — Plan 03-04 backups-clone-migrate (backup lifecycle: manual vzdump 202 + 409 D-08 no-storage guard, backup-file list, restore in-place/as-new with quota admission, backup-schedule CRUD, global /backups page; fire_due_scheduled_backups arq cron firing due BackupSchedule rows every 5 min + keep-last-N prune on the backup job's success path; clone linked/full with app-reserved VMID + quota admission, template-convert qemu-only/LXC-rejected; migrate live/offline with bwlimit + quorum & node-local-snippet pre-flights; BackupSchedule ORM model + 0005_phase3_backup_storage migration; admin per-cluster backup-storage designation; 24 new tests, 369 total green; LIFE-05/06/07/10/11 + API-04 shipped)
 - 2026-05-16 — Plan 03-03 snapshots-resize (snapshot lifecycle: GET flat parent-pointer list for the client-built tree + 202 create/rollback/delete VM+LXC mirrors; run_snapshot_create/rollback/delete arq job functions over a shared kind-dispatched body; resize lifecycle: GET resize-info with hotplug-derived cpu/memory reboot-required flags + 202 resize; run_resize synchronous config write with NO poll loop — marks the job succeeded directly, still surfaced in the Tasks drawer; server-side disk-shrink rejection 422 — the API is the LIFE-09 enforcement point; 15 new tests, 346 total green; LIFE-04/08/09 + API-04 shipped)
 - 2026-05-16 — Plan 03-02 power-vertical-slice (the first full pipeline slice: power lifecycle routes — Start/Stop/Reboot/Shutdown/Delete + bulk-power — all 202; run_power_action arq job function dispatching vm.power + vm.delete via the UPID poller; jobs API GET /jobs + GET /jobs/{id} + POST /jobs/{id}/retry with idempotent-only retry gate; /api/v1/ws/jobs WebSocket — authenticated handshake + recent-window backfill + team-scoped fan-out; 17 new tests, 331 total green; LIFE-01/02/03/12/13 + API-04 shipped)
 - 2026-05-16 — Plan 03-01 job-queue-infrastructure
@@ -228,8 +236,8 @@ None.
 - 2026-05-14 — Requirements definition (89 v1 requirements across 13 categories)
 - 2026-05-14 — Roadmap (5-phase structure, 100% coverage)
 
-**Last session:** 2026-05-16T12:48:07Z
-**Stopped at:** Completed 03-03-PLAN.md
+**Last session:** 2026-05-16T13:12:14.622Z
+**Stopped at:** Completed 03-04-PLAN.md
 **Resume file:** None
 
 ---
