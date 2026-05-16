@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import secrets
 
 from app.jobs.clone_migrate_functions import _run_polled_job
@@ -37,6 +38,42 @@ __all__ = [
 #: script is ALWAYS fetched at the job's pinned commit SHA — never ``main``
 #: (Pitfall 10 / threat T-04-06-02).
 _SCRIPTS_REPO_RAW = "https://raw.githubusercontent.com/community-scripts/ProxmoxVE"
+
+#: A git SHA-1 commit hash — exactly 40 lowercase hex chars. CLAUDE.md #8:
+#: a commit_sha that is not a real SHA-1 is not a valid pin (WR-01).
+_COMMIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+#: The community-scripts catalog slug — lowercase alphanumeric + hyphens,
+#: must start alphanumeric. Blocks path traversal + shell metacharacters.
+_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+
+
+def _validate_commit_sha(value: str) -> str:
+    """Reject a commit_sha that is not a 40-char lowercase hex SHA-1.
+
+    Defense at the use site (WR-01 / CLAUDE.md #8) — the catalog_pin SHA is
+    interpolated into a GitHub raw URL and a shell command; an unvalidated
+    value is a supply-chain / shell-injection surface.
+    """
+    if not isinstance(value, str) or not _COMMIT_SHA_RE.match(value):
+        raise ValueError(
+            "Invalid community-script commit hash — expected a 40-character "
+            "lowercase hex commit SHA."
+        )
+    return value
+
+
+def _validate_slug(value: str) -> str:
+    """Reject a slug that is not lowercase-alphanumeric-plus-hyphen.
+
+    The slug is interpolated into install/{slug}-install.sh and a bash -c
+    string — an unsafe charset is a path-traversal / shell-injection surface.
+    """
+    if not isinstance(value, str) or not _SLUG_RE.match(value):
+        raise ValueError(
+            "Invalid community-script slug — expected lowercase letters, "
+            "digits and hyphens only."
+        )
+    return value
 
 
 async def run_create_qemu(ctx: dict, job_id: int) -> None:
@@ -151,7 +188,13 @@ def _build_install_command(*, slug: str, commit_sha: str) -> list[str]:
     command is a list — no shell string is interpolated on the GUI side
     (threat T-04-06-01). ``yes y |`` feeds affirmative stdin to the few
     interactive ``read`` confirms (spike §2.2).
+
+    Both inputs are validated here (WR-01) — defense at the use site is
+    mandatory so a malformed ``commit_sha`` / ``slug`` can never be
+    interpolated into the GitHub raw URL or the ``bash -c`` shell string.
     """
+    slug = _validate_slug(slug)
+    commit_sha = _validate_commit_sha(commit_sha)
     script_url = f"{_SCRIPTS_REPO_RAW}/{commit_sha}/install/{slug}-install.sh"
     # bash -c "$(curl -fsSL <pinned-url>)" — exactly upstream build.func:4526,
     # but rewritten to the pinned SHA (never main). The whole pipeline runs
@@ -244,6 +287,26 @@ async def run_community_script(ctx: dict, job_id: int) -> None:
             sessionmaker, redis, job_id,
             raw=str(exc),
             friendly="Couldn't reach the cluster to run this operation.",
+            audit_action="lxc.community-script", target_type="lxc",
+            vmid=vmid, actor_user_id=actor_user_id, team_id=team_id,
+            cluster_id=cluster_id,
+        )
+        return
+
+    # ---- WR-01 — validate the pinned inputs BEFORE creating anything ------
+    # The catalog_pin commit_sha + slug are interpolated into a GitHub raw URL
+    # and a `bash -c` shell command (CLAUDE.md #8 / threats T-04-17-01..03).
+    # Fail fast at the job boundary so a malformed value never creates an LXC
+    # and surfaces a friendly audited error rather than an uncaught ValueError
+    # mid-stage-2. `_build_install_command` re-validates too (defense in depth).
+    try:
+        slug = _validate_slug(slug)
+        commit_sha = _validate_commit_sha(commit_sha)
+    except ValueError as exc:
+        await _fail_job(
+            sessionmaker, redis, job_id,
+            raw=str(exc),
+            friendly=str(exc),
             audit_action="lxc.community-script", target_type="lxc",
             vmid=vmid, actor_user_id=actor_user_id, team_id=team_id,
             cluster_id=cluster_id,

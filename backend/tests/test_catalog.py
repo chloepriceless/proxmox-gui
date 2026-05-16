@@ -784,6 +784,7 @@ def test_worker_registers_community_script_kind() -> None:
 
     src = inspect.getsource(worker)
     assert "func(run_community_script, name='lxc.community-script'" in src
+    assert "max_tries=1" in src
 
 
 # ===========================================================================
@@ -1011,4 +1012,3 @@ async def test_run_community_script_malformed_input_is_audited(
     assert any(r.result == "failure" for r in rows), (
         "the rejected malformed-input job was not audited"
     )
-    assert "max_tries=1" in src
