@@ -793,6 +793,73 @@ class PVEConnector:
         self._resource_cache.snapshot = None
         return upid
 
+    async def storages_for_content(
+        self, *, node: str, content: str
+    ) -> list[dict]:
+        """GET /nodes/{node}/storage?content= — content-type-filtered storages.
+
+        Lists the storages on ``node`` whose ``content`` capability list
+        includes ``content`` (``iso`` / ``images`` / ``vztmpl``) — the
+        content-type filter the provisioning wizard dropdowns need so a user
+        can only target a storage that actually accepts the artifact type
+        (Pitfall 16 — picking an ``images``-only storage for an ISO fails on
+        PVE).
+
+        PVE's ``?content=`` query already filters server-side; the result is
+        ALSO filtered app-side on each row's ``content`` token list — a
+        belt-and-braces guard against PVE versions/back-ends that return the
+        unfiltered list. This is a pure read: it routes through
+        ``_call_with_breaker`` but does NOT clear the resource cache.
+        """
+        fn = self._client.nodes(node).storage.get
+        result = await self._call_with_breaker(fn, content=content)
+        out: list[dict] = []
+        for store in list(result or []):
+            tokens = {
+                t.strip()
+                for t in str(store.get("content", "")).split(",")
+                if t.strip()
+            }
+            if content in tokens:
+                out.append(store)
+        return out
+
+    async def list_iso_content(self, *, node: str) -> list[dict]:
+        """Enumerate the ISO volumes present across the node's ISO storages.
+
+        Reads the node's ``content=iso``-capable storages (Pitfall 16) and,
+        for each, lists its ``content=iso`` volumes. Each returned row carries
+        ``volid`` / ``filename`` (derived from the volid tail) / ``size`` /
+        ``storage``. This is a pure read — it does NOT clear the resource
+        cache.
+        """
+        storages = await self.storages_for_content(node=node, content="iso")
+        out: list[dict] = []
+        for store in storages:
+            storage_name = store.get("storage")
+            if not storage_name:
+                continue
+            fn = (
+                self._client.nodes(node)
+                .storage(storage_name)
+                .content.get
+            )
+            vols = await self._call_with_breaker(fn, content="iso")
+            for vol in list(vols or []):
+                volid = vol.get("volid", "")
+                # The volid tail after the last '/' is the on-disk filename.
+                filename = volid.rsplit("/", 1)[-1] if volid else ""
+                out.append(
+                    {
+                        "volid": volid,
+                        "filename": filename,
+                        "size": int(vol.get("size") or 0),
+                        "storage": storage_name,
+                        "format": vol.get("format"),
+                    }
+                )
+        return out
+
     async def node_resources(self) -> list[dict]:
         """GET /cluster/resources?type=node — per-node CPU/RAM capacity.
 

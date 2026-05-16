@@ -211,6 +211,7 @@ def create_app() -> FastAPI:
     from app.auth.routes import router as auth_router
     from app.clusters.routes import router as clusters_router
     from app.inventory.routes import router as inventory_router
+    from app.iso.routes import router as iso_router
     from app.jobs.routes import router as jobs_router
     from app.jobs.ws import router as jobs_ws_router
     from app.lifecycle.backup_routes import router as backup_router
@@ -273,6 +274,9 @@ def create_app() -> FastAPI:
     # Plan 04-04: provisioning create routes — LXC + VM create (LXC-05..07,
     # VM-01..04), all 202 returning the reserved VMID (D-04).
     app.include_router(provisioning_router, prefix="/api/v1", tags=["provisioning"])
+    # Plan 04-05: ISO / cloud-image library — browse + curated cloud-image
+    # list + 202 URL-download (VM-08, VM-01/D-15).
+    app.include_router(iso_router, prefix="/api/v1", tags=["iso"])
     # Plan 03-02: jobs API (list/get/retry) + the Tasks-drawer WebSocket
     # (/api/v1/jobs, /api/v1/ws/jobs).
     app.include_router(jobs_router, prefix="/api/v1", tags=["jobs"])
