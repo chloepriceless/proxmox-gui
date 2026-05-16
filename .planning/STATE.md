@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_plan: 11
+current_plan: 12
 status: executing
-stopped_at: Completed 04-10-PLAN.md
-last_updated: "2026-05-16T21:05:24.000Z"
+stopped_at: Completed 04-11-PLAN.md
+last_updated: "2026-05-16T21:23:35.493Z"
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 38
-  completed_plans: 34
-  percent: 89
+  completed_plans: 35
+  percent: 92
 ---
 
 # STATE: Proxmox Self-Service GUI
@@ -29,14 +29,14 @@ progress:
 ## Current Position
 
 Phase: 04 (provisioning-networking-console) — EXECUTING
-Plan: 10 of 14
-Current Plan: 11
+Plan: 11 of 14
+Current Plan: 12
 
 - **Milestone:** v1
 - **Phase:** 4
-- **Plan:** 04-10 frontend-wizard-shell ✅ complete
-- **Status:** Executing Phase 04 — Wave 4 complete (04-10 was the only Wave-4 plan)
-- **Progress:** [████████▉░] 89%
+- **Plan:** 04-11 frontend-lxc-wizard ✅ complete
+- **Status:** Executing Phase 04 — Wave 5 in progress (04-11 LXC wizard done; 04-14 console/bell/networks next)
+- **Progress:** [█████████▏] 92%
 
 ## Phases at a Glance
 
@@ -89,6 +89,7 @@ Current Plan: 11
 | Phase 04 P08 | ~38 min | 2 tasks | 9 files |
 | Phase 04 P09 | ~6 min | 2 tasks | 12 files | 18 new / 157 frontend |
 | Phase 04 P10 | ~8 min | 2 tasks | 12 files | 32 new / 171 frontend |
+| Phase 04 P11 | ~11 min | 2 tasks | 9 files | 37 new / 208 frontend |
 
 ## Accumulated Context
 
@@ -221,6 +222,10 @@ Current Plan: 11
 | The `/create` cluster context comes from `api.inventory.listAll` (team-scoped), not `api.clusters.list` (admin-gated) | The wizard is open to any authenticated team member; `clusters.list` returns admin cluster rows and would 403 a non-admin | Plan 04-10 SUMMARY |
 | A rehydrated wizard draft with an unknown `path` value discards the WHOLE blob (not just the path field) | A forged `path` marks the draft as untrusted — `step`/`formData` are not partially rehydrated either (T-04-10-03) | Plan 04-10 SUMMARY |
 | The `/create` route exposes a single `orchestration` object (`next`/`back`/`goToStep`/`completeWithJob` + getters) | The three sibling wizard-step plans (04-11/12/13) plug their per-path step bodies into a stable shell without re-implementing the step machine or the D-04 routing rule | Plan 04-10 SUMMARY |
+| LXC wizard pure logic (catalog filtering, D-07 option parse, request builders, step validation) lives in a framework-free `lxc-wizard.ts` | The vitest env is `node` — `.svelte` files cannot be mounted; the 37 tests exercise the extracted logic, `svelte-check` exercises the rendered props (the 04-10 `wizard-model.ts` discipline) | Plan 04-11 SUMMARY |
+| LXC wizard step components (`LxcTemplateStep`/`LxcResourcesStep`) take node/storage/template lists as props with a free-text `Input` fallback | Phase 4 ships no team-scoped node/template/storage API — props + graceful fallback keep the wizard working and never hard-blocked rather than coupling to a missing endpoint | Plan 04-11 SUMMARY |
+| `LxcResourcesStep.svelte` ships documented mount slots for Plan 04-12's `NodeSelect`/`QuotaDeltaLine`; 04-12 wires them WITHOUT re-editing the file | No cross-wave file overlap — `LxcResourcesStep` stays in 04-11's `files_modified` only; the node-fit + quota-delta enrichment lands in wave 6 | Plan 04-11 SUMMARY |
+| The admin Sync-catalog control mounts on a NEW `/admin` landing page | The admin area had only sub-pages (users/teams/clusters) and no index; the UI-SPEC allowed "the admin area" — the new index is admin-gated (defence-in-depth, T-04-11-02) and links the sub-pages | Plan 04-11 SUMMARY |
 
 ### Open Questions (resolve before/during named phase)
 
@@ -257,6 +262,8 @@ None.
 **Next milestone:** First end-to-end "click → running VM/LXC" lands at the end of Phase 4.
 
 **Recently completed:**
+
+- 2026-05-16 — Plan 04-11 frontend-lxc-wizard (the Wave-5 LXC wizard paths: `lxc-wizard.ts` — the framework-free LXC wizard logic extracted for `node`-env unit testing — `lxcStepsForPath` the path-conditional LXC step list (`Path → Source → Resources → Network → Review`, no Cloud-Init), `curatedEntries`/`catalogCategories`/`filterCatalog` the catalog browsing logic (curated-shortlist split LXC-01, the unique category set, the case-insensitive name/description + category filter LXC-02), `scriptAttribution` the LXC-04 disclosure block, `parseScriptOptions` the D-07 configurable-option parser with a `parsed:false` defaults-only fallback, `LXC_RESOURCE_DEFAULTS`/`LXC_FEATURE_FLAGS` the LXC-07 toggle defaults (unprivileged ON, nesting OFF, keyctl/fuse), `validateLxcStep`/`buildLxcRequest`/`buildCommunityScriptRequest`/`mapLxcCreateError`; `CatalogBrowser.svelte` — the community-scripts catalog browser with a "Curated / Full catalog" toggle (curated = 96px featured cards LXC-01; full = a `command` search box + `Tag`-badge category chips LXC-02), calling `api.catalog.listCatalog` once per view + filtering client-side, a no-match `EmptyState`; `ScriptDetailPanel.svelte` — the LXC-04 mandatory pre-deploy disclosure `dialog` showing the source (`ExternalLink` GitHub link), commit (`GitCommitHorizontal`, Mono), last-reviewed (`CalendarCheck`) — refined by `api.catalog.getCatalogEntry` — a `ShieldQuestion` `bg-muted` attribution notice, and the D-07 option form (or the `bg-warning/10` defaults-only notice) (T-04-11-01); `LxcTemplateStep.svelte` — the plain-LXC vztmpl template picker; `LxcResourcesStep.svelte` — the LXC Resources step (node/storage `Select`s, CPU/Memory/Disk inputs, the LXC-07 toggles — unprivileged `Switch` default ON, nesting `Switch`, keyctl/fuse `Checkbox` group — a `HelpTooltip` on every PVE-specific field D-25, an owning-team `Select` when the user has >1 team, and documented mount slots for Plan 04-12's `NodeSelect`/`QuotaDeltaLine`); a new admin-gated `/admin` landing page hosting the `RefreshCw` Sync-catalog control (D-05, T-04-11-02); `create/+page.svelte` wires the two LXC paths into the 04-10 orchestration surface — both submit via `createLxc`/`createCommunityScript` + route to `/inventory/{cluster}/{vmid}` on the 202 (D-04), a 409/4xx surfacing inline via `mapLxcCreateError` without navigating (T-04-11-03); 1 auto-fixed deviation — a `state_referenced_locally` on `ScriptDetailPanel`'s `attribution` fixed with a `$derived` + nullable override; 2 Rule-2/3 fixes — node/storage/template lists are props with a free-text fallback (no wizard API exists), `team_id` resolved in the route; 37 new tests, 208 frontend tests green, `svelte-check` clean; LXC-01/02/04/05/06/07 frontend-completed)
 
 - 2026-05-16 — Plan 04-10 frontend-wizard-shell (the Wave-4 `/create` unified provisioning-wizard shell: `wizard-model.ts` — the framework-free heart extracted for `node`-env unit testing — `WizardPath`/`WizardStepId` ids, `stepsForPath` the path-conditional step model (every path `Path → Source → Resources → Network → [Cloud-Init] → Review`; the Cloud-Init step present on all four VM paths, absent from both LXC paths), `PATH_CARDS` the six path-picker cards pinned verbatim from the Copywriting Contract, `FINAL_CTA_LABEL`, `canAdvanceFromPathStep` the Step-1 Next gate, `shouldPromptDiscard` the close-wizard discard gate, `inventoryPathForJob` the D-04 `/inventory/{cluster}/{vmid}` routing helper reading the reserved `vmid` off `ProvisioningJobAccepted`; `wizardDraft.svelte.ts` — a Svelte-5 rune store (modelled on `jobs.svelte.ts`) holding `path`/`step`/`formData`, `sessionStorage`-backed via an injectable `StorageLike`, persisting on every mutation + rehydrating on construction + a `clear()`, with `cipassword`/`ci_password`/`password` stripped from the serialised draft (T-04-10-02 — no secrets to sessionStorage) and a corrupt/forged blob falling back to a fresh empty draft (T-04-10-03); `WizardChrome.svelte` — the reusable chrome: a "Create" header + an icon-only `X` close button with `aria-label="Close wizard"`, the pip+connecting-line stepper rail reusing the Phase-1 `setup/+page.svelte` markup (active `bg-primary`, completed `bg-success`+`Check`, future `bg-muted`), a 64px sticky footer (Back hidden on Step 1, Next/final-CTA right), the step body injected via a `body` snippet, `max-w-[45rem]` centered unless `wide`; `PathPicker.svelte` — Step 1, the six cards in a responsive 3/2/1-up grid as a `bits-ui` radio-group (`role="radiogroup"` + per-card `role="radio"`), the chosen card a `border-primary` ring + a `text-primary` `Check`; `create/+page.server.ts` — an auth-gated SSR loader redirecting an unauthenticated user to `/login?next=…` (T-04-10-01) + pre-fetching the team-scoped cluster context via `api.inventory.listAll`; `create/+page.svelte` — the route assembling the chrome + the path-conditional stepper + Step 1, exposing the `next`/`back`/`goToStep`/`completeWithJob` orchestration surface the sibling step plans (04-11/12/13) plug their per-path step bodies into, with the path+step round-tripping through `wizardDraft` so a mid-wizard reload restores progress, the "Discard this draft?" `alert-dialog` on close, and `completeWithJob` the D-04 post-submit helper (clears the draft, fires the `sonner` toast, routes off `response.vmid`); the shadcn-svelte `radio-group` primitive installed once; 1 auto-fixed deviation — a forged-path rehydrated draft kept a tampered step, fixed by discarding the whole blob; 32 new tests, 171 frontend tests green, `svelte-check` clean; UI-04 advanced)
 

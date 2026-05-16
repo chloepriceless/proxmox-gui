@@ -80,9 +80,9 @@ Requirements for initial release. Each maps to roadmap phases via the Traceabili
 **: User can one-click deploy from a community-script (non-interactive mode)
 - [x] **LXC-04
 **: Script source, version (commit hash), and last-reviewed-date are surfaced before deploy
-- [ ] **LXC-05**: User can deploy a plain LXC from a vztmpl template
-- [ ] **LXC-06**: User can pick target host, storage, network, CPU, RAM, disk in the LXC wizard
-- [ ] **LXC-07**: User can toggle unprivileged container / nesting / features
+- [x] **LXC-05**: User can deploy a plain LXC from a vztmpl template
+- [x] **LXC-06**: User can pick target host, storage, network, CPU, RAM, disk in the LXC wizard
+- [x] **LXC-07**: User can toggle unprivileged container / nesting / features
 
 ### VM Provisioning
 
