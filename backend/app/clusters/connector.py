@@ -874,6 +874,154 @@ class PVEConnector:
         )
         return list(result or [])
 
+    # ------------------------------------------------------------------
+    # In-container command execution (Phase 4, Plan 04-06 — spike 04-01)
+    #
+    # CRITICAL: there is NO PVE REST endpoint for running a command inside an
+    # LXC. ``POST /nodes/{node}/lxc/{vmid}/status/exec`` returns 501 Not
+    # Implemented on PVE 9.1.2 (confirmed live — 04-SPIKE-community-scripts.md
+    # §3). proxmoxer is a thin REST wrapper, so it CANNOT expose ``pct exec``.
+    #
+    # The spike's verdict — ``EXEC MECHANISM: pct exec (CLI) over SSH`` — is
+    # authoritative: ``lxc_exec`` SSHes to the PVE *node* and runs the CLI
+    # ``pct exec <vmid> -- <command>``. The GUI LXC reaches the PVE host on
+    # port 22 (confirmed open in the spike's live probe). Output is delivered
+    # in chunks off the SSH channel (``pct exec`` is synchronous, not a
+    # UPID-polled PVE task).
+    #
+    # The SSH transport here shells out to the OS ``ssh`` binary via
+    # ``asyncio.create_subprocess_exec`` — no extra Python SSH dependency, the
+    # subprocess stdout is a live byte stream the worker forwards to the Tasks
+    # drawer chunk-by-chunk (D-08). ``StrictHostKeyChecking=accept-new`` TOFU-
+    # pins the node's host key on first contact.
+    # ------------------------------------------------------------------
+
+    async def lxc_exec(
+        self,
+        *,
+        node: str,
+        vmid: int,
+        command: list[str],
+        stdin_data: str | None = None,
+        env: dict[str, str] | None = None,
+        on_output: Any = None,
+        timeout: float = 3600.0,  # noqa: ASYNC109 — passthrough to the sync subprocess.wait
+    ) -> dict:
+        """Run a command inside a running LXC — mechanism per 04-SPIKE-community-scripts.md.
+
+        There is NO PVE REST endpoint for this (confirmed: POST
+        ``.../lxc/{vmid}/status/exec`` → 501 on PVE 9.1.2). This SSHes to the
+        PVE *node* and invokes the CLI ``pct exec <vmid> -- <command>``.
+
+        ``command`` is a list — every element is a discrete argument and is
+        passed through the SSH transport without shell interpolation on the
+        GUI side (threat T-04-06-01: no command injection via catalog slug /
+        script options). ``stdin_data`` is fed to the in-container process's
+        stdin (the spike's whiptail-bypass affirmative stdin — e.g. ``"y\\n"``
+        repeated). ``env`` exports environment variables on the node side
+        before the ``pct exec`` (the ``build.func`` env block — spike §2.1).
+
+        ``on_output`` — if given — is an awaitable called with each decoded
+        output chunk as it arrives (D-08 — streamed to the Tasks drawer).
+
+        Returns ``{"exit_code": int, "output": str}``: the combined
+        stdout/stderr and the process exit code. This routes through
+        ``_call_with_breaker`` so an unreachable node surfaces the uniform
+        ``PVEUnreachable``. It runs a command inside an already-created
+        container — it does NOT clear the resource cache.
+        """
+        return await self._call_with_breaker(
+            self._ssh_pct_exec,
+            node=node,
+            vmid=vmid,
+            command=command,
+            stdin_data=stdin_data,
+            env=env,
+            on_output=on_output,
+            timeout=timeout,
+        )
+
+    def _ssh_pct_exec(
+        self,
+        *,
+        node: str,
+        vmid: int,
+        command: list[str],
+        stdin_data: str | None,
+        env: dict[str, str] | None,
+        on_output: Any,
+        timeout: float,
+    ) -> dict:
+        """Synchronous SSH ``pct exec`` shell-out — invoked via the executor.
+
+        ``_call_with_breaker`` runs this in ``asyncio.to_thread`` (proxmoxer's
+        own convention). The OS ``ssh`` client is the transport; the node-side
+        shell exports ``env`` then runs ``pct exec <vmid> -- <command>``.
+        """
+        import shlex
+        import subprocess
+
+        # Build the node-side shell command. Each env var and each pct-exec
+        # argument is shell-quoted exactly once with shlex.quote — the env
+        # block + the install command can never break out into the node shell
+        # (threat T-04-06-01).
+        env_prefix = ""
+        if env:
+            env_prefix = " ".join(
+                f"{key}={shlex.quote(str(value))}" for key, value in env.items()
+            )
+            env_prefix = f"export {env_prefix}; " if env_prefix else ""
+        pct_args = " ".join(shlex.quote(arg) for arg in command)
+        remote_cmd = f"{env_prefix}pct exec {int(vmid)} -- {pct_args}"
+
+        ssh_argv = [
+            "ssh",
+            "-o", "StrictHostKeyChecking=accept-new",
+            "-o", "BatchMode=yes",
+            "-o", f"ConnectTimeout={int(min(timeout, 30))}",
+            f"root@{node}",
+            remote_cmd,
+        ]
+
+        chunks: list[str] = []
+        proc = subprocess.Popen(  # noqa: S603 — argv list, no shell=True
+            ssh_argv,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        if stdin_data is not None and proc.stdin is not None:
+            try:
+                proc.stdin.write(stdin_data)
+                proc.stdin.flush()
+            except (BrokenPipeError, OSError):
+                pass
+        if proc.stdin is not None:
+            try:
+                proc.stdin.close()
+            except OSError:
+                pass
+
+        # Read the combined stream line-buffered — each line is a chunk
+        # forwarded to the Tasks drawer (D-08 — chunked output delivery).
+        if proc.stdout is not None:
+            for line in proc.stdout:
+                chunks.append(line)
+                if on_output is not None:
+                    try:
+                        on_output(line)
+                    except Exception:  # noqa: BLE001 — a drawer push failure
+                        # must never abort the install.
+                        pass
+        try:
+            proc.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+            chunks.append(f"\n[lxc_exec timed out after {timeout}s]\n")
+        return {"exit_code": proc.returncode or 0, "output": "".join(chunks)}
+
     async def unlock(self, *, node: str, vmid: int, is_lxc: bool) -> Any:
         """Best-effort plain unlock — clears the ``lock`` config field.
 

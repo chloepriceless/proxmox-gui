@@ -1,0 +1,253 @@
+{
+  "commit_sha": "369f9013088f19771a1b95c40ee252fd4c16f91b",
+  "synced_at": "2026-05-16T10:03:21Z",
+  "_note": "Vendored community-scripts catalog floor (D-05). Pinned to the reviewed floor commit confirmed by 04-SPIKE-community-scripts.md question 5. The admin 'Sync catalog' button re-pins catalog_pin to a fresher upstream commit; this file is the bundled floor that ships with every GUI release. Metadata fields mirror community-scripts/ProxmoxVE-Local scripts/json/<slug>.json (spike question 4).",
+  "scripts": [
+    {
+      "slug": "pihole",
+      "name": "Pi-hole",
+      "description": "Network-wide ad blocking via your own Linux hardware — a DNS sinkhole that protects every device on your network.",
+      "categories": ["Network", "AdBlock"],
+      "type": "lxc",
+      "featured": true,
+      "privileged": false,
+      "interface_port": 80,
+      "source_url": "https://github.com/community-scripts/ProxmoxVE/blob/369f9013088f19771a1b95c40ee252fd4c16f91b/install/pihole-install.sh",
+      "install_methods": [
+        {
+          "type": "default",
+          "script": "ct/pihole.sh",
+          "resources": {"cpu": 1, "ram": 512, "hdd": 4, "os": "debian", "version": "12"}
+        }
+      ],
+      "default_credentials": {"username": null, "password": null},
+      "notes": [
+        {"text": "Installation sources scripts outside of Community Scripts repo.", "type": "warning"}
+      ]
+    },
+    {
+      "slug": "jellyfin",
+      "name": "Jellyfin Media Server",
+      "description": "The free software media system that puts you in control of managing and streaming your media.",
+      "categories": ["Media"],
+      "type": "lxc",
+      "featured": true,
+      "privileged": false,
+      "interface_port": 8096,
+      "source_url": "https://github.com/community-scripts/ProxmoxVE/blob/369f9013088f19771a1b95c40ee252fd4c16f91b/install/jellyfin-install.sh",
+      "install_methods": [
+        {
+          "type": "default",
+          "script": "ct/jellyfin.sh",
+          "resources": {"cpu": 2, "ram": 2048, "hdd": 8, "os": "ubuntu", "version": "24.04"}
+        }
+      ],
+      "default_credentials": {"username": null, "password": null},
+      "notes": []
+    },
+    {
+      "slug": "immich",
+      "name": "Immich",
+      "description": "High-performance self-hosted photo and video backup solution directly from your mobile phone.",
+      "categories": ["Media", "Photos"],
+      "type": "lxc",
+      "featured": true,
+      "privileged": false,
+      "interface_port": 2283,
+      "source_url": "https://github.com/community-scripts/ProxmoxVE/blob/369f9013088f19771a1b95c40ee252fd4c16f91b/install/immich-install.sh",
+      "install_methods": [
+        {
+          "type": "default",
+          "script": "ct/immich.sh",
+          "resources": {"cpu": 4, "ram": 4096, "hdd": 30, "os": "debian", "version": "12"}
+        }
+      ],
+      "default_credentials": {"username": null, "password": null},
+      "notes": [
+        {"text": "First boot can take several minutes while the machine-learning model downloads.", "type": "info"}
+      ]
+    },
+    {
+      "slug": "nextcloudpi",
+      "name": "NextcloudPi",
+      "description": "A self-hosted file sync and share platform with calendars, contacts and collaborative editing.",
+      "categories": ["Files"],
+      "type": "lxc",
+      "featured": true,
+      "privileged": false,
+      "interface_port": 443,
+      "source_url": "https://github.com/community-scripts/ProxmoxVE/blob/369f9013088f19771a1b95c40ee252fd4c16f91b/install/nextcloudpi-install.sh",
+      "install_methods": [
+        {
+          "type": "default",
+          "script": "ct/nextcloudpi.sh",
+          "resources": {"cpu": 2, "ram": 2048, "hdd": 16, "os": "debian", "version": "12"}
+        }
+      ],
+      "default_credentials": {"username": "ncp", "password": null},
+      "notes": [
+        {"text": "Installation sources scripts outside of Community Scripts repo.", "type": "warning"}
+      ]
+    },
+    {
+      "slug": "homeassistant",
+      "name": "Home Assistant Core",
+      "description": "Open-source home automation that puts local control and privacy first.",
+      "categories": ["Automation"],
+      "type": "lxc",
+      "featured": true,
+      "privileged": false,
+      "interface_port": 8123,
+      "source_url": "https://github.com/community-scripts/ProxmoxVE/blob/369f9013088f19771a1b95c40ee252fd4c16f91b/install/homeassistant-install.sh",
+      "install_methods": [
+        {
+          "type": "default",
+          "script": "ct/homeassistant.sh",
+          "resources": {"cpu": 2, "ram": 1024, "hdd": 8, "os": "debian", "version": "12"}
+        }
+      ],
+      "default_credentials": {"username": null, "password": null},
+      "notes": []
+    },
+    {
+      "slug": "adguard",
+      "name": "AdGuard Home",
+      "description": "Network-wide software for blocking ads and tracking, with a polished web interface.",
+      "categories": ["Network", "AdBlock"],
+      "type": "lxc",
+      "featured": false,
+      "privileged": false,
+      "interface_port": 3000,
+      "source_url": "https://github.com/community-scripts/ProxmoxVE/blob/369f9013088f19771a1b95c40ee252fd4c16f91b/install/adguard-install.sh",
+      "install_methods": [
+        {
+          "type": "default",
+          "script": "ct/adguard.sh",
+          "resources": {"cpu": 1, "ram": 512, "hdd": 4, "os": "alpine", "version": "3.20"}
+        }
+      ],
+      "default_credentials": {"username": null, "password": null},
+      "notes": []
+    },
+    {
+      "slug": "grafana",
+      "name": "Grafana",
+      "description": "The open observability platform — query, visualize, alert on and explore your metrics.",
+      "categories": ["Monitoring"],
+      "type": "lxc",
+      "featured": false,
+      "privileged": false,
+      "interface_port": 3000,
+      "source_url": "https://github.com/community-scripts/ProxmoxVE/blob/369f9013088f19771a1b95c40ee252fd4c16f91b/install/grafana-install.sh",
+      "install_methods": [
+        {
+          "type": "default",
+          "script": "ct/grafana.sh",
+          "resources": {"cpu": 2, "ram": 1024, "hdd": 4, "os": "debian", "version": "12"}
+        }
+      ],
+      "default_credentials": {"username": "admin", "password": "admin"},
+      "notes": []
+    },
+    {
+      "slug": "uptimekuma",
+      "name": "Uptime Kuma",
+      "description": "A fancy self-hosted monitoring tool — a self-hosted alternative to Uptime Robot.",
+      "categories": ["Monitoring"],
+      "type": "lxc",
+      "featured": false,
+      "privileged": false,
+      "interface_port": 3001,
+      "source_url": "https://github.com/community-scripts/ProxmoxVE/blob/369f9013088f19771a1b95c40ee252fd4c16f91b/install/uptimekuma-install.sh",
+      "install_methods": [
+        {
+          "type": "default",
+          "script": "ct/uptimekuma.sh",
+          "resources": {"cpu": 1, "ram": 1024, "hdd": 4, "os": "debian", "version": "12"}
+        }
+      ],
+      "default_credentials": {"username": null, "password": null},
+      "notes": []
+    },
+    {
+      "slug": "vaultwarden",
+      "name": "Vaultwarden",
+      "description": "An unofficial, lightweight Bitwarden server implementation written in Rust.",
+      "categories": ["Security"],
+      "type": "lxc",
+      "featured": false,
+      "privileged": false,
+      "interface_port": 8000,
+      "source_url": "https://github.com/community-scripts/ProxmoxVE/blob/369f9013088f19771a1b95c40ee252fd4c16f91b/install/vaultwarden-install.sh",
+      "install_methods": [
+        {
+          "type": "default",
+          "script": "ct/vaultwarden.sh",
+          "resources": {"cpu": 1, "ram": 512, "hdd": 4, "os": "debian", "version": "12"}
+        }
+      ],
+      "default_credentials": {"username": null, "password": null},
+      "notes": []
+    },
+    {
+      "slug": "paperless-ngx",
+      "name": "Paperless-ngx",
+      "description": "A community-supported document management system that transforms physical documents into a searchable archive.",
+      "categories": ["Files", "Documents"],
+      "type": "lxc",
+      "featured": false,
+      "privileged": false,
+      "interface_port": 8000,
+      "source_url": "https://github.com/community-scripts/ProxmoxVE/blob/369f9013088f19771a1b95c40ee252fd4c16f91b/install/paperless-ngx-install.sh",
+      "install_methods": [
+        {
+          "type": "default",
+          "script": "ct/paperless-ngx.sh",
+          "resources": {"cpu": 2, "ram": 2048, "hdd": 10, "os": "debian", "version": "12"}
+        }
+      ],
+      "default_credentials": {"username": null, "password": null},
+      "notes": []
+    },
+    {
+      "slug": "gitea",
+      "name": "Gitea",
+      "description": "A painless, lightweight, self-hosted Git service with issue tracking and pull requests.",
+      "categories": ["Development"],
+      "type": "lxc",
+      "featured": false,
+      "privileged": false,
+      "interface_port": 3000,
+      "source_url": "https://github.com/community-scripts/ProxmoxVE/blob/369f9013088f19771a1b95c40ee252fd4c16f91b/install/gitea-install.sh",
+      "install_methods": [
+        {
+          "type": "default",
+          "script": "ct/gitea.sh",
+          "resources": {"cpu": 1, "ram": 1024, "hdd": 8, "os": "debian", "version": "12"}
+        }
+      ],
+      "default_credentials": {"username": null, "password": null},
+      "notes": []
+    },
+    {
+      "slug": "postgresql",
+      "name": "PostgreSQL",
+      "description": "A powerful, open-source object-relational database system with a strong reputation for reliability.",
+      "categories": ["Database"],
+      "type": "lxc",
+      "featured": false,
+      "privileged": false,
+      "interface_port": null,
+      "source_url": "https://github.com/community-scripts/ProxmoxVE/blob/369f9013088f19771a1b95c40ee252fd4c16f91b/install/postgresql-install.sh",
+      "install_methods": [
+        {
+          "type": "default",
+          "script": "ct/postgresql.sh",
+          "resources": {"cpu": 2, "ram": 1024, "hdd": 8, "os": "debian", "version": "12"}
+        }
+      ],
+      "default_credentials": {"username": "postgres", "password": null},
+      "notes": []
+    }
+  ]
+}

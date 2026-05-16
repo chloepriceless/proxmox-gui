@@ -209,6 +209,7 @@ def create_app() -> FastAPI:
     # the factory so test runs that don't need them aren't import-cycle penalised.
     from app.audit.routes import router as audit_router
     from app.auth.routes import router as auth_router
+    from app.catalog.routes import router as catalog_router
     from app.clusters.routes import router as clusters_router
     from app.inventory.routes import router as inventory_router
     from app.iso.routes import router as iso_router
@@ -277,6 +278,9 @@ def create_app() -> FastAPI:
     # Plan 04-05: ISO / cloud-image library — browse + curated cloud-image
     # list + 202 URL-download (VM-08, VM-01/D-15).
     app.include_router(iso_router, prefix="/api/v1", tags=["iso"])
+    # Plan 04-06: community-scripts catalog — curated shortlist + searchable
+    # full catalog (LXC-01/02/04) + admin sync re-pin (D-05).
+    app.include_router(catalog_router, prefix="/api/v1", tags=["catalog"])
     # Plan 03-02: jobs API (list/get/retry) + the Tasks-drawer WebSocket
     # (/api/v1/jobs, /api/v1/ws/jobs).
     app.include_router(jobs_router, prefix="/api/v1", tags=["jobs"])
