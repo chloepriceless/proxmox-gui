@@ -1,14 +1,13 @@
 # /etc/systemd/system/proxmox-gui-worker.service
-# Phase 1: this unit is installed but NOT enabled by bootstrap.sh. Phase 3 wires arq.
-# D-17 — three systemd units inside the LXC; this is the worker placeholder.
-# When Phase 3 lands, replace ExecStart with the arq invocation
-# (e.g. /opt/proxmox-gui/.venv/bin/arq app.worker.WorkerSettings) and
-# `systemctl enable --now proxmox-gui-worker`.
+# Phase 3: arq is now wired — the ExecStart below runs the arq worker.
+# D-17 — three systemd units inside the LXC; this is the worker unit.
+# It depends on the embedded redis-server (loopback-bound, 4th runtime service).
 
 [Unit]
-Description=Proxmox GUI Worker (arq) — Phase 3 wires this
-After=network-online.target proxmox-gui-api.service
+Description=Proxmox GUI Worker (arq)
+After=network-online.target proxmox-gui-api.service redis-server.service
 Wants=network-online.target
+Requires=redis-server.service
 
 [Service]
 Type=simple
@@ -17,8 +16,7 @@ Group=proxmox-gui
 WorkingDirectory=/opt/proxmox-gui/backend
 Environment=PROXMOX_GUI_MASTER_KEY_PATH=/etc/proxmox-gui/master.key
 Environment=PROXMOX_GUI_DATABASE_URL=sqlite+aiosqlite:////var/lib/proxmox-gui/app.db
-# Phase 1 no-op: idle until Phase 3 wires arq.
-ExecStart=/bin/sh -c 'echo "worker placeholder — phase 3 wires arq"; sleep infinity'
+ExecStart=/opt/proxmox-gui/.venv/bin/arq app.jobs.worker.WorkerSettings
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal

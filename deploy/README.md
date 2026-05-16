@@ -109,11 +109,21 @@ CPU=4 RAM_MB=4096 STORAGE=local-zfs \
 Three units ship in `deploy/systemd/` and `bootstrap.sh` installs them to
 `/etc/systemd/system/`:
 
-| Unit                            | Phase 1 state      | Notes                                                              |
+| Unit                            | State              | Notes                                                              |
 |---------------------------------|--------------------|--------------------------------------------------------------------|
 | `proxmox-gui-api.service`       | enabled + running  | uvicorn on 127.0.0.1:8000.                                         |
-| `proxmox-gui-worker.service`    | installed, NOT enabled | arq worker — Phase 3 wires this; Phase 1 ships a no-op placeholder. |
+| `proxmox-gui-worker.service`    | enabled + running  | arq job worker — runs `arq app.jobs.worker.WorkerSettings`; depends on `redis-server`. |
 | `caddy.service`                 | enabled + running  | Distribution-default unit; we provide only the Caddyfile.          |
+
+### Embedded Redis (Phase 3)
+
+Phase 3 adds a **4th runtime service**: `redis-server` (the Debian stock
+package). `bootstrap.sh` installs it and enforces that it binds **loopback
+only** — `/etc/redis/redis.conf` ships `bind 127.0.0.1 -::1` and
+`protected-mode yes`, and the bootstrap guards that the `bind` line is
+present. Redis is auth-less on loopback and **never** reachable outside the
+LXC. The `proxmox-gui-worker.service` unit `Requires=redis-server.service`;
+the arq job queue and the Tasks-drawer pub/sub channel both run over it.
 
 Inspect logs:
 
@@ -172,8 +182,6 @@ omitted in Phase 1** — Phase 5 polish hardens (acceptable v1 gap; documented).
   does not pull a new release. Phase 5 adds `proxmox-gui upgrade` (DEPLOY-04).
 - **No backup CLI.** Operator must back up the four paths above manually
   for now (Pitfall 22 — Phase 5 ships `proxmox-gui backup`).
-- **Worker is a no-op.** `proxmox-gui-worker.service` is installed but
-  disabled. Phase 3 wires arq and enables it.
 - **No 2FA / OIDC.** v2 per `.planning/PROJECT.md`.
 - **CSP not in Caddyfile.** Phase 5 polish.
 
@@ -190,7 +198,7 @@ deploy/
 │   └── gen-jwt-secret.sh         # writes jwt.secret + pat.pepper
 ├── systemd/
 │   ├── proxmox-gui-api.service   # uvicorn FastAPI on :8000
-│   └── proxmox-gui-worker.service # arq (placeholder until Phase 3)
+│   └── proxmox-gui-worker.service # arq job worker (Phase 3)
 └── caddy/
     └── Caddyfile.template        # reverse proxy :443 -> :8000 + :3000
 ```

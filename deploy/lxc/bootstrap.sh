@@ -47,18 +47,49 @@ INSTALLED_MARKER="${ETC_DIR}/.installed"
 RUNAS=(runuser -u "$APP_USER" --)
 
 if [[ -f "$INSTALLED_MARKER" ]]; then
-    echo "==> $INSTALLED_MARKER present — running alembic upgrade head and exiting."
-    # cd into backend/: alembic 1.18+ probes cwd for pyproject.toml, and /root
-    # (default cwd for root) is mode 0700 → APP_USER cannot stat it → crash.
-    # PROXMOX_GUI_DATABASE_URL: keep alembic + app on the same DB file
-    # (env.py reads this env var; without it alembic falls back to the
-    # relative placeholder in alembic.ini and writes to a different file).
+    echo "==> $INSTALLED_MARKER present — running the idempotent upgrade path."
+
+    # Phase 3 fix (Pitfall 10 / RESEARCH §Runtime State Inventory): the
+    # idempotent-exit branch historically ran ONLY `alembic upgrade head`,
+    # so a Phase-3 deploy onto an existing install never got arq/redis into
+    # the venv and the worker crashed on import. The branch now re-runs
+    # `pip install -e .` AND provisions redis-server, so re-running bootstrap
+    # always leaves a fully-working Phase-3 install (DEPLOY-02).
+
+    # 1. New apt deps that a pre-Phase-3 install lacks (redis-server).
+    echo "==> [idempotent] apt: ensuring redis-server is installed..."
+    apt-get update -qq
+    apt-get install -y -qq redis-server
+    # Redis must bind loopback only (T-03-01-01) — same guard as a fresh install.
+    grep -qE '^bind 127\.0\.0\.1' /etc/redis/redis.conf \
+        || echo 'bind 127.0.0.1 -::1' >> /etc/redis/redis.conf
+
+    # 2. Re-install the backend so new dependencies (arq, redis) land in the
+    #    venv — same invocation as the first-install path in Step 6.
+    echo "==> [idempotent] pip install -e backend (picks up arq/redis)..."
+    "${RUNAS[@]}" "${APP_HOME}/.venv/bin/pip" install \
+        --quiet -e "${APP_HOME}/backend"
+
+    # 3. Migrations. cd into backend/: alembic 1.18+ probes cwd for
+    #    pyproject.toml, and /root (default cwd for root) is mode 0700 →
+    #    APP_USER cannot stat it → crash. PROXMOX_GUI_DATABASE_URL keeps
+    #    alembic + app on the same DB file.
+    echo "==> [idempotent] alembic upgrade head..."
     "${RUNAS[@]}" bash -c "
         export PROXMOX_GUI_DATABASE_URL='sqlite+aiosqlite:////var/lib/proxmox-gui/app.db'
         cd '${APP_HOME}/backend' && \
         exec '${APP_HOME}/.venv/bin/alembic' -c '${APP_HOME}/backend/alembic.ini' upgrade head
     "
-    echo "==> Migrations applied. Bootstrap idempotent-exit OK."
+
+    # 4. Re-install the systemd units (the worker unit's ExecStart changed in
+    #    Phase 3) and (re-)enable redis + worker.
+    echo "==> [idempotent] refreshing systemd units + enabling redis/worker..."
+    install -m 0644 "${APP_HOME}/deploy/systemd/proxmox-gui-worker.service" \
+        /etc/systemd/system/proxmox-gui-worker.service
+    systemctl daemon-reload
+    systemctl enable --now redis-server proxmox-gui-worker.service
+
+    echo "==> Migrations applied + Phase-3 services wired. Idempotent-exit OK."
     exit 0
 fi
 
@@ -77,8 +108,21 @@ apt-get install -y -qq \
     sqlite3 \
     nodejs npm \
     caddy \
+    redis-server \
     build-essential libssl-dev libffi-dev \
     openssl gnupg
+
+# ----------------------------------------------------------------------------
+# Step 1b: Redis hardening — bind loopback ONLY (RESEARCH §Security Domain,
+# T-03-01-01). The Debian-stock /etc/redis/redis.conf already ships
+# `bind 127.0.0.1 -::1` + `protected-mode yes`; this guard enforces it
+# idempotently in case a prior edit removed the bind line. Redis must NEVER
+# be reachable outside the LXC.
+# ----------------------------------------------------------------------------
+echo "==> Ensuring Redis is loopback-bound..."
+grep -qE '^bind 127\.0\.0\.1' /etc/redis/redis.conf \
+    || echo 'bind 127.0.0.1 -::1' >> /etc/redis/redis.conf
+systemctl enable --now redis-server
 
 echo "==> Locating Python 3.12..."
 # Debian reality check (verified against deb.debian.org/debian/pool/main/p/):
@@ -213,9 +257,9 @@ echo "==> Frontend pre-built artefact in place: ${APP_HOME}/frontend/build/"
 
 # ----------------------------------------------------------------------------
 # Step 8: systemd units + Caddyfile
-# Phase 1 enables api + caddy; worker is INSTALLED but NOT enabled
-# (Phase 3 wires arq). The Caddyfile uses `tls internal` (self-signed)
-# so first-run works on a fresh LXC with no DNS (Pitfall A9).
+# Enables api + caddy + worker (Phase 3 wired arq; the worker depends on the
+# redis-server enabled in Step 1b). The Caddyfile uses `tls internal`
+# (self-signed) so first-run works on a fresh LXC with no DNS (Pitfall A9).
 # ----------------------------------------------------------------------------
 echo "==> Installing systemd units..."
 install -m 0644 "${APP_HOME}/deploy/systemd/proxmox-gui-api.service" \
@@ -250,7 +294,8 @@ systemctl enable --now proxmox-gui-frontend.service
 # is the one actually loaded.
 systemctl enable caddy.service
 systemctl restart caddy.service
-# systemctl enable --now proxmox-gui-worker.service  # Phase 3 wires arq
+# Phase 3: the arq worker is now wired (depends on redis-server, enabled above).
+systemctl enable --now proxmox-gui-worker.service
 
 # ----------------------------------------------------------------------------
 # Step 9: Drop the install marker.
