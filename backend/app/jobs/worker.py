@@ -25,7 +25,7 @@ import logging
 from arq import func
 from arq.connections import RedisSettings
 
-from app.jobs.functions import noop_job
+from app.jobs.functions import noop_job, run_power_action
 from app.jobs.reaper import reap_orphans
 
 logger = logging.getLogger(__name__)
@@ -92,13 +92,19 @@ async def on_shutdown(ctx: dict) -> None:
 class WorkerSettings:
     """arq worker configuration — the ``arq`` CLI reads these attributes.
 
-    Plan 03-01 registers a single internal ``noop`` function so the worker
-    can start. Plans 02/03/04 add the real ``vm.*`` job functions here.
+    Plan 03-01 registered the internal ``noop`` placeholder. Plan 03-02 adds
+    the first real job functions: ``vm.power`` and ``vm.delete`` both route
+    through ``run_power_action``. Plans 03/04 add the remaining ``vm.*`` kinds.
+
+    ``max_tries=1`` on every entry disables arq's own retry — Phase-3 retry is
+    user-driven (D-16); arq must never silently re-run a power/delete op.
     """
 
     functions = [
         # max_tries=1 — arq must NOT auto-retry (D-16; user-driven retry).
-        func(noop_job, name="internal.noop", max_tries=1, timeout=30),
+        func(noop_job, name='internal.noop', max_tries=1, timeout=30),
+        func(run_power_action, name='vm.power', max_tries=1, timeout=120),
+        func(run_power_action, name='vm.delete', max_tries=1, timeout=120),
     ]
     cron_jobs: list = []  # Plan 04 adds the scheduled-backup cron.
     on_startup = on_startup

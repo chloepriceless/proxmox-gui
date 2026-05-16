@@ -211,6 +211,7 @@ def create_app() -> FastAPI:
     from app.auth.routes import router as auth_router
     from app.clusters.routes import router as clusters_router
     from app.inventory.routes import router as inventory_router
+    from app.lifecycle.routes import router as lifecycle_router
     from app.me.routes import router as me_router
     from app.pats.routes import router as pats_router
     from app.quotas.routes import router as quotas_router
@@ -247,6 +248,9 @@ def create_app() -> FastAPI:
     app.include_router(inventory_router, prefix="/api/v1", tags=["inventory"])
     # Plan 02-04: quota CRUD + /me/quotas + admission preview (TENT-01..05 + API-05).
     app.include_router(quotas_router, prefix="/api/v1", tags=["quotas"])
+    # Plan 03-02: power lifecycle routes — Start/Stop/Reboot/Shutdown/Delete +
+    # bulk power, all returning 202 (LIFE-01..03, API-04).
+    app.include_router(lifecycle_router, prefix="/api/v1", tags=["lifecycle"])
 
     return app
 

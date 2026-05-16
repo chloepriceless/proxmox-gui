@@ -110,9 +110,33 @@ async def app(session_factory):
     return a
 
 
+class FakeArqPool:
+    """Records ``enqueue_job`` calls without touching Redis.
+
+    The API process holds an arq pool on ``app.state.arq_pool`` (populated by
+    the lifespan). Tests don't run the lifespan, so lifecycle-route tests set
+    ``app.state.arq_pool`` to one of these via the ``app`` fixture below.
+    """
+
+    def __init__(self) -> None:
+        self.enqueued: list[tuple] = []
+
+    async def enqueue_job(self, *args, **kwargs):  # noqa: ANN002, ANN003
+        self.enqueued.append((args, kwargs))
+        return None
+
+    async def publish(self, channel, payload):  # noqa: ANN001
+        return None
+
+
 @pytest_asyncio.fixture
 async def client(app):
     from httpx import ASGITransport, AsyncClient
+
+    # Lifecycle routes require an arq pool on app.state; the lifespan doesn't
+    # run under ASGITransport so wire a recording fake (Redis-free).
+    if getattr(app.state, "arq_pool", None) is None:
+        app.state.arq_pool = FakeArqPool()
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
