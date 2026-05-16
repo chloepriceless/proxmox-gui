@@ -82,14 +82,20 @@ Requirements for initial release. Each maps to roadmap phases via the Traceabili
 
 ### VM Provisioning
 
-- [ ] **VM-01**: User can deploy a VM from a Cloud-Init image (Ubuntu, Debian, Rocky, etc.)
+- [x] **VM-01
+**: User can deploy a VM from a Cloud-Init image (Ubuntu, Debian, Rocky, etc.)
 - [ ] **VM-02**: User can deploy a VM from an existing PVE template (linked or full clone)
-- [ ] **VM-03**: User can deploy a blank VM with a mounted ISO
+- [x] **VM-03
+**: User can deploy a blank VM with a mounted ISO
 - [ ] **VM-04**: User can clone an existing VM (linked or full)
-- [ ] **VM-05**: User can edit Cloud-Init config in a two-pane editor (form + live YAML preview)
-- [ ] **VM-06**: Cloud-Init editor surfaces all derived values (PVE-injected included) so user knows exactly what gets set
-- [ ] **VM-07**: Cloud-Init schema validation runs before submit
-- [ ] **VM-08**: User can browse an ISO library across storages (with URL-download for new ISOs)
+- [x] **VM-05
+**: User can edit Cloud-Init config in a two-pane editor (form + live YAML preview)
+- [x] **VM-06
+**: Cloud-Init editor surfaces all derived values (PVE-injected included) so user knows exactly what gets set
+- [x] **VM-07
+**: Cloud-Init schema validation runs before submit
+- [x] **VM-08
+**: User can browse an ISO library across storages (with URL-download for new ISOs)
 - [ ] **VM-09**: User can pick target host, storage, network, CPU, RAM, disk in the VM wizard
 - [ ] **VM-10**: Wizard shows real-time quota delta and node fit hints (e.g., "won't fit on node-1")
 

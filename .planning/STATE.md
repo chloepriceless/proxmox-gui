@@ -5,13 +5,13 @@ milestone_name: milestone
 current_plan: 1
 status: executing
 stopped_at: Phase 4 UI-SPEC approved
-last_updated: "2026-05-16T19:07:46.347Z"
+last_updated: "2026-05-16T19:47:09.613Z"
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 38
-  completed_plans: 24
-  percent: 63
+  completed_plans: 29
+  percent: 76
 ---
 
 # STATE: Proxmox Self-Service GUI
@@ -29,14 +29,14 @@ progress:
 ## Current Position
 
 Phase: 04 (provisioning-networking-console) — EXECUTING
-Plan: 1 of 14
-Current Plan: 1
+Plan: 5 of 14
+Current Plan: 6
 
 - **Milestone:** v1
 - **Phase:** 4
-- **Plan:** 03-07 frontend-backups ✅ complete
-- **Status:** Executing Phase 04
-- **Progress:** [██████████] 100%
+- **Plan:** 04-05 iso-library-cloudinit ✅ complete
+- **Status:** Executing Phase 04 — Wave 2
+- **Progress:** [████████░░] 76%
 
 ## Phases at a Glance
 
@@ -83,6 +83,7 @@ Current Plan: 1
 | Phase 03 P05 | 8min | 2 tasks | 17 files |
 | Phase 03 P06 | 9min | 2 tasks | 14 files |
 | Phase 03 P07 | 18min | 2 tasks | 14 files |
+| Phase 04 P05 | ~10 min | 2 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -192,6 +193,9 @@ Current Plan: 1
 | ScheduledBackupRow aliases BackupSchedule; GET /backups/schedules returns BackupScheduleResponse rows (cluster_id/vmid/is_lxc/node), not the cluster_name/vm_name shape the plan sketched | The /backups table renders the real Plan 03-04 backend contract; rendering row.cluster_name would print undefined | Plan 03-07 SUMMARY |
 | getSchedule is typed Promise<BackupSchedule \| null>; the VM-detail loader best-effort fetches the admin-only cluster GET for backup_storage | GET .../backup-schedule returns null (not 404) for an unscheduled VM; GET /clusters/{id} is admin-gated so non-admins get backupStorageConfigured:true and the backend 409 enforces D-08 | Plan 03-07 SUMMARY |
 | Restore-as-new requires new_vmid in the dialog (CTA gated on it) | The backend RestoreRequest model validator rejects mode='new' without new_vmid 422 — the field cannot be auto-assigned from the dialog | Plan 03-07 SUMMARY |
+| storages_for_content filters app-side on each storage's content token list, not just PVE's ?content= server-side filter | Belt-and-braces against PVE versions/back-ends that return the unfiltered storage list — picking an images-only storage for an ISO fails on PVE (Pitfall 16) | Plan 04-05 SUMMARY |
+| cloudinit.py is a pure transform module — no DB, no PVE call; validate_cloudinit_form RETURNS a hard/soft verdict and never raises | Mirrors the audit/csv.py discipline + the Phase-2 quota-admission verdict shape; the frontend two-pane editor consumes render+verdict in one call | Plan 04-05 SUMMARY |
+| ISO URL-download is open to any authenticated team member (D-17), not admin-gated; SSRF bounded by an http(s)-only scheme guard + PVE-side download-url fetch (Pitfall 7) | D-17 deliberately opens ISO downloads; the GUI never resolves/proxies the URL — the threat is bounded and audited (T-04-05-03 accepted) | Plan 04-05 SUMMARY |
 
 ### Open Questions (resolve before/during named phase)
 
@@ -229,6 +233,7 @@ None.
 
 **Recently completed:**
 
+- 2026-05-16 — Plan 04-05 iso-library-cloudinit (the two non-spike-gated provisioning sub-systems: an ISO / cloud-image library backend — two new content-type-filtered PVEConnector reads `storages_for_content` + `list_iso_content` (Pitfall 16, app-side filtered belt-and-braces), a vendored 7-image curated cloud-image catalog (D-15), `enqueue_iso_download` validating http(s)-only URL schemes (SSRF — T-04-05-01) then enqueuing the Plan-04-04 `storage.download` job — PVE fetches the bytes, the GUI never proxies them (Pitfall 7), `GET /iso` + `GET /iso/cloud-images` + `POST /iso/download` with the download NOT admin-gated (D-17); the Cloud-Init render+validation module `provisioning/cloudinit.py` — a pure transform (no DB, no PVE call) with `render_cloudinit_preview` returning `YamlLine(text, injected)` marking PVE-injected lines (D-10) and `validate_cloudinit_form` returning a block-hard/warn-soft `CloudInitVerdict` that never raises — hard errors for missing cipassword/invalid ciuser/unparseable SSH key/malformed static IP/missing ipconfig0 (Pitfall 6), a DHCP-DNS soft warning (Pitfall 14), no cloud-init CLI dependency (A5); `POST /provisioning/cloudinit/preview` wrapping both for the Plan-04-13 editor; 2 auto-fixed deviations — a Pitfall-16 server-side-filter gap and an overly-crude pure-transform test assertion; 28 new tests, 415 backend tests green; VM-08 + VM-01/D-15 + the VM-05/06/07 backend half shipped)
 - 2026-05-16 — Plan 03-07 frontend-backups (the Phase 3 backup UI: a per-VM Backups tab between Snapshots and Console — BackupsTab with a backup-files Card, a "Back up now" Database-icon primary button, 48px file rows with a MoreHorizontal Restore/Delete menu, and the BackupScheduleCard on top — a Switch + Daily/Weekly Select + keep-last-N number input + Save-schedule CTA, the whole card disabled when no backup storage; the D-08 no-storage bg-warning/10 banner; RestoreDialog defaulting to in-place overwrite behind a typed-name confirm — bg-destructive/10 data-loss warning, ENTER does not submit, CTA "Restore (overwrite)" — with a restore-as-new alternative (required New VMID + New name, CTA swaps to "Restore as new VM"); the global /backups page — an auth-gated SSR loader copying the audit-page analog + a shadcn table of the team-scoped scheduled-backup list, with a CalendarClock "Backups" sidebar nav item; the admin per-cluster backup-storage Select on the cluster edit form with a "None — backups disabled" option saved via the existing Save-changes CTA; the ActionToolbar "Back up now" More-menu item wired; api/lifecycle.ts + api/clusters.ts extended; 3 auto-fixed deviations aligning the plan's interface sketch to the live Plan 03-04 backend contracts; 11 new tests, 121 frontend tests green; LIFE-05/06/07 frontend-completed — Phase 3 complete)
 - 2026-05-16 — Plan 03-06 frontend-snapshots-lifecycle-bulk (the lifecycle UI for snapshots + the resize/clone/migrate operation set + inventory bulk actions: a hand-rolled recursive SnapshotTree — D-05, no tree-view npm dependency, role=tree/treeitem + aria-expanded + roving tabindex + 24px CSS indent guides — with a pure snapshot-tree.ts builder for node-env unit testing; the Snapshots tab filling the formerly-disabled Phase 2 placeholder, with the Snapshots-trigger Lock removed; SnapshotCreateDialog + restore/delete typed-name ConfirmByNameDialog wiring; ResizeDialog with hotplug-driven reboot-required warnings + disk-shrink inline error + persistent bg-destructive/10 notice + CTA-blocked-while-invalid + no lock-override field; MigrateDialog keeping bwlimit visible inside an always-present Advanced collapsible + 409 pre-flight inline notice; CloneDialog with linked/full mode + node/storage + overridable Auto-assigned VMID; ConvertTemplateDialog one-way warning; the ActionToolbar More menu wired to all five dialogs with Convert disabled+tooltipped for LXC; the inventory per-row MoreHorizontal power menu + Select toggle + 40px checkbox column + sticky bulk-action bar fanning out one bulkPower job per VM under a single batch confirm; 10 new snapshot-tree tests, 110 frontend tests green; LIFE-03/04/08/09/10/11 frontend-completed)
 - 2026-05-16 — Plan 03-05 frontend-power-vertical-slice (the frontend half of the power-action slice: api/jobs + api/lifecycle clients registered in the api namespace; utils/elapsed.ts no-date-library formatter; stores/jobs.svelte.ts WebSocket rune-store — backfill reconcile-by-id, exponential-backoff reconnect, derived running/failed counts, completion toasts; Tasks drawer — 420px right Sheet with the live WebSocket job feed, batch grouping, 1s elapsed-timer tick, disconnected strip; JobRow + JobErrorDetail — state-tinted rows, friendly-error-first + "Show technical details" collapsible, idempotent-only Retry; Topbar ListChecks Tasks icon + 18px count badge red-on-unacked-failure; ActionToolbar on the VM detail page — Start/Stop/Reboot/Shutdown + More menu + typed-name Delete with PowerConfirmDialog; QuotaIndicator/Tasks drawers made mutually exclusive; 26 new tests, 100 frontend tests green; LIFE-01/02/12/13 + UI-06 frontend-completed)

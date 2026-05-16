@@ -101,7 +101,7 @@ Plans:
 - [ ] 04-02-PLAN.md — SDN read-API spike (gates 04-07)
 - [ ] 04-03-PLAN.md — noVNC reverse-proxy spike (gates 04-08)
 - [ ] 04-04-PLAN.md — Provisioning backend — connector, module, create jobs, 0006_phase4 migration
-- [ ] 04-05-PLAN.md — ISO library + Cloud-Init render/validation backend
+- [x] 04-05-PLAN.md — ISO library + Cloud-Init render/validation backend
 - [ ] 04-06-PLAN.md — Community-scripts catalog backend + two-stage run_community_script job
 - [ ] 04-07-PLAN.md — Networks backend — SDN reads, picker service, per-team scoping
 - [ ] 04-08-PLAN.md — Console backend — vncproxy mint + reverse-proxied WebSocket relay
@@ -156,7 +156,7 @@ Plans:
 | 1. Foundation | 9/10 | Executing | - |
 | 2. Multi-Cluster Inventory, Quotas & Audit | 0/TBD | Not started | - |
 | 3. Job Queue & Lifecycle | 7/7 | Complete | 2026-05-16 |
-| 4. Provisioning, Networking & Console | 0/14 | Planned | - |
+| 4. Provisioning, Networking & Console | 5/14 | Executing | - |
 | 5. Polish & Operational Hardening | 0/TBD | Not started | - |
 
 ## Cross-Cutting Concerns
