@@ -79,7 +79,7 @@ Users can self-provision and manage VMs/LXCs on Proxmox through a polished, opin
 - [x] 03-02-PLAN.md — Power vertical slice: Start/Stop/Reboot/Shutdown/Delete + bulk power (202 + batch_id), run_power_action job function, jobs API (list/get/retry), Tasks-drawer WebSocket endpoint *(completed 2026-05-16, 11 files, 331 tests green; LIFE-01/02/03/12/13 + API-04 shipped; SUMMARY: .planning/phases/03-job-queue-lifecycle/03-02-SUMMARY.md)*
 - [x] 03-03-PLAN.md — Snapshots (create/rollback/delete + flat tree reader) and resize (CPU/RAM config write, hotplug reboot detection, online disk grow with server-side shrink block) *(completed 2026-05-16, 11 files, 346 tests green; LIFE-04/08/09 + API-04 shipped; SUMMARY: .planning/phases/03-job-queue-lifecycle/03-03-SUMMARY.md)*
 - [x] 03-04-PLAN.md — Backups (manual vzdump + scheduled arq-cron with keep-last-N + restore in-place/as-new), clone (VMID reservation + quota admission), template-convert, migrate (quorum + node-local snippet pre-flights + bwlimit), admin backup-storage config
-- [ ] 03-05-PLAN.md — Frontend job infra: api/jobs + api/lifecycle clients, WebSocket jobs store, Tasks drawer + JobRow + error detail + retry, Topbar count badge, VM-detail action toolbar + power confirm dialogs
+- [x] 03-05-PLAN.md — Frontend job infra: api/jobs + api/lifecycle clients, WebSocket jobs store, Tasks drawer + JobRow + error detail + retry, Topbar count badge, VM-detail action toolbar + power confirm dialogs *(completed 2026-05-16, 17 files, 100 tests green; LIFE-01/02/12/13 + UI-06 frontend-completed; SUMMARY: .planning/phases/03-job-queue-lifecycle/03-05-SUMMARY.md)*
 - [ ] 03-06-PLAN.md — Frontend snapshots tab (hand-rolled recursive tree), resize/clone/migrate/convert dialogs, inventory per-row power menu + bulk-select bar
 - [ ] 03-07-PLAN.md — Frontend backups: per-VM Backups tab + restore dialog + schedule card, global /backups page + sidebar nav, admin per-cluster backup-storage Select
 **UI hint**: yes
@@ -140,7 +140,7 @@ Users can self-provision and manage VMs/LXCs on Proxmox through a polished, opin
 |-------|----------------|--------|-----------|
 | 1. Foundation | 9/10 | Executing | - |
 | 2. Multi-Cluster Inventory, Quotas & Audit | 0/TBD | Not started | - |
-| 3. Job Queue & Lifecycle | 3/7 | In Progress | - |
+| 3. Job Queue & Lifecycle | 5/7 | In Progress | - |
 | 4. Provisioning, Networking & Console | 0/TBD | Not started | - |
 | 5. Polish & Operational Hardening | 0/TBD | Not started | - |
 

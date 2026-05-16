@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_plan: 5
+current_plan: 6
 status: executing
-stopped_at: Completed 03-04-PLAN.md
-last_updated: "2026-05-16T13:12:14.630Z"
+stopped_at: Completed 03-05-PLAN.md
+last_updated: "2026-05-16T13:24:59.401Z"
 progress:
   total_phases: 5
   completed_phases: 2
   total_plans: 24
-  completed_plans: 22
-  percent: 92
+  completed_plans: 23
+  percent: 96
 ---
 
 # STATE: Proxmox Self-Service GUI
@@ -29,14 +29,14 @@ progress:
 ## Current Position
 
 Phase: 03 (job-queue-lifecycle) — EXECUTING
-Plan: 5 of 7
-Current Plan: 5
+Plan: 6 of 7
+Current Plan: 6
 
 - **Milestone:** v1
 - **Phase:** 03 — Job Queue & Lifecycle (executing)
-- **Plan:** 03-04 backups-clone-migrate ✅ complete
-- **Status:** Executing Phase 03 — ready for Plan 03-05
-- **Progress:** [█████████░] 92%
+- **Plan:** 03-05 frontend-power-vertical-slice ✅ complete
+- **Status:** Executing Phase 03 — ready for Plan 03-06
+- **Progress:** [█████████░] 96%
 
 ## Phases at a Glance
 
@@ -80,6 +80,7 @@ Current Plan: 5
 | 03    | 02   | 11 min   | 2     | 11    | 331 pass |
 | Phase 03 P03 | 12min | 2 tasks | 11 files |
 | Phase 03 P04 | 17min | 3 tasks | 23 files |
+| Phase 03 P05 | 8min | 2 tasks | 17 files |
 
 ## Accumulated Context
 
@@ -179,6 +180,10 @@ Current Plan: 5
 | clusters.backup_storage is a nullable-clearable PATCH field via an _UNSET sentinel + backup_storage_set() predicate | A plain str\|None cannot tell "absent" from "explicit null"; the admin must be able to disable backups (D-08 / UI-SPEC "None — backups disabled") | Plan 03-04 SUMMARY |
 | Migrate quorum pre-flight passes when cluster_status has no type=='cluster' item; only an explicit quorate!=1 blocks the migrate | A single-node cluster has no cluster-status row — treating its absence as quorate avoids false rejections (Pitfall 18) | Plan 03-04 SUMMARY |
 | run_backup_delete is a synchronous job (no UPID poll), still flowing through a job row | A storage content delete is a fast op; the job row keeps it in the Tasks drawer, mirroring run_resize | Plan 03-04 SUMMARY |
+| jobs.svelte.ts WebSocket store takes an injectable WsFactory + a `silent` flag | The vitest env is `node` (no WebSocket/DOM); the fake-socket + no-toast path gives the reconnect/backfill/upsert logic full unit coverage | Plan 03-05 SUMMARY |
+| QuotaIndicator's `open` lifted from internal $state to a $bindable prop | UI-SPEC Implementation Note 3 — AppShell must keep the Quota + Tasks right-side Sheets mutually exclusive; coordination needs the open-state visible to the shell | Plan 03-05 SUMMARY |
+| ActionToolbar's More menu ships the structure now, dispatches via an onMoreAction prop callback with TODO(03-06/07) markers | The Resize/Clone/Migrate/Snapshot/Backup dialogs are owned by Plans 06/07; the menu is real, only the dialogs are deferred | Plan 03-05 SUMMARY |
+| TasksDrawer disconnected strip is a hand-rolled bg-warning/10 div, not Alert variant=warning | The installed shadcn alert block ships only default/destructive variants; warning is composed from existing --warning tokens | Plan 03-05 SUMMARY |
 
 ### Open Questions (resolve before/during named phase)
 
@@ -210,12 +215,13 @@ None.
 
 ## Session Continuity
 
-**To resume:** Run `/gsd-execute-phase 3` to continue with Plan 03-05.
+**To resume:** Run `/gsd-execute-phase 3` to continue with Plan 03-06.
 
 **Next milestone:** First end-to-end "click → running VM/LXC" lands at the end of Phase 4.
 
 **Recently completed:**
 
+- 2026-05-16 — Plan 03-05 frontend-power-vertical-slice (the frontend half of the power-action slice: api/jobs + api/lifecycle clients registered in the api namespace; utils/elapsed.ts no-date-library formatter; stores/jobs.svelte.ts WebSocket rune-store — backfill reconcile-by-id, exponential-backoff reconnect, derived running/failed counts, completion toasts; Tasks drawer — 420px right Sheet with the live WebSocket job feed, batch grouping, 1s elapsed-timer tick, disconnected strip; JobRow + JobErrorDetail — state-tinted rows, friendly-error-first + "Show technical details" collapsible, idempotent-only Retry; Topbar ListChecks Tasks icon + 18px count badge red-on-unacked-failure; ActionToolbar on the VM detail page — Start/Stop/Reboot/Shutdown + More menu + typed-name Delete with PowerConfirmDialog; QuotaIndicator/Tasks drawers made mutually exclusive; 26 new tests, 100 frontend tests green; LIFE-01/02/12/13 + UI-06 frontend-completed)
 - 2026-05-16 — Plan 03-04 backups-clone-migrate (backup lifecycle: manual vzdump 202 + 409 D-08 no-storage guard, backup-file list, restore in-place/as-new with quota admission, backup-schedule CRUD, global /backups page; fire_due_scheduled_backups arq cron firing due BackupSchedule rows every 5 min + keep-last-N prune on the backup job's success path; clone linked/full with app-reserved VMID + quota admission, template-convert qemu-only/LXC-rejected; migrate live/offline with bwlimit + quorum & node-local-snippet pre-flights; BackupSchedule ORM model + 0005_phase3_backup_storage migration; admin per-cluster backup-storage designation; 24 new tests, 369 total green; LIFE-05/06/07/10/11 + API-04 shipped)
 - 2026-05-16 — Plan 03-03 snapshots-resize (snapshot lifecycle: GET flat parent-pointer list for the client-built tree + 202 create/rollback/delete VM+LXC mirrors; run_snapshot_create/rollback/delete arq job functions over a shared kind-dispatched body; resize lifecycle: GET resize-info with hotplug-derived cpu/memory reboot-required flags + 202 resize; run_resize synchronous config write with NO poll loop — marks the job succeeded directly, still surfaced in the Tasks drawer; server-side disk-shrink rejection 422 — the API is the LIFE-09 enforcement point; 15 new tests, 346 total green; LIFE-04/08/09 + API-04 shipped)
 - 2026-05-16 — Plan 03-02 power-vertical-slice (the first full pipeline slice: power lifecycle routes — Start/Stop/Reboot/Shutdown/Delete + bulk-power — all 202; run_power_action arq job function dispatching vm.power + vm.delete via the UPID poller; jobs API GET /jobs + GET /jobs/{id} + POST /jobs/{id}/retry with idempotent-only retry gate; /api/v1/ws/jobs WebSocket — authenticated handshake + recent-window backfill + team-scoped fan-out; 17 new tests, 331 total green; LIFE-01/02/03/12/13 + API-04 shipped)
@@ -236,8 +242,8 @@ None.
 - 2026-05-14 — Requirements definition (89 v1 requirements across 13 categories)
 - 2026-05-14 — Roadmap (5-phase structure, 100% coverage)
 
-**Last session:** 2026-05-16T13:12:14.622Z
-**Stopped at:** Completed 03-04-PLAN.md
+**Last session:** 2026-05-16T13:24:00.000Z
+**Stopped at:** Completed 03-05-PLAN.md
 **Resume file:** None
 
 ---
