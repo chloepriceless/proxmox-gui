@@ -27,6 +27,11 @@ from arq.connections import RedisSettings
 
 from app.jobs.functions import noop_job, run_power_action
 from app.jobs.reaper import reap_orphans
+from app.jobs.snapshot_functions import (
+    run_snapshot_create,
+    run_snapshot_delete,
+    run_snapshot_rollback,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -105,6 +110,10 @@ class WorkerSettings:
         func(noop_job, name='internal.noop', max_tries=1, timeout=30),
         func(run_power_action, name='vm.power', max_tries=1, timeout=120),
         func(run_power_action, name='vm.delete', max_tries=1, timeout=120),
+        # Plan 03-03: snapshot lifecycle (timeouts per RESEARCH §Pattern 1).
+        func(run_snapshot_create, name='vm.snapshot.create', max_tries=1, timeout=600),
+        func(run_snapshot_rollback, name='vm.snapshot.rollback', max_tries=1, timeout=900),
+        func(run_snapshot_delete, name='vm.snapshot.delete', max_tries=1, timeout=300),
     ]
     cron_jobs: list = []  # Plan 04 adds the scheduled-backup cron.
     on_startup = on_startup
