@@ -439,6 +439,10 @@ async def update_cluster(
         row.notes = payload.notes
     if payload.is_active is not None:
         row.is_active = payload.is_active
+    # D-08 nullable-clearable: only touch backup_storage when the request body
+    # actually carried it — a null value clears the designation.
+    if payload.backup_storage_set():
+        row.backup_storage = payload.backup_storage
 
     try:
         await db.commit()
@@ -521,3 +525,58 @@ async def get_cluster(db: AsyncSession, *, cluster_id: int) -> Cluster:
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cluster not found")
     return row
+
+
+# ---------------------------------------------------------------------------
+# Backup storage enumeration (D-08 — admin backup-storage designation)
+# ---------------------------------------------------------------------------
+
+
+async def list_backup_storages(
+    db: AsyncSession,
+    registry: PVEConnectorRegistry,
+    *,
+    cluster_id: int,
+) -> list[dict]:
+    """Enumerate the cluster's ``content=backup`` storages for the admin Select.
+
+    Uses the bootstrap connector (admin-level) — this is an admin-only route
+    and a per-team privsep token may not see every backup storage. The query
+    targets one cluster node (PVE storage definitions are cluster-wide so any
+    node's storage list is representative).
+
+    Raises:
+        HTTPException(404): cluster not found.
+        HTTPException(502): the cluster is unreachable or returned an error.
+    """
+    row = await db.get(Cluster, cluster_id)
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Cluster not found",
+        )
+    connector = _build_transient_connector(
+        host=row.host, port=row.port,
+        token_user=row.token_user, token_name=row.token_name,
+        api_token_secret=row.api_token_secret,
+        verify_ssl=row.verify_ssl, tls_fingerprint=row.tls_fingerprint,
+    )
+    try:
+        nodes = await connector.list_nodes()
+    except (PVEUnreachable, PVEAPIError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Couldn't reach the cluster to list its storages.",
+        ) from exc
+    if not nodes:
+        return []
+    node_name = str(nodes[0].get("node") or "")
+    try:
+        storages = await connector.node_storages(
+            node=node_name, content="backup",
+        )
+    except (PVEUnreachable, PVEAPIError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Couldn't reach the cluster to list its storages.",
+        ) from exc
+    return list(storages or [])

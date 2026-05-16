@@ -10,8 +10,16 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+# Sentinel for the nullable-clearable PATCH field pattern (Phase 1 IN-03
+# carryover). ``backup_storage`` must be distinguishable between "absent from
+# the request body" (leave unchanged) and "explicitly set to null" (clear the
+# admin designation — UI-SPEC "None — backups disabled"). A plain
+# ``str | None = None`` field cannot tell those apart; ``Unset`` does.
+_UNSET = "__unset__"
 
 # Realm-qualified user format: ``name@pam`` or ``name@pve`` (PVE basic shape).
 # Permissive on the name part — PVE accepts letters, digits, ``.-_``.
@@ -119,6 +127,10 @@ class ClusterUpdate(BaseModel):
     tls_fingerprint: str | None = Field(default=None, max_length=255)
     notes: str | None = None
     is_active: bool | None = None
+    # Nullable-clearable: absent → leave unchanged; null → clear; "local-zfs" →
+    # set. The default is the ``_UNSET`` sentinel so the service can tell the
+    # three cases apart (D-08 — the admin must be able to disable backups).
+    backup_storage: str | None = Field(default=_UNSET, max_length=128)
 
     @field_validator("host")
     @classmethod
@@ -126,6 +138,10 @@ class ClusterUpdate(BaseModel):
         if v is None:
             return v
         return _reject_url_in_host(v)
+
+    def backup_storage_set(self) -> bool:
+        """True when the request body carried ``backup_storage`` (any value)."""
+        return self.backup_storage != _UNSET
 
     @field_validator("token_user")
     @classmethod
@@ -160,5 +176,29 @@ class ClusterResponse(BaseModel):
     tls_fingerprint: str | None
     is_active: bool
     notes: str | None
+    # D-08: the admin-designated backup-capable storage (None = backups
+    # disabled for this cluster).
+    backup_storage: str | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class BackupStorageItem(BaseModel):
+    """One backup-capable storage on a cluster — for the admin Select (D-08).
+
+    Enumerated server-side via the connector's ``node_storages(content=
+    'backup')``; the admin picks one to set as the cluster's ``backup_storage``.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    storage: str
+    type: str | None = None
+
+    @classmethod
+    def from_pve(cls, raw: dict[str, Any]) -> BackupStorageItem:
+        """Coerce one PVE ``/nodes/{n}/storage`` row into a presentable item."""
+        return cls(
+            storage=str(raw.get("storage") or ""),
+            type=(str(raw["type"]) if raw.get("type") is not None else None),
+        )

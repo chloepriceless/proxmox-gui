@@ -45,6 +45,12 @@ class Cluster(Base, TimestampMixin):
         Boolean, nullable=False, default=True, server_default="1"
     )
     notes: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    # Admin-preset backup-capable storage (D-08); users pick retention, not
+    # storage. When NULL the per-cluster backup endpoints are unavailable —
+    # the backup service raises a 409 directing users to an administrator.
+    backup_storage: Mapped[str | None] = mapped_column(
+        String(128), nullable=True, default=None
+    )
 
     def __repr__(self) -> str:  # pragma: no cover - debug aid
         return f"<Cluster id={self.id} name={self.name!r} host={self.host!r}>"

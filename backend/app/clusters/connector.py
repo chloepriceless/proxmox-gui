@@ -679,6 +679,16 @@ class PVEConnector:
         result = await self._call_with_breaker(self._client.cluster.nextid.get)
         return int(result)
 
+    async def list_nodes(self) -> list[dict]:
+        """GET /nodes — the cluster's node list.
+
+        Used to pick a representative node for cluster-wide queries (e.g. the
+        backup-storage admin picker — PVE storage definitions are cluster-wide
+        so any node's ``/storage`` list is representative).
+        """
+        result = await self._call_with_breaker(self._client.nodes.get)
+        return list(result or [])
+
     async def node_storages(
         self, *, node: str, content: str = "backup"
     ) -> list[dict]:
@@ -690,6 +700,35 @@ class PVEConnector:
         fn = self._client.nodes(node).storage.get
         result = await self._call_with_breaker(fn, content=content)
         return list(result or [])
+
+    async def storage_content(
+        self, *, node: str, storage: str, content: str = "backup",
+        vmid: int | None = None,
+    ) -> list[dict]:
+        """GET /nodes/{node}/storage/{storage}/content — backup-file listing.
+
+        Filters to ``content=backup`` and, when ``vmid`` is given, to that
+        VM's archives. Each item carries ``volid``/``ctime``/``size``/
+        ``format`` (D-08 keep-last-N retention reads ``ctime`` to find the
+        oldest files).
+        """
+        fn = self._client.nodes(node).storage(storage).content.get
+        kwargs: dict[str, Any] = {"content": content}
+        if vmid is not None:
+            kwargs["vmid"] = vmid
+        result = await self._call_with_breaker(fn, **kwargs)
+        return list(result or [])
+
+    async def delete_storage_content(
+        self, *, node: str, storage: str, volid: str
+    ) -> Any:
+        """DELETE /nodes/{node}/storage/{storage}/content/{volid}.
+
+        Deletes one backup file — used by the keep-last-N prune and the
+        explicit "Delete backup file" action (D-08).
+        """
+        fn = self._client.nodes(node).storage(storage).content(volid).delete
+        return await self._call_with_breaker(fn)
 
     async def unlock(self, *, node: str, vmid: int, is_lxc: bool) -> Any:
         """Best-effort plain unlock — clears the ``lock`` config field.

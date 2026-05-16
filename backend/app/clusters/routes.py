@@ -22,6 +22,7 @@ from app.auth.dependencies import csrf_protect, require_admin
 from app.clusters import service
 from app.clusters.registry import PVEConnectorRegistry
 from app.clusters.schemas import (
+    BackupStorageItem,
     ClusterCreate,
     ClusterResponse,
     ClusterTestRequest,
@@ -147,6 +148,30 @@ async def patch_cluster(
         db, registry, cluster_id=cluster_id, payload=payload,
     )
     return ClusterResponse.model_validate(row)
+
+
+@router.get(
+    "/{cluster_id}/backup-storages",
+    response_model=list[BackupStorageItem],
+    summary="List the cluster's backup-capable storages (D-08 admin picker)",
+    operation_id="clusters_backup_storages",
+    dependencies=[Depends(require_admin)],
+)
+async def list_backup_storages(
+    cluster_id: int,
+    db: AsyncSession = Depends(get_db),
+    registry: PVEConnectorRegistry = Depends(get_registry),
+) -> list[BackupStorageItem]:
+    """Enumerate ``content=backup`` storages for the admin Select.
+
+    The admin picks one of these to set as the cluster's ``backup_storage``
+    via ``PATCH /clusters/{id}`` (D-08). Without a designated storage the
+    per-cluster backup endpoints are unavailable.
+    """
+    rows = await service.list_backup_storages(
+        db, registry, cluster_id=cluster_id,
+    )
+    return [BackupStorageItem.from_pve(r) for r in rows]
 
 
 @router.post(
