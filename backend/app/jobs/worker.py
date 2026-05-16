@@ -22,9 +22,11 @@ from __future__ import annotations
 
 import logging
 
-from arq import func
+from arq import cron, func
 from arq.connections import RedisSettings
 
+from app.jobs.backup_functions import run_backup, run_backup_delete, run_restore
+from app.jobs.backups_cron import fire_due_scheduled_backups
 from app.jobs.functions import noop_job, run_power_action
 from app.jobs.reaper import reap_orphans
 from app.jobs.resize_functions import run_resize
@@ -117,8 +119,17 @@ class WorkerSettings:
         func(run_snapshot_delete, name='vm.snapshot.delete', max_tries=1, timeout=300),
         # Plan 03-03: resize — synchronous config write, no UPID poll loop.
         func(run_resize, name='vm.resize', max_tries=1, timeout=120),
+        # Plan 03-04: backup lifecycle — vzdump + restore poll, delete is sync.
+        # vzdump/restore can run for hours — 4h timeout.
+        func(run_backup, name='vm.backup', max_tries=1, timeout=14400),
+        func(run_restore, name='vm.restore', max_tries=1, timeout=14400),
+        func(run_backup_delete, name='vm.backup.delete', max_tries=1, timeout=300),
     ]
-    cron_jobs: list = []  # Plan 04 adds the scheduled-backup cron.
+    # Plan 03-04: scheduled-backup cron — fire due schedules every 5 minutes
+    # (RESEARCH §Pattern 1). The cron entry point enqueues vm.backup jobs.
+    cron_jobs: list = [
+        cron(fire_due_scheduled_backups, minute=set(range(0, 60, 5))),
+    ]
     on_startup = on_startup
     on_shutdown = on_shutdown
     redis_settings = RedisSettings(host="127.0.0.1", port=6379, database=0)
