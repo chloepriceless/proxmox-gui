@@ -58,6 +58,13 @@
   import ReviewStep, {
     type ReviewSection
   } from '$lib/components/wizard/ReviewStep.svelte';
+  import CloudInitEditor from '$lib/components/wizard/CloudInitEditor.svelte';
+  import {
+    cloudInitFormDefaults,
+    toQemuCloudInitFields,
+    type CloudInitEditorForm,
+    type SshKeyChoice
+  } from '$lib/components/wizard/cloudinit-form';
   import EmptyState from '$lib/components/shared/EmptyState.svelte';
   import Boxes from '@lucide/svelte/icons/boxes';
   import {
@@ -287,6 +294,31 @@
     (wizardDraft.formData.network as NetworkConfigInput | null) ?? null
   );
 
+  /**
+   * The Cloud-Init editor form (the four VM paths only). `cipassword` lives
+   * here in-memory ONLY — `cloudInitFormDefaults()` seeds an empty form and it
+   * is NEVER written to the wizardDraft sessionStorage store (T-04-13-02 — the
+   * draft store's SECRET_KEYS already strips `cipassword`, so this bag is kept
+   * out of `persistDraft` entirely).
+   */
+  let cloudInit = $state<CloudInitEditorForm>(cloudInitFormDefaults());
+
+  /** True when the Cloud-Init step's verdict has a blocking hard error (D-12). */
+  let cloudInitGate = $state(false);
+
+  /**
+   * The SSH-key catalogue for the Cloud-Init multi-select (D-11). No team-wide
+   * SSH-keys-with-public-key read endpoint exists in the Phase-4 frontend
+   * surface (`/me/ssh-keys` is per-user and its list response carries no
+   * public-key body by design) — so the catalogue is empty for now and the
+   * editor renders its "no SSH keys stored" state; the password field (the
+   * required credential, D-11) works fully. When a team-scoped
+   * keys-with-public-key endpoint lands, populating this is a clean follow-on
+   * with no component change (the editor already takes a typed `SshKeyChoice[]`
+   * prop). This is the established Plan 04-12 graceful-degradation pattern.
+   */
+  const sshKeyCatalogue = $state<SshKeyChoice[]>([]);
+
   /** The submit error (a 409/4xx surfaced inline — the wizard stays put). */
   let submitError = $state<string | null>(null);
   let submitting = $state(false);
@@ -315,7 +347,12 @@
     disk_gb: resources.disk_gb
   });
 
-  /** The current VM-step form bag (for `validateVmStep`). */
+  /**
+   * The current VM-step form bag (for `validateVmStep` + `buildQemuRequest`).
+   * The cloud-init create fields (`ci_user` / `ci_password` /
+   * `ssh_public_keys`) are folded in via `toQemuCloudInitFields` so the
+   * `buildQemuRequest` builder carries them into the `createQemu` payload.
+   */
   const vmFormBag = $derived({
     image_id: vmSource.image_id,
     iso_volid: vmSource.iso_volid,
@@ -326,7 +363,8 @@
     storage: vmResources.storage,
     cpu_cores: vmResources.cpu_cores,
     memory_mb: vmResources.memory_mb,
-    disk_gb: vmResources.disk_gb
+    disk_gb: vmResources.disk_gb,
+    ...toQemuCloudInitFields(cloudInit, sshKeyCatalogue)
   });
 
   /** Field errors for the active step (empty unless the step has rules). */
@@ -359,6 +397,8 @@
       }
       if (activeStepId === 'resources' && vmResourcesGate) return true;
       if (activeStepId === 'network' && networkGate) return true;
+      // The Cloud-Init step disables Next on any hard-error verdict (D-12).
+      if (activeStepId === 'cloud-init' && cloudInitGate) return true;
       return false;
     }
     return false;
@@ -803,20 +843,28 @@
             {/if}
           {:else if activeStepId === 'cloud-init'}
             <!--
-              The Cloud-Init step body is owned by Plan 04-13 (the two-pane
-              Cloud-Init editor). Until that lands the VM paths show an honest
-              placeholder; the create body omits cloud-init fields and the VM
-              boots with PVE defaults.
+              The Cloud-Init two-pane editor (Plan 04-13) — present on all four
+              VM paths (D-13). Form left, the live read-only YAML pane right;
+              hard errors disable Next, soft warnings advise (D-12). The form's
+              `ci_user` / `ci_password` / `ssh_public_keys` flow into the
+              `vmFormBag` via `toQemuCloudInitFields` → `buildQemuRequest`.
             -->
-            <div class="flex flex-col gap-2">
-              <h2 class="text-[18px] font-semibold leading-tight tracking-tight">
-                {WIZARD_STEP_LABEL['cloud-init']}
-              </h2>
-              <p class="text-muted-foreground text-[14px]">
-                The Cloud-Init editor ships with Plan 04-13. The VM will boot
-                with the image's default first-boot settings for now.
-              </p>
-            </div>
+            {#if clusterId !== null}
+              <CloudInitEditor
+                {clusterId}
+                sourceKind={sourceKindForPath(wizardDraft.path)}
+                sshKeys={sshKeyCatalogue}
+                value={cloudInit}
+                onChange={(next) => (cloudInit = next)}
+                onValidityChange={(blocked) => (cloudInitGate = blocked)}
+              />
+            {:else}
+              <EmptyState
+                icon={Boxes}
+                heading="No cluster available"
+                body="The Cloud-Init editor needs a cluster. Register one first."
+              />
+            {/if}
           {:else if activeStepId === 'review'}
             <ReviewStep
               sections={reviewSections}
