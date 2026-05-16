@@ -369,7 +369,7 @@ def render_cloudinit_preview(form: CloudInitForm) -> list[YamlLine]:
 | A7 | The community-scripts website `/api/categories` JSON (or the `frontend/public/json/*.json` per-script files) is the catalog metadata source, with fields: name, slug, categories, type, updateable, privileged, interface_port, install_methods (type/script/resources cpu·ram·hdd·os·version), default_credentials, notes | Catalog module | LOW-MEDIUM — field set is from the wiki/search; **spike confirms format stability** (D-07 mandates a defaults-only fallback for unparseable metadata) |
 | A8 | `vncproxy` ticket lifetime is ~10-40s; sources cite both ~10s and ~30-40s | Pitfall 2, CON-02 | LOW — mint-on-click + reconnect button handles either; **spike measures the real value** |
 
-## Open Questions
+## Open Questions (spike-gated — resolved by spikes 04-01 / 04-02 / 04-03, not in this document)
 
 1. **Community-script install-stage invocation (the single biggest risk)**
    - What we know: the GUI must create the LXC itself and run only the install stage inside it (Pitfall 10, D-08).

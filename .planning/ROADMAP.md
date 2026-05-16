@@ -95,7 +95,7 @@ Users can self-provision and manage VMs/LXCs on Proxmox through a polished, opin
   3. The network picker enumerates SDN zones/VNets/subnets the team is scoped for (with admin-controlled visibility), falls back to legacy bridges for non-SDN clusters, and can auto-pick a free IP from IPAM where available — and the wizard shows real-time quota delta and node-fit hints (e.g. "won't fit on node-1").
   4. A user can open an embedded noVNC console in an iframe for any VM/LXC they own; the vncticket is minted server-side on click (never on page load), refreshed before expiry, and all console traffic flows through the GUI's reverse-proxied WebSocket — no direct Proxmox exposure to the browser is required.
   5. Empty list states show actionable CTAs ("You have no VMs yet — Create one"), every PVE-specific wizard field has a `?` tooltip linking to docs, and a notification bell surfaces task completions in real time.
-**Plans**: 13 plans
+**Plans**: 14 plans
 Plans:
 - [ ] 04-01-PLAN.md — Community-scripts execution spike (gates 04-06)
 - [ ] 04-02-PLAN.md — SDN read-API spike (gates 04-07)
@@ -105,13 +105,14 @@ Plans:
 - [ ] 04-06-PLAN.md — Community-scripts catalog backend + two-stage run_community_script job
 - [ ] 04-07-PLAN.md — Networks backend — SDN reads, picker service, per-team scoping
 - [ ] 04-08-PLAN.md — Console backend — vncproxy mint + reverse-proxied WebSocket relay
-- [ ] 04-09-PLAN.md — Frontend foundation — API modules, EmptyState/HelpTooltip, wizard shell
-- [ ] 04-10-PLAN.md — LXC wizard paths + community-scripts catalog browser
-- [ ] 04-11-PLAN.md — VM wizard (4 paths) + node-fit + SDN-aware network picker
-- [ ] 04-12-PLAN.md — Cloud-Init two-pane editor + ISO library browser
-- [ ] 04-13-PLAN.md — Console tab + notification bell + Networks admin tab + provisioning banner
+- [ ] 04-09-PLAN.md — Frontend foundation — 5 API modules + EmptyState/HelpTooltip + /inventory Create entry
+- [ ] 04-10-PLAN.md — Wizard shell — /create route, WizardChrome, PathPicker, sessionStorage draft store
+- [ ] 04-11-PLAN.md — LXC wizard paths + community-scripts catalog browser
+- [ ] 04-12-PLAN.md — VM wizard (4 paths) + node-fit + SDN-aware network picker
+- [ ] 04-13-PLAN.md — Cloud-Init two-pane editor + ISO library browser
+- [ ] 04-14-PLAN.md — Console tab + notification bell + Networks admin tab + provisioning banner
 **UI hint**: yes
-**Notes**: Planned 2026-05-16 — 13 plans across 7 waves: W1 {01,02,03 spikes}, W2 {04,06,07,08}, W3 {05,09}, W4 {10}, W5 {11}, W6 {12}, W7 {13}. The three frontend wizard plans (10/11/12) are sequenced into separate waves because they share `routes/create/+page.svelte`. **SDN integration has MEDIUM-LOW research confidence (research SUMMARY.md Open Questions)** — a dedicated SDN spike must precede implementation, covering reload/applied-state polling, version floor, and partial-node-offline behavior. **noVNC needs a dedicated spike** for vncticket exact-encoding (must be URL-encoded exactly once — Pitfall 3 + double-encoding gotcha), reverse-proxy WebSocket header forwarding (Upgrade/Connection/proxy_buffering), and self-signed-cert handling. **Community-scripts integration needs its own spike** for non-interactive invocation (whiptail bypass), `pct exec` output streaming, metadata JSON stability, attribution, and commit pinning policy. VMID race must be addressed here via app-level per-cluster lock + reserved-VMID set (Pitfall 1). Cloud-Init must validate that a `content=snippets`-enabled storage exists at cluster onboarding time (Pitfall 4) and call `qm cloudinit update` after every snippet write.
+**Notes**: Planned 2026-05-16; revised 2026-05-16 after plan-check (5 blockers + 3 warnings). 14 plans across 7 waves: W1 {01,02,03 spikes, 04 provisioning backend}, W2 {05,06,07,08 backend}, W3 {09 API+primitives}, W4 {10 wizard shell}, W5 {11 LXC wizard, 14 console/bell/networks}, W6 {12 VM wizard}, W7 {13 Cloud-Init editor}. Plan 04-04 has no real dependency on the spikes (they only touch 04-SPIKE-*.md docs) so it runs in W1. The 04-09 plan was split into 04-09 (API modules + shared primitives) and 04-10 (wizard shell) to stay under the file-count threshold; downstream plans renumbered (old 10/11/12/13 -> 11/12/13/14). The four frontend wizard-step plans (11/12/13) are sequenced into separate waves because they share `routes/create/+page.svelte`. Backend plans 05/06/07/08 share append-only edits to `connector.py`/`main.py` (distinct methods + router includes — the established Phase-1..3 pattern). **SDN integration has MEDIUM-LOW research confidence (research SUMMARY.md Open Questions)** — a dedicated SDN spike must precede implementation, covering reload/applied-state polling, version floor, and partial-node-offline behavior. **noVNC needs a dedicated spike** for vncticket exact-encoding (must be URL-encoded exactly once — Pitfall 3 + double-encoding gotcha), reverse-proxy WebSocket header forwarding (Upgrade/Connection/proxy_buffering), and self-signed-cert handling. **Community-scripts integration needs its own spike** for non-interactive invocation (whiptail bypass), `pct exec` output streaming, metadata JSON stability, attribution, and commit pinning policy. VMID race must be addressed here via app-level per-cluster lock + reserved-VMID set (Pitfall 1). Cloud-Init must validate that a `content=snippets`-enabled storage exists at cluster onboarding time (Pitfall 4) and call `qm cloudinit update` after every snippet write.
 
 ### Phase 5: Polish & Operational Hardening
 **Goal**: The product is mobile-usable, secure-by-default for long-lived deployments, self-updating, and packaged for one-line install into a single production-ready LXC.
@@ -155,7 +156,7 @@ Plans:
 | 1. Foundation | 9/10 | Executing | - |
 | 2. Multi-Cluster Inventory, Quotas & Audit | 0/TBD | Not started | - |
 | 3. Job Queue & Lifecycle | 7/7 | Complete | 2026-05-16 |
-| 4. Provisioning, Networking & Console | 0/13 | Planned | - |
+| 4. Provisioning, Networking & Console | 0/14 | Planned | - |
 | 5. Polish & Operational Hardening | 0/TBD | Not started | - |
 
 ## Cross-Cutting Concerns
