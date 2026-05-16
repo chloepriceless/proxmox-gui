@@ -2,111 +2,31 @@
 phase: 04-provisioning-networking-console
 reviewed: 2026-05-16T00:00:00Z
 depth: standard
-files_reviewed: 95
+files_reviewed: 18
 files_reviewed_list:
-  - backend/alembic/versions/0006_phase4.py
-  - backend/app/catalog/__init__.py
-  - backend/app/catalog/routes.py
-  - backend/app/catalog/service.py
-  - backend/app/catalog/snapshot.json
-  - backend/app/clusters/connector.py
-  - backend/app/console/__init__.py
-  - backend/app/console/proxy.py
-  - backend/app/console/routes.py
-  - backend/app/console/schemas.py
-  - backend/app/iso/__init__.py
-  - backend/app/iso/cloud_images.py
-  - backend/app/iso/routes.py
-  - backend/app/iso/service.py
+  - backend/app/clusters/routes.py
+  - backend/app/clusters/schemas.py
+  - backend/app/clusters/service.py
   - backend/app/jobs/provisioning_functions.py
-  - backend/app/jobs/worker.py
-  - backend/app/main.py
-  - backend/app/models/__init__.py
-  - backend/app/models/catalog_pin.py
-  - backend/app/models/network_scope.py
-  - backend/app/models/notification_seen.py
-  - backend/app/networks/__init__.py
-  - backend/app/networks/routes.py
-  - backend/app/networks/schemas.py
-  - backend/app/networks/scoping.py
-  - backend/app/networks/service.py
-  - backend/app/notifications/__init__.py
-  - backend/app/notifications/routes.py
-  - backend/app/notifications/service.py
-  - backend/app/provisioning/__init__.py
-  - backend/app/provisioning/cloudinit.py
-  - backend/app/provisioning/routes.py
-  - backend/app/provisioning/schemas.py
-  - backend/app/provisioning/service.py
-  - backend/pyproject.toml
-  - backend/tests/conftest.py
   - backend/tests/test_catalog.py
-  - backend/tests/test_cloudinit.py
-  - backend/tests/test_console.py
-  - backend/tests/test_iso.py
-  - backend/tests/test_migrations.py
-  - backend/tests/test_models_metadata.py
-  - backend/tests/test_networks.py
-  - backend/tests/test_notifications.py
-  - backend/tests/test_provisioning.py
-  - backend/tests/test_schema_invariants.py
-  - deploy/caddy/Caddyfile.template
-  - frontend/src/lib/api/catalog.ts
-  - frontend/src/lib/api/client.ts
-  - frontend/src/lib/api/console.ts
-  - frontend/src/lib/api/index.ts
-  - frontend/src/lib/api/iso.ts
-  - frontend/src/lib/api/networks.ts
-  - frontend/src/lib/api/notifications.ts
-  - frontend/src/lib/api/provisioning.ts
+  - backend/tests/test_clusters.py
+  - frontend/.eslintignore
+  - frontend/.prettierignore
+  - frontend/src/lib/api/clusters.ts
   - frontend/src/lib/api/types.ts
   - frontend/src/lib/components/console/ConsoleTab.svelte
   - frontend/src/lib/components/console/console-tab.ts
-  - frontend/src/lib/components/inventory/provisioning-banner.ts
-  - frontend/src/lib/components/layout/Topbar.svelte
-  - frontend/src/lib/components/networks/NetworksTab.svelte
-  - frontend/src/lib/components/networks/networks-tab.ts
-  - frontend/src/lib/components/notifications/NotificationBell.svelte
-  - frontend/src/lib/components/notifications/notification-feed.ts
-  - frontend/src/lib/components/shared/EmptyState.svelte
-  - frontend/src/lib/components/shared/HelpTooltip.svelte
-  - frontend/src/lib/components/ui/radio-group/index.ts
-  - frontend/src/lib/components/ui/radio-group/radio-group-item.svelte
-  - frontend/src/lib/components/ui/radio-group/radio-group.svelte
-  - frontend/src/lib/components/wizard/CatalogBrowser.svelte
-  - frontend/src/lib/components/wizard/CloudInitEditor.svelte
-  - frontend/src/lib/components/wizard/CloudInitYamlPane.svelte
-  - frontend/src/lib/components/wizard/IsoLibrary.svelte
-  - frontend/src/lib/components/wizard/LxcResourcesStep.svelte
-  - frontend/src/lib/components/wizard/LxcTemplateStep.svelte
-  - frontend/src/lib/components/wizard/NetworkPicker.svelte
-  - frontend/src/lib/components/wizard/NodeSelect.svelte
-  - frontend/src/lib/components/wizard/PathPicker.svelte
-  - frontend/src/lib/components/wizard/QuotaDeltaLine.svelte
-  - frontend/src/lib/components/wizard/ReviewStep.svelte
-  - frontend/src/lib/components/wizard/ScriptDetailPanel.svelte
-  - frontend/src/lib/components/wizard/VmResourcesStep.svelte
-  - frontend/src/lib/components/wizard/VmSourceStep.svelte
-  - frontend/src/lib/components/wizard/WizardChrome.svelte
-  - frontend/src/lib/components/wizard/cloudinit-form.ts
-  - frontend/src/lib/components/wizard/iso-library.ts
-  - frontend/src/lib/components/wizard/lxc-wizard.ts
-  - frontend/src/lib/components/wizard/node-fit.ts
-  - frontend/src/lib/components/wizard/vm-wizard.ts
-  - frontend/src/lib/components/wizard/wizard-model.ts
-  - frontend/src/lib/stores/wizardDraft.svelte.ts
-  - frontend/src/routes/admin/+page.server.ts
-  - frontend/src/routes/admin/+page.svelte
-  - frontend/src/routes/admin/teams/[id]/+page.svelte
-  - frontend/src/routes/create/+page.server.ts
+  - frontend/src/routes/console/embed/+page.svelte
+  - frontend/src/routes/console/embed/+page.ts
   - frontend/src/routes/create/+page.svelte
-  - frontend/src/routes/inventory/+page.svelte
-  - frontend/src/routes/inventory/[cluster]/[vmid]/+page.svelte
+  - frontend/tests/console-tab.test.ts
+  - frontend/tests/node-fit.test.ts
+  - frontend/tsconfig.json
 findings:
   critical: 0
-  warning: 7
-  info: 9
-  total: 16
+  warning: 3
+  info: 5
+  total: 8
 status: issues_found
 ---
 
@@ -114,315 +34,208 @@ status: issues_found
 
 **Reviewed:** 2026-05-16T00:00:00Z
 **Depth:** standard
-**Files Reviewed:** 95
+**Files Reviewed:** 18
 **Status:** issues_found
 
 ## Summary
 
-Phase 4 ships the provisioning wizard, SDN-aware networking, ISO/cloud-image
-library, community-scripts catalog, embedded-noVNC console relay, and the
-notification bell. The code is consistently well-structured, heavily
-documented against the spike and pitfall references, and the Proxmox-specific
-constraints from `CLAUDE.md` are largely respected:
+This is a **scoped re-review** of the Phase 04 gap-closure source changes from
+plans 04-15 (embedded noVNC console, CON-01), 04-16 (node-fit data route,
+VM-10), and 04-17 (community-script supply-chain hardening, WR-01). It replaces
+the earlier full-phase 04-REVIEW.md (95 files); the gap-closure plans were
+written specifically to close findings from that earlier pass. The 59 vendored
+noVNC v1.6.0 files under `frontend/src/lib/vendor/novnc/` were excluded from
+scope as instructed.
 
-- Every mutating route enqueues a job and returns 202 (constraint #1).
-- UPIDs are persisted before polling via the shared `_run_polled_job` /
-  `dispatch_and_poll` path (constraint #2).
-- The console relay mints its own `vncproxy` ticket just-in-time and
-  URL-encodes the `vncticket` exactly once with `quote(ticket, safe="")`
-  (constraints #3/#4 — verified by `test_relay_encodes_vncticket_exactly_once`).
-- Provisioning resolves a per-team privsep connector and carries `pool=` into
-  every PVE create (constraint #7).
-- The community-script install stage is fetched at a pinned commit SHA and run
-  inside the created LXC via `pct exec` (constraint #8).
-- SDN reads correctly use the cluster-admin connector with app-side per-team
-  scoping (spike 04-02 §7).
-- The ISO download SSRF guard rejects non-http(s) schemes before enqueueing.
+**Two prior-review findings are confirmed closed:**
 
-No critical (security-critical / data-loss / crash) issues were found. The
-findings below are warnings (logic gaps and a supply-chain hardening gap that
-could cause real failures) and info-level improvements. The most notable
-warnings are: a supply-chain weakness in how the community-script install URL
-is built, a missing `sandbox` attribute on the console iframe, a race window
-in the catalog snapshot cache, and a deprecated `datetime.utcnow()` usage that
-will break on Python 3.12+ tz-aware comparisons.
+- **WR-01 (community-script `commit_sha` interpolated unvalidated)** — closed by
+  plan 04-17. `_validate_commit_sha` (`^[0-9a-f]{40}$`) and `_validate_slug`
+  (`^[a-z0-9][a-z0-9-]*$`) now run both at the `run_community_script` job
+  boundary and again inside `_build_install_command` (defense in depth), with
+  comprehensive tests covering uppercase, short, non-hex, shell-metacharacter,
+  non-string, path-traversal, leading-hyphen, and empty inputs. The fail-fast
+  path is audited (`test_run_community_script_malformed_input_is_audited`) and
+  never dispatches the LXC create. This is solid.
+- **IN-06 carryover (no Proxmox-host exposure to the browser)** — the console
+  iframe path is now layered correctly. `isSafeRelayUrl` rejects `:8006` and
+  `vncwebsocket`; `consoleEmbedSrc` / `consoleIframeSrc` gate the composed
+  `/console/embed?ws=` URL; `+page.ts`'s `safeWsParam` adds an absolute-URL /
+  protocol-relative pre-filter; and `+page.svelte` builds the WebSocket URL from
+  `window.location.host`, never from any relay-supplied host. The vncticket and
+  the PVE `:8006` host never reach the browser.
+
+No critical issues found. The Warnings below are correctness/robustness gaps:
+a pre-existing latent bug in `_team_id_from_userid` that the gap-closure code
+sits next to, a defense-in-depth weakness in the relay-URL substring check, and
+an unguarded RFB construction in the embed page. Info items are minor quality
+notes.
 
 ## Warnings
 
-### WR-01: Community-script install command interpolates `commit_sha` straight into a container `bash -c` string
+### WR-01: `_team_id_from_userid` parse is fragile and the `backfill_bootstrap` call site has a misleading short-circuit
 
-**File:** `backend/app/jobs/provisioning_functions.py:145-160`
-**Issue:** `_build_install_command` builds
-`yes y | bash -c "$(curl -fsSL {script_url})"` where `script_url` embeds both
-`slug` and `commit_sha` by f-string interpolation, then wraps it in
-`["bash", "-c", remote]`. The node-side `shlex.quote` in `_ssh_pct_exec`
-(connector.py:1081) protects the *node* shell, but the `remote` string is
-itself a shell command that runs inside the container's bash. `commit_sha`
-comes from `entry.commit_sha`, which is the active `catalog_pin.commit_sha` —
-operator-controlled and at sync time is whatever the GitHub API returns as the
-default-branch HEAD. `slug` is validated against the catalog entry set so it
-is safe, but `commit_sha` is not validated to be a 40-char hex SHA anywhere.
-A pin row carrying a crafted value (e.g. `main/../../evil`) would be
-interpolated into the URL and the in-container `bash -c`. This is the exact
-supply-chain surface CLAUDE.md constraint #8 ("Pin to commit hashes") is meant
-to close.
-**Fix:** Validate `commit_sha` is a 40-char lowercase hex string before it is
-ever used to build a URL or a command. Reject it at `sync_catalog` time and
-defensively re-check in `_build_install_command`:
+**File:** `backend/app/clusters/service.py:303-309`
+**Issue:** `backfill_bootstrap` builds its `team_ids` list with:
 ```python
-import re
-_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
-
-def _build_install_command(*, slug: str, commit_sha: str) -> list[str]:
-    if not _SHA_RE.match(commit_sha):
-        raise ValueError(f"refusing unpinned/invalid commit_sha: {commit_sha!r}")
-    script_url = f"{_SCRIPTS_REPO_RAW}/{commit_sha}/install/{slug}-install.sh"
-    ...
+"team_ids": [r.cluster_id and _team_id_from_userid(r.userid) for r in results],
 ```
-Also validate in `sync_catalog` (`backend/app/catalog/service.py:286`) right
-after `new_sha = commit_payload["sha"]`.
+The `r.cluster_id and ...` short-circuit is almost certainly not intentional.
+`cluster_id` is an integer FK: when it is a truthy non-zero id the expression
+evaluates `_team_id_from_userid(r.userid)` (correct), but a row with
+`cluster_id == 0` would silently yield `0` and `cluster_id is None` would yield
+`None` — the list would contain garbage instead of a team id. The guard reads
+as dead defensive code that actually corrupts the payload. Separately,
+`_team_id_from_userid` does
+`int(userid.removeprefix("gui-team-").split("@", 1)[0])` with no error
+handling — a `TeamClusterToken.userid` that does not match `gui-team-<id>@pve`
+(a manually-inserted row, or a future userid convention) raises an unhandled
+`ValueError` that escapes as a bare 500. This file is in scope because the
+gap-closure plans touched `service.py`; the bug is pre-existing but adjacent.
+**Fix:** Drop the misleading short-circuit and make the parse defensive:
+```python
+def _team_id_from_userid(userid: str) -> int | None:
+    """Extract team_id from PVE userid format ``gui-team-<id>@pve``."""
+    try:
+        return int(userid.removeprefix("gui-team-").split("@", 1)[0])
+    except (ValueError, AttributeError):
+        return None
 
-### WR-02: Console iframe has no `sandbox` attribute and no per-frame CSP
+# call site:
+"team_ids": [
+    tid for r in results
+    if (tid := _team_id_from_userid(r.userid)) is not None
+],
+```
 
-**File:** `frontend/src/lib/components/console/ConsoleTab.svelte:156-163`
-**Issue:** The `<iframe>` is rendered with `src={iframeSrc}` and no `sandbox`
-attribute. The relay endpoint (`/api/v1/ws/console/...`) is a WebSocket route,
-so pointing an `<iframe src>` at it directly will not actually load a noVNC
-client — a WebSocket URL is not an HTML document. Either the iframe is
-expected to load an HTML page that is not present in the reviewed files (a
-gap), or the relay path is wrong for an iframe `src`. Separately, even once a
-real noVNC client page exists, an embedded console iframe should carry a
-restrictive `sandbox` (e.g. `allow-scripts allow-same-origin`) so a
-compromised console payload cannot navigate the top frame or trigger
-downloads. The Caddyfile only sets `X-Frame-Options: SAMEORIGIN` globally and
-explicitly defers CSP `frame-ancestors` to Phase 5.
-**Fix:** Confirm what document the iframe loads — if `relay_url` is meant to be
-consumed by a noVNC client component the iframe `src` should point at that
-client page, not the raw WebSocket relay path. Add a `sandbox` attribute once
-the target is an HTML document:
+### WR-02: `isSafeRelayUrl` uses a substring test that accepts an absolute URL merely *containing* the relay prefix
+
+**File:** `frontend/src/lib/components/console/console-tab.ts:37-48`
+**Issue:** The final branch returns `relayUrl.includes('/api/v1/ws/console/')`
+— a substring test, not a prefix test. An absolute URL such as
+`wss://attacker.example/x?next=/api/v1/ws/console/y` passes `isSafeRelayUrl`:
+it has no `:8006`, no `/vncwebsocket`, and the substring is present. It is not
+currently exploitable end-to-end — `consoleEmbedSrc` only feeds the value into
+a `/console/embed?ws=` query value, and `+page.ts`'s `safeWsParam` separately
+rejects absolute / protocol-relative URLs before calling `isSafeRelayUrl` — but
+this function is documented as *the single notion of "safe relay path"* and is
+reused as the load-function gate. A future caller trusting `isSafeRelayUrl`
+directly (without the `safeWsParam` pre-filter) would have a CON-03 hole. The
+guard should be self-sufficient, not dependent on every caller pre-filtering.
+**Fix:** The only valid relay value is a same-origin relative path, so reject
+absolute URLs by construction rather than relying on a substring presence test:
+```typescript
+export function isSafeRelayUrl(relayUrl: string): boolean {
+  if (!relayUrl) return false;
+  if (relayUrl.includes(':8006')) return false;
+  if (relayUrl.includes('/vncwebsocket')) return false;
+  // The only valid relay value is a same-origin relative path.
+  return relayUrl.startsWith('/api/v1/ws/console/');
+}
+```
+This also makes the existing test
+`'rejects a raw PVE vncwebsocket URL even without an explicit port'` pass for
+the right reason (prefix failure) rather than incidentally via the
+`/vncwebsocket` check.
+
+### WR-03: `/console/embed` RFB construction is unguarded — a synchronous throw leaves a permanent "Connecting…" overlay
+
+**File:** `frontend/src/routes/console/embed/+page.svelte:42-80`
+**Issue:** `onMount` sets `status = 'connecting'`, then constructs
+`new RFB(screenEl, relayUrl, {})` and registers listeners directly. If the
+vendored RFB constructor throws synchronously — a malformed URL, an unsupported
+browser environment, or any internal error — the exception propagates out of
+`onMount`, the cleanup return is never registered, and `status` is stuck at
+`'connecting'`: the user sees a permanent "Connecting…" overlay with no
+recovery and no "session ended" message. The `disconnect` event handler covers
+a connection that *fails after opening*, not a construction that *fails
+outright*.
+**Fix:** Wrap the RFB construction in try/catch and fall to a terminal status:
 ```svelte
-<iframe
-  src={iframeSrc}
-  sandbox="allow-scripts allow-same-origin"
-  title={`Console — ${name}`}
-  ...
-></iframe>
+let rfb: RFB;
+try {
+  rfb = new RFB(screenEl, relayUrl, {});
+} catch {
+  status = 'ended';
+  return;
+}
+rfb.scaleViewport = true;
+// ...rest unchanged
 ```
-
-### WR-03: `datetime.utcnow()` is deprecated and produces naive datetimes
-
-**File:** `backend/app/catalog/service.py:296,302`
-**Issue:** `sync_catalog` writes `synced_at=datetime.utcnow()`. `utcnow()` is
-deprecated in Python 3.12 and returns a naive datetime. The notification
-service (`notifications/service.py:38-49`) had to add `_as_aware` precisely
-because naive DB timestamps crash tz-aware comparisons — the catalog pin path
-re-introduces the same hazard. `load_catalog` reads `pin.synced_at` back and
-calls `.isoformat()` on it (service.py:158-160); a naive value yields an
-ISO string with no offset, which `last_reviewed` then surfaces inconsistently
-versus the snapshot floor's `synced_at` (which the snapshot.json stores with a
-`Z` suffix).
-**Fix:** Use the timezone-aware now consistent with the rest of the codebase:
-```python
-from datetime import UTC, datetime
-...
-pin.synced_at = datetime.now(UTC)
-```
-
-### WR-04: Catalog snapshot in-process cache has a read-modify race and is never invalidated
-
-**File:** `backend/app/catalog/service.py:65-66,132-137`
-**Issue:** `_SNAPSHOT_CACHE` is a module-global lazily filled by `_load_snapshot`
-with no lock. Under concurrent first-request load two coroutines can both see
-`None` and both call `_SNAPSHOT_PATH.read_text()` + `json.loads`. The data is
-identical so there is no corruption, but it is wasted I/O and the comment
-claims the cache is the single parse. The connector's `ResourceCache`
-deliberately uses an `asyncio.Lock` for exactly this thundering-herd case;
-the snapshot cache should follow the same discipline. Lower severity than a
-data bug, but flagged because the pattern is inconsistent with the project's
-own established convention.
-**Fix:** The snapshot is static per release, so the simplest fix is to parse it
-eagerly at import time (module-level constant) rather than lazily, removing the
-race entirely:
-```python
-_SNAPSHOT_CACHE: dict = json.loads(_SNAPSHOT_PATH.read_text())
-
-def _load_snapshot() -> dict:
-    return _SNAPSHOT_CACHE
-```
-
-### WR-05: Network picker silently picks the first team when a user belongs to multiple teams on a cluster
-
-**File:** `backend/app/networks/routes.py:94-99`
-**Issue:** `get_networks` does `team_id = tokens[0].team_id` with the comment
-"pick the first team". A user can be a member of more than one team, and more
-than one of those teams can have a `team_cluster_token` on the same cluster.
-The order of `tokens` is whatever `_team_tokens_for_cluster` returns (no
-explicit `ORDER BY` visible), so which team's SDN grants the picker shows is
-non-deterministic. A user provisioning into team B can be shown team A's
-granted VNets, then the create POST (which names `team_id` explicitly in the
-body) enforces the real team — producing a confusing picker/create mismatch.
-**Fix:** The picker should be parameterised by the team the wizard is
-provisioning into. Accept a `team_id` query param on `GET .../networks` and
-validate the principal is a member of it (mirroring
-`provisioning.service._require_team_membership`), instead of guessing
-`tokens[0]`. Until then, at minimum sort `tokens` deterministically and
-document the limitation.
-
-### WR-06: `_resolve_ostemplate` builds a template volid that may not exist on storage
-
-**File:** `backend/app/provisioning/service.py:371-386`
-**Issue:** `_resolve_ostemplate` synthesises
-`{storage}:vztmpl/{os_name}-{version}-{suffix}_amd64.tar.zst` from the catalog
-entry's `os`/`version` with a hardcoded `_amd64` arch and a
-`standard`/`default` suffix heuristic. It does not verify the template is
-actually present on the chosen storage. If the operator has not pre-downloaded
-that exact template the `lxc.community-script` job's stage-1 `create_lxc` will
-fail at PVE with an opaque "volume does not exist" error, after the VMID has
-already been reserved and an audit `pending` row written. The plain-LXC path
-avoids this because the user picks an `ostemplate` from a real list; the
-community-script path fabricates it.
-**Fix:** Preflight the template — list `content=vztmpl` volumes on the chosen
-storage (the connector already has `storages_for_content` / a content listing
-path) and reject with a clear 422 ("the required container template
-`<name>` is not available on storage `<storage>` — download it first") before
-reserving the VMID. At minimum, surface a curated friendly error if stage 1
-fails on a missing-template condition.
-
-### WR-07: ISO download `filename` and `storage` are not validated for path traversal before reaching PVE
-
-**File:** `backend/app/iso/service.py:108-169`, `backend/app/iso/routes.py:88-95`
-**Issue:** `enqueue_iso_download` validates the URL *scheme* (good — SSRF
-guard) but passes `filename` and `storage` straight into the
-`storage.download` job payload, which the worker hands to
-`connector.download_url` → `POST .../storage/{storage}/download-url`. The
-`IsoDownloadRequest` schema bounds only length (`max_length=256`/`128`); a
-`filename` like `../../etc/something` or one containing slashes is accepted.
-PVE's `download-url` endpoint generally rejects bad filenames, so this is a
-defense-in-depth gap rather than a confirmed traversal, but the GUI is the
-trust boundary here (a team-scoped, non-admin-gated endpoint per D-17) and
-should not rely on PVE's input validation alone.
-**Fix:** Reject a `filename` containing `/`, `\`, or `..`, and constrain it to
-a safe character set before enqueueing:
-```python
-import re
-_SAFE_FILENAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
-...
-if not _SAFE_FILENAME_RE.match(filename):
-    raise HTTPException(422, detail="Invalid download filename.")
-```
-Apply the same validation in the `iso-library.ts` `filenameFromUrl` helper
-output as a UX nicety (the backend remains the trust boundary).
 
 ## Info
 
-### IN-01: Naive `datetime` in `0006_phase4.py` server defaults vs. application writes
+### IN-01: `ConsoleTab.onIframeError` cannot detect a dropped relay session — the "Console session ended." strip is unreachable via this path
 
-**File:** `backend/alembic/versions/0006_phase4.py:54-58,86-90,107-111`
-**Issue:** The three new tables use `server_default=sa.text("CURRENT_TIMESTAMP")`
-which SQLite stores naive. Combined with WR-03 the application then sometimes
-writes naive `utcnow()` and sometimes tz-aware `datetime.now(UTC)`. This is a
-consistency smell across the schema. Not a bug on its own (the
-`notification_seen` reader already normalises via `_as_aware`).
-**Fix:** Pick one convention project-wide; the codebase already trends toward
-`_as_aware`-style normalisation on read, so document that DB datetimes are
-naive-UTC by contract.
+**File:** `frontend/src/lib/components/console/ConsoleTab.svelte:83-86,169-175`
+**Issue:** `onIframeError` is wired to the iframe's `onerror` to drive the
+`'disconnected'` state. An `<iframe onerror>` fires only when the document
+itself fails to *load* — it does not fire when the WebSocket inside the
+successfully-loaded `/console/embed` page later drops. So a dropped console
+session (the exact case the `bg-warning/10` "Console session ended." strip and
+its Reconnect button exist for) will not transition the parent `ConsoleTab` out
+of `'live'`. The embed page tracks its own `'ended'` status internally
+(`+page.svelte:64-67`) but never signals it back to the parent.
+**Fix:** Have `/console/embed` `postMessage` its `connected` / `ended` status to
+`window.parent`, and have `ConsoleTab` listen for that message to drive the
+`disconnected` transition. May be a conscious deferral — flagging so it is a
+decision, not an oversight.
 
-### IN-02: `_resolve_team_pool` raises bare `RuntimeError` for an operator-reachable state
+### IN-02: `_build_install_env` ships a sentinel `_GUI_ROOTFS` key into the container's process environment
 
-**File:** `backend/app/provisioning/service.py:107-112`
-**Issue:** When no `team_cluster_tokens` row exists the function raises a plain
-`RuntimeError`. The docstring asserts the connector resolution above would have
-failed first, which is true today, but a `RuntimeError` bubbling out of a
-request handler becomes a generic 500 with a stack trace rather than a curated
-message. Low risk because the path is currently unreachable.
-**Fix:** Raise `HTTPException(500, ...)` with a curated detail, or assert the
-invariant explicitly so the intent is clear.
+**File:** `backend/app/jobs/provisioning_functions.py:216-242`
+**Issue:** `_build_install_env` computes `rootfs` from the payload, never uses
+it for any env value, then exports `"_GUI_ROOTFS": rootfs` purely so "a future
+maintainer sees it is intentionally not part of the env block." This injects an
+unexpected variable into the upstream install script's environment inside the
+user's container. Harmless today, but polluting a third-party script's env
+namespace to communicate a maintainer note is a code smell — a comment does the
+job without shipping live state. (This was IN-07 in the earlier full review and
+is still present.)
+**Fix:** Drop the `rootfs` computation and the `_GUI_ROOTFS` key; record the
+intent as a comment:
+```python
+# NOTE: config["rootfs"] is intentionally NOT in the install env — stage 1's
+# create_lxc already applied it.
+```
 
-### IN-03: `import json as _json` inside a function body
+### IN-03: `stdin_data="y\n" * 50` is an undocumented magic affirmative-input constant
 
-**File:** `backend/app/provisioning/service.py:303`
-**Issue:** `enqueue_create_qemu` does `import json as _json` mid-function then
-`int(_json.loads(clone_job.payload)["newid"])`. The module already imports
-nothing for json at top level; an inline aliased import is a minor style
-inconsistency (the rest of the file imports at module scope).
-**Fix:** Move `import json` to the module header and drop the `_json` alias.
+**File:** `backend/app/jobs/provisioning_functions.py:376-379`
+**Issue:** Stage 2 feeds `stdin_data="y\n" * 50` to `lxc_exec` while the install
+command itself already prefixes `yes y |`. The `50` is unexplained — if an
+upstream install script ever issues more than 50 interactive `read` prompts the
+stdin stream is exhausted and the install hangs or fails. The double
+affirmative (`yes y |` in the pipeline *and* 50 literal `y\n` lines on stdin)
+is also undocumented as to why both are needed.
+**Fix:** Promote `50` to a named constant with a comment, e.g.
+`_AFFIRMATIVE_STDIN_LINES = 50` plus a one-line note on the `yes y |` vs.
+stdin-feed distinction.
 
-### IN-04: `CloudInitForm` (a dataclass) and `CloudInitPreviewRequest` (Pydantic) duplicate the same field set
+### IN-04: `get_registry` builds an on-demand registry with a `None` first argument
 
-**File:** `backend/app/provisioning/cloudinit.py:56-77`, `backend/app/provisioning/routes.py:175-188`
-**Issue:** The cloud-init form fields are declared twice — once as a
-`@dataclass` in the pure module and once as a Pydantic model in the route —
-and `cloudinit_preview` hand-copies all ten fields between them
-(routes.py:244-255). A new field must be added in three places. Acceptable
-given the deliberate "pure module, no Pydantic dependency" design, but worth a
-note.
-**Fix:** Consider a single shared field list / helper, or accept the
-duplication explicitly with a comment cross-referencing both definitions.
+**File:** `backend/app/clusters/routes.py:42-57`
+**Issue:** The test/harness fallback calls
+`PVEConnectorRegistry(None, async_sessionmaker(...))`, passing `None` as the
+first positional argument. If a test that does not run the lifespan reaches a
+registry method that dereferences that argument, the failure is an opaque
+`AttributeError` rather than a clear "registry not wired" error. Works for the
+current tests; the `None` is implicit.
+**Fix:** Add an inline comment naming what the `None` first argument is, or have
+registry methods that need it raise an explicit message. Low priority — no
+current failing path.
 
-### IN-05: `render_cloudinit_preview` injects raw user values into YAML lines without escaping
+### IN-05: `create/+page.svelte` `clusterNodes` `$effect` re-fetches wholesale on any `clusterId` change
 
-**File:** `backend/app/provisioning/cloudinit.py:188-226`
-**Issue:** The preview renderer builds YAML lines with f-strings
-(`f"  - name: {form.ciuser}"`, `f"  - {pkg}"`, `f"  - {cmd}"`). This is a
-*display-only* preview (the docstring is explicit it makes no PVE call), and
-`ciuser` is regex-validated, but `packages` / `runcmd` / `nameservers` are
-free text rendered verbatim. A value containing a newline or YAML
-metacharacters would render a misleading preview pane. Not a security issue
-(the preview is never fed back to PVE — the actual create uses discrete config
-keys) but the rendered YAML can misrepresent what will run.
-**Fix:** Either YAML-quote interpolated scalar values, or add a one-line
-comment clarifying the preview is best-effort cosmetic and the authoritative
-config is the discrete `to_pve_config` output.
-
-### IN-06: Console mint route returns `ticket` + `port` the browser never uses
-
-**File:** `backend/app/console/routes.py:44-59`, `backend/app/console/schemas.py:23-35`
-**Issue:** `VncProxyResponse` carries `ticket` (the raw `PVEVNC:...` value) and
-`port` even though the relay (`console/proxy.py`) mints its OWN fresh ticket
-per connection and the browser only ever uses `relay_url`. Sending the raw PVE
-ticket to the browser at all — even though it expires in ~30-40s and is
-unused — is a small unnecessary exposure that slightly contradicts the
-module's own "the browser never holds a Proxmox ticket" design statement.
-`test_console.py` even asserts the body *contains* the ticket.
-**Fix:** Consider dropping `ticket`/`port` from the response (or returning them
-only behind a debug flag). If they are kept for "completeness" as the docstring
-says, document why the browser receiving an unused live PVE ticket is
-acceptable.
-
-### IN-07: `_build_install_env` carries an unused `_GUI_ROOTFS` env var into the container
-
-**File:** `backend/app/jobs/provisioning_functions.py:173-199`
-**Issue:** The function reads `rootfs` from the config and exports it as
-`_GUI_ROOTFS` purely so "a future maintainer sees it is intentionally not part
-of the env block" (the comment). Exporting a deliberately-unused variable into
-the install stage's environment is dead state shipped to the container.
-**Fix:** Drop the `rootfs` read and the `_GUI_ROOTFS` key entirely; a code
-comment conveys intent without polluting the container env.
-
-### IN-08: `findCreateJob` matches by cluster only — wrong banner on a busy cluster
-
-**File:** `frontend/src/lib/components/inventory/provisioning-banner.ts:33-41`
-**Issue:** The provisioning banner picks "the newest create job for the
-cluster" because notification/job rows carry no vmid. On a cluster where
-several creates run concurrently, the detail page of VM A can show the banner
-state of VM B's create job. The docstring acknowledges this. Cosmetic, but it
-can show a misleading "Provisioning failed" banner on a VM that succeeded.
-**Fix:** Thread the reserved `vmid` (already returned in
-`ProvisioningJobAcceptedResponse`) through to the job row, or scope the match
-by `target_id` once jobs carry it, so the banner is per-resource.
-
-### IN-09: `console_relay` broad `except Exception` swallows all upstream/relay failures into one log line
-
-**File:** `backend/app/console/proxy.py:188-205,236-249`
-**Issue:** Three separate `except Exception` blocks (ownership resolve, ticket
-mint, upstream connect/relay) all collapse to a 1008 close or a debug/info log.
-The `noqa: BLE001` comments acknowledge this is intentional, and for a
-WebSocket relay closing on any failure is reasonable, but a genuine
-programming error (e.g. an `AttributeError` in `resolve_resource`) is
-indistinguishable from an expected cross-tenant rejection in the logs.
-**Fix:** Narrow the ownership-resolve catch to the expected `HTTPException` /
-PVE exception types and let unexpected exceptions log at `error` level so a
-real bug is not masked as a routine policy close.
+**File:** `frontend/src/routes/create/+page.svelte:182-232`
+**Issue:** The `clusterNodes` effect depends on `clusterId` and performs two
+sequential network reads (inventory, then node-resources). The `cancelled` flag
+correctly prevents stale writes, but there is no fetch dedup — every effect
+re-run issues a fresh inventory + resources pair. For the current
+single-cluster wizard (`clusterId` is stable, derived from `data.clusters[0]`)
+this never re-runs in practice, so it is not a bug today.
+**Fix:** No action needed for v1. If a cluster picker is added later, key the
+fetch on the resolved id value. Noted only so the latent cost is on record.
 
 ---
 
