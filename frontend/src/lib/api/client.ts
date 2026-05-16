@@ -35,6 +35,11 @@ import * as auditModule from './audit';
 import * as quotasModule from './quotas';
 import * as jobsModule from './jobs';
 import * as lifecycleModule from './lifecycle';
+import * as provisioningModule from './provisioning';
+import * as catalogModule from './catalog';
+import * as networksModule from './networks';
+import * as isoModule from './iso';
+import * as consoleModule from './console';
 
 export { ApiError } from '$lib/utils/api';
 export type * from './types';
@@ -51,6 +56,11 @@ export const api = {
   quotas: quotasModule,
   jobs: jobsModule,
   lifecycle: lifecycleModule,
+  provisioning: provisioningModule,
+  catalog: catalogModule,
+  networks: networksModule,
+  iso: isoModule,
+  console: consoleModule,
 } as const;
 
 export type Api = typeof api;

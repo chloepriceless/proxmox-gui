@@ -671,3 +671,335 @@ export interface BackupSchedule {
  * distinct alias so the page reads intentionally.
  */
 export type ScheduledBackupRow = BackupSchedule;
+
+// ===========================================================================
+// Phase 4 — Provisioning / Networking / Console (Plan 04-09)
+//
+// Hand-written shapes mirroring the shipped Wave-2 backend Pydantic schemas:
+//   - provisioning  → app.provisioning.schemas + app.provisioning.routes
+//   - catalog       → app.catalog.routes + app.catalog.service
+//   - networks      → app.networks.schemas
+//   - iso           → app.iso.routes + app.iso.cloud_images
+//   - console       → app.console.schemas
+// ===========================================================================
+
+// --- Provisioning (Plan 04-04 backend) -------------------------------------
+
+/**
+ * One NIC's network config — mirrors `app.provisioning.schemas.NetworkConfig`.
+ *
+ * `kind` selects an SDN VNet or a legacy bridge; `id` is the VNet/bridge name.
+ * `ip_mode` is `dhcp` (default) or `static` — a static address MUST supply
+ * `ip_cidr` (the backend's `model_validator` rejects a static NIC without it).
+ */
+export interface NetworkConfigInput {
+  kind?: 'sdn-vnet' | 'bridge';
+  id: string;
+  ip_mode?: 'dhcp' | 'static';
+  ip_cidr?: string | null;
+  gateway?: string | null;
+  vlan_tag?: number | null;
+}
+
+/**
+ * Body of `POST /clusters/{id}/provisioning/lxc` — mirrors
+ * `app.provisioning.schemas.CreateLxcRequest` field-for-field.
+ *
+ * `team_id` names the owning team (a create has no existing resource to
+ * resolve the team from). `ostemplate` is the vztmpl volume id.
+ */
+export interface CreateLxcRequest {
+  team_id: number;
+  node: string;
+  storage: string;
+  ostemplate: string;
+  hostname: string;
+  cpu_cores: number;
+  memory_mb: number;
+  disk_gb: number;
+  network?: NetworkConfigInput | null;
+  unprivileged?: boolean;
+  nesting?: boolean;
+  features?: string[];
+  ssh_public_keys?: string | null;
+  password?: string | null;
+  start_after_create?: boolean;
+}
+
+/**
+ * Body of `POST /clusters/{id}/provisioning/qemu` — mirrors
+ * `app.provisioning.schemas.CreateQemuRequest`.
+ *
+ * A discriminated model over `source_kind`. For the clone source kinds
+ * (`template-clone` / `vm-clone`) the sizing/network/cloud-init fields are
+ * ignored — the clone copies the source's config — and `source_vmid` is
+ * required; for the non-clone kinds (`cloud-image` / `blank-iso`) the backend
+ * requires `cpu_cores` / `memory_mb` / `disk_gb` / `storage`.
+ */
+export interface CreateQemuRequest {
+  team_id: number;
+  source_kind: 'cloud-image' | 'blank-iso' | 'template-clone' | 'vm-clone';
+  node: string;
+  name: string;
+  storage?: string | null;
+  cpu_cores?: number | null;
+  memory_mb?: number | null;
+  disk_gb?: number | null;
+  network?: NetworkConfigInput | null;
+  /** cloud-image (VM-01) */
+  image_id?: string | null;
+  ci_user?: string | null;
+  ci_password?: string | null;
+  ssh_public_keys?: string | null;
+  /** blank-iso (VM-03) */
+  iso_volid?: string | null;
+  /** template-clone / vm-clone (VM-02 / VM-04) */
+  source_vmid?: number | null;
+  clone_mode?: 'linked' | 'full';
+}
+
+/**
+ * Body of `POST /clusters/{id}/provisioning/community-script` — mirrors
+ * `app.provisioning.schemas.CommunityScriptRequest`.
+ *
+ * `script_slug` names the catalog entry; `script_options` carries the D-07
+ * parsed-option values. `ostemplate` is resolved server-side from the catalog
+ * entry, so it is NOT part of the body.
+ */
+export interface CommunityScriptRequest {
+  team_id: number;
+  node: string;
+  storage: string;
+  script_slug: string;
+  hostname: string;
+  cpu_cores: number;
+  memory_mb: number;
+  disk_gb: number;
+  network?: NetworkConfigInput | null;
+  unprivileged?: boolean;
+  ssh_public_keys?: string | null;
+  script_options?: Record<string, string>;
+}
+
+/**
+ * The `202 Accepted` body for a provisioning create — mirrors
+ * `app.provisioning.schemas.ProvisioningJobAcceptedResponse`.
+ *
+ * Extends `JobAccepted` (`{job_id, state, kind}`) with the app-reserved
+ * `vmid`. D-04: the wizard routes to `/inventory/{cluster}/{vmid}` immediately
+ * on the 202, so the reserved VMID MUST be carried in the response body.
+ */
+export interface ProvisioningJobAccepted extends JobAccepted {
+  vmid: number;
+}
+
+/** One rendered `#cloud-config` line — `injected` marks a PVE default (D-10). */
+export interface YamlLine {
+  text: string;
+  injected: boolean;
+}
+
+/** One hard Cloud-Init validation error — names the offending form field. */
+export interface CloudInitFieldError {
+  field: string;
+  message: string;
+}
+
+/**
+ * The block-hard / warn-soft Cloud-Init validation verdict (D-12) — mirrors
+ * `app.provisioning.routes.CloudInitVerdictOut`. `ok` is false when there are
+ * any `hard_errors`.
+ */
+export interface CloudInitVerdict {
+  hard_errors: CloudInitFieldError[];
+  soft_warnings: string[];
+  ok: boolean;
+}
+
+/**
+ * The Cloud-Init editor form — mirrors
+ * `app.provisioning.routes.CloudInitPreviewRequest` (the body of
+ * `POST .../provisioning/cloudinit/preview`).
+ */
+export interface CloudInitForm {
+  ciuser?: string | null;
+  cipassword?: string | null;
+  sshkeys?: string[];
+  ip_mode?: string;
+  ip_address?: string | null;
+  gateway?: string | null;
+  nameservers?: string[];
+  packages?: string[];
+  runcmd?: string[];
+  source_kind?: string;
+}
+
+/** `200` body of `POST .../provisioning/cloudinit/preview` — lines + verdict. */
+export interface CloudInitPreviewResponse {
+  lines: YamlLine[];
+  verdict: CloudInitVerdict;
+}
+
+// --- Catalog (Plan 04-06 backend) ------------------------------------------
+
+/**
+ * One community-scripts catalog entry — mirrors the `ScriptEntry.to_dict()`
+ * shape from `app.catalog.service`. `commit_sha` + `last_reviewed` are the
+ * LXC-04 attribution stamped from the active `catalog_pin`.
+ */
+export interface CatalogEntry {
+  slug: string;
+  name: string;
+  description: string;
+  categories: string[];
+  type: string;
+  featured: boolean;
+  privileged: boolean;
+  source_url: string;
+  install_methods: Record<string, unknown>[];
+  interface_port: number | null;
+  default_credentials: Record<string, unknown> | null;
+  notes: Record<string, unknown>[];
+  commit_sha: string;
+  last_reviewed: string;
+}
+
+/**
+ * `200` body of `GET /clusters/{id}/catalog` — mirrors
+ * `app.catalog.routes.CatalogListResponse`. `entries` carry the LXC-04
+ * attribution; `view` echoes the requested `curated` / `full` mode.
+ */
+export interface CatalogListResponse {
+  view: string;
+  commit_sha: string;
+  last_reviewed: string;
+  entries: CatalogEntry[];
+}
+
+/**
+ * `200` body of `GET /clusters/{id}/catalog/{slug}` — mirrors
+ * `app.catalog.routes.CatalogEntryResponse` (the entry + its attribution).
+ */
+export interface CatalogEntryResponse {
+  entry: CatalogEntry;
+  attribution: {
+    source_url?: string;
+    commit_sha?: string;
+    last_reviewed?: string;
+  };
+}
+
+/** `200` body of `POST /catalog/sync` — the admin re-pin summary (D-05). */
+export interface CatalogSyncResponse {
+  added: number;
+  updated: number;
+  commit_sha: string;
+}
+
+// --- Networks (Plan 04-07 backend) -----------------------------------------
+
+/**
+ * A single pickable network — mirrors `app.networks.schemas.NetworkOption`.
+ *
+ * `applied` is the spike-§2 state-derived usability flag: a pending SDN VNet
+ * is surfaced with `applied=false` so the UI badges it non-pickable
+ * (Pitfall 8). `suggested_ip` is the app-side-computed lowest free address.
+ */
+export interface NetworkOption {
+  kind: string;
+  network_id: string;
+  display_name: string;
+  zone: string | null;
+  tag: number | null;
+  vlan_aware: boolean;
+  applied: boolean;
+  ipam_available: boolean;
+  suggested_ip: string | null;
+}
+
+/**
+ * `200` body of `GET /clusters/{id}/networks` — mirrors
+ * `app.networks.schemas.NetworkPickerResponse`. `sdn_capable` reflects the
+ * D-21 per-cluster auto-detect; when false `sdn_vnets` is empty.
+ */
+export interface NetworkPickerResponse {
+  cluster_id: number;
+  sdn_capable: boolean;
+  sdn_vnets: NetworkOption[];
+  bridges: NetworkOption[];
+}
+
+/**
+ * `200` body of the admin `GET/PUT .../networks` — mirrors
+ * `app.networks.schemas.NetworkScopeResponse` (the Networks-tab view).
+ */
+export interface NetworkScopeResponse {
+  team_id: number;
+  cluster_id: number;
+  sdn_capable: boolean;
+  available_sdn_vnets: NetworkOption[];
+  available_bridges: NetworkOption[];
+  granted: { sdn_vnets: string[]; bridges: string[] };
+}
+
+/**
+ * Request body of the admin `PUT .../networks` — mirrors
+ * `app.networks.schemas.NetworkScopeUpdate` (the new grant set).
+ */
+export interface NetworkScopeUpdate {
+  sdn_vnets: string[];
+  bridges: string[];
+}
+
+// --- ISO / cloud-image library (Plan 04-05 backend) ------------------------
+
+/**
+ * One ISO volume present on a storage — mirrors `app.iso.routes.IsoItem`.
+ */
+export interface IsoItem {
+  volid: string;
+  filename: string;
+  size: number;
+  storage: string;
+  format: string | null;
+}
+
+/** One curated cloud image (D-15) — mirrors `app.iso.routes.CloudImageItem`. */
+export interface CloudImage {
+  id: string;
+  name: string;
+  os_family: string;
+  version: string;
+  url: string;
+}
+
+/**
+ * Body of `POST /clusters/{id}/iso/download` — mirrors
+ * `app.iso.routes.IsoDownloadRequest`. `content` is the PVE storage content
+ * type (`iso` for an ISO, `import` for a cloud image). The backend rejects a
+ * non-http(s) URL 422 (SSRF — T-04-05-01).
+ */
+export interface IsoDownloadRequest {
+  team_id: number;
+  node: string;
+  storage: string;
+  url: string;
+  content?: string;
+  filename: string;
+}
+
+// --- Console (Plan 04-08 backend) ------------------------------------------
+
+/**
+ * `200` body of `POST .../console/vncproxy` — mirrors
+ * `app.console.schemas.VncProxyResponse`.
+ *
+ * The load-bearing field is `relay_url`: the GUI-origin reverse-proxied
+ * WebSocket path the noVNC iframe connects to — never the Proxmox host URL
+ * (CON-03). `ticket` is the short-lived (~30-40s) raw PVE vncticket.
+ */
+export interface VncProxyResponse {
+  ticket: string;
+  port: number;
+  relay_url: string;
+}
