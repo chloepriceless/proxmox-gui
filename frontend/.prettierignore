@@ -1,0 +1,9 @@
+# Vendored third-party source — do not reflow/format (Plan 04-15).
+# noVNC (MPL-2.0) is vendored verbatim under src/lib/vendor/; its license
+# headers and exact upstream formatting must stay intact for provenance.
+src/lib/vendor/
+
+# Generated / build output
+.svelte-kit/
+build/
+node_modules/

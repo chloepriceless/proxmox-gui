@@ -1,0 +1,8 @@
+# Vendored third-party source — not linted (Plan 04-15).
+# noVNC (MPL-2.0) is vendored verbatim under src/lib/vendor/; linting
+# third-party code we do not own would only produce noise.
+src/lib/vendor/
+
+# Generated / build output
+.svelte-kit/
+build/

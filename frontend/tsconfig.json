@@ -13,5 +13,7 @@
     "target": "ES2022",
     "module": "ESNext",
     "types": ["node"]
-  }
+  },
+  "comment-exclude": "Vendored third-party noVNC source (src/lib/vendor/novnc, MPL-2.0) is excluded from type-checking — checkJs would flood 1000+ implicit-any errors on code we do not own. The embed page imports it as plain JS (Plan 04-15).",
+  "exclude": ["src/lib/vendor"]
 }
