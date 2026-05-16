@@ -72,10 +72,14 @@ Requirements for initial release. Each maps to roadmap phases via the Traceabili
 
 ### LXC Provisioning
 
-- [ ] **LXC-01**: User can browse a curated list of community-scripts (`community-scripts/ProxmoxVE`)
-- [ ] **LXC-02**: User can browse the full community-scripts catalog with search and category filters
-- [ ] **LXC-03**: User can one-click deploy from a community-script (non-interactive mode)
-- [ ] **LXC-04**: Script source, version (commit hash), and last-reviewed-date are surfaced before deploy
+- [x] **LXC-01
+**: User can browse a curated list of community-scripts (`community-scripts/ProxmoxVE`)
+- [x] **LXC-02
+**: User can browse the full community-scripts catalog with search and category filters
+- [x] **LXC-03
+**: User can one-click deploy from a community-script (non-interactive mode)
+- [x] **LXC-04
+**: Script source, version (commit hash), and last-reviewed-date are surfaced before deploy
 - [ ] **LXC-05**: User can deploy a plain LXC from a vztmpl template
 - [ ] **LXC-06**: User can pick target host, storage, network, CPU, RAM, disk in the LXC wizard
 - [ ] **LXC-07**: User can toggle unprivileged container / nesting / features

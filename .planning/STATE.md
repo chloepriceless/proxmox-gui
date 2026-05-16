@@ -2,21 +2,21 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_plan: 1
+current_plan: 7
 status: executing
-stopped_at: Phase 4 UI-SPEC approved
-last_updated: "2026-05-16T19:47:09.613Z"
+stopped_at: Completed 04-06-PLAN.md
+last_updated: "2026-05-16T20:03:55.567Z"
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 38
-  completed_plans: 29
-  percent: 76
+  completed_plans: 30
+  percent: 79
 ---
 
 # STATE: Proxmox Self-Service GUI
 
-**Last updated:** 2026-05-14
+**Last updated:** 2026-05-16
 **Mode:** yolo
 **Granularity:** coarse
 
@@ -29,14 +29,14 @@ progress:
 ## Current Position
 
 Phase: 04 (provisioning-networking-console) — EXECUTING
-Plan: 5 of 14
-Current Plan: 6
+Plan: 6 of 14
+Current Plan: 7
 
 - **Milestone:** v1
 - **Phase:** 4
-- **Plan:** 04-05 iso-library-cloudinit ✅ complete
+- **Plan:** 04-06 community-scripts-catalog ✅ complete
 - **Status:** Executing Phase 04 — Wave 2
-- **Progress:** [████████░░] 76%
+- **Progress:** [████████░░] 79%
 
 ## Phases at a Glance
 
@@ -84,6 +84,7 @@ Current Plan: 6
 | Phase 03 P06 | 9min | 2 tasks | 14 files |
 | Phase 03 P07 | 18min | 2 tasks | 14 files |
 | Phase 04 P05 | ~10 min | 2 tasks | 10 files |
+| Phase 04 P06 | ~13 min | 2 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -196,6 +197,9 @@ Current Plan: 6
 | storages_for_content filters app-side on each storage's content token list, not just PVE's ?content= server-side filter | Belt-and-braces against PVE versions/back-ends that return the unfiltered storage list — picking an images-only storage for an ISO fails on PVE (Pitfall 16) | Plan 04-05 SUMMARY |
 | cloudinit.py is a pure transform module — no DB, no PVE call; validate_cloudinit_form RETURNS a hard/soft verdict and never raises | Mirrors the audit/csv.py discipline + the Phase-2 quota-admission verdict shape; the frontend two-pane editor consumes render+verdict in one call | Plan 04-05 SUMMARY |
 | ISO URL-download is open to any authenticated team member (D-17), not admin-gated; SSRF bounded by an http(s)-only scheme guard + PVE-side download-url fetch (Pitfall 7) | D-17 deliberately opens ISO downloads; the GUI never resolves/proxies the URL — the threat is bounded and audited (T-04-05-03 accepted) | Plan 04-05 SUMMARY |
+| `lxc_exec` is SSH `pct exec`, NOT a proxmoxer REST call | `POST .../lxc/{vmid}/status/exec` returns 501 on PVE 9.1.2 (spike 04-01 §3); implemented as an OS `ssh`-binary subprocess shell-out so no Python SSH dependency is added | Plan 04-06 SUMMARY |
+| Community-scripts catalog content is the vendored `snapshot.json` floor; `sync_catalog` re-pins only the commit SHA | D-05 keeps the GUI on a reviewed, trusted copy — the admin sync records which upstream commit the operator chose, never auto-importing unreviewed upstream JSON (Pitfall 10 / T-04-06-02) | Plan 04-06 SUMMARY |
+| `run_community_script` is the one provisioning job that is NOT a plain `_run_polled_job` — two stages | Stage 1 `dispatch_and_poll` the LXC create, re-open the job to `running`, stage 2 synchronous `lxc_exec` install; a stage-2 failure marks the job failed but NEVER deletes the LXC (Pitfall 8 / T-04-06-05) | Plan 04-06 SUMMARY |
 
 ### Open Questions (resolve before/during named phase)
 
@@ -203,7 +207,7 @@ Current Plan: 6
 - **Phase 1 ADR:** `asyncio.to_thread()` vs. async proxmoxer backend — confirm thread-pool sizing for concurrent calls.
 - **Phase 4 spike:** SDN reload/applied semantics through proxmoxer (MEDIUM-LOW confidence).
 - **Phase 4 spike:** noVNC vncticket single-encoding verification.
-- **Phase 4 spike:** Community-scripts non-interactive execution mechanics.
+- ~~**Phase 4 spike:** Community-scripts non-interactive execution mechanics.~~ — RESOLVED by spike 04-01 (`04-SPIKE-community-scripts.md`), implemented in Plan 04-06.
 
 ### Todos
 
@@ -233,6 +237,7 @@ None.
 
 **Recently completed:**
 
+- 2026-05-16 — Plan 04-06 community-scripts-catalog (the spike-gated half of LXC provisioning: a community-scripts catalog backend — a vendored `snapshot.json` floor pinned to spike floor commit `369f9013` (D-05), `catalog/service.py` exposing `load_catalog` / `curated_shortlist` (featured + admin-override, D-06) / `search_catalog` (case-insensitive substring + category, LXC-02) / `attribution_for` (the LXC-04 source/commit/last-reviewed triple) / `sync_catalog` (admin GitHub-commit re-pin of the `catalog_pin` row), `GET /clusters/{id}/catalog` + `GET /clusters/{id}/catalog/{slug}` open to any authenticated user + `POST /catalog/sync` admin-gated; `connector.lxc_exec` — the spike-confirmed in-container exec mechanism: PVE 9.1.2 has NO LXC `exec` REST endpoint (`POST .../lxc/{vmid}/status/exec` → 501), so `lxc_exec` SSHes to the PVE node and runs the CLI `pct exec` via an OS `ssh`-binary subprocess shell-out — no new Python dependency, chunked output for D-08; `run_community_script` — the two-stage arq job (the one provisioning job that is NOT a plain `_run_polled_job`): stage 1 `create_lxc` UPID-polled via `dispatch_and_poll`, stage 2 starts the container and runs ONLY `install/<slug>-install.sh` at the pinned commit SHA inside it via `lxc_exec` with the `build.func` env block reproduced + affirmative stdin (spike §2 contract, Pitfall 10 — never `ct/<slug>.sh`, never the host, never `main`); a stage-2 failure marks the job failed but issues NO LXC delete (Pitfall 8 / T-04-06-05); the install output is captured to the audit log; `POST /clusters/{id}/provisioning/community-script` 202 endpoint with catalog-slug validation + quota admission before reserve; 2 auto-fixed deviations — no Python SSH library so the transport is an OS `ssh` subprocess shell-out, and a ruff ASYNC109 noqa on the passthrough `timeout` param; 22 new tests, 437 backend tests green; LXC-01/02/03/04 shipped)
 - 2026-05-16 — Plan 04-05 iso-library-cloudinit (the two non-spike-gated provisioning sub-systems: an ISO / cloud-image library backend — two new content-type-filtered PVEConnector reads `storages_for_content` + `list_iso_content` (Pitfall 16, app-side filtered belt-and-braces), a vendored 7-image curated cloud-image catalog (D-15), `enqueue_iso_download` validating http(s)-only URL schemes (SSRF — T-04-05-01) then enqueuing the Plan-04-04 `storage.download` job — PVE fetches the bytes, the GUI never proxies them (Pitfall 7), `GET /iso` + `GET /iso/cloud-images` + `POST /iso/download` with the download NOT admin-gated (D-17); the Cloud-Init render+validation module `provisioning/cloudinit.py` — a pure transform (no DB, no PVE call) with `render_cloudinit_preview` returning `YamlLine(text, injected)` marking PVE-injected lines (D-10) and `validate_cloudinit_form` returning a block-hard/warn-soft `CloudInitVerdict` that never raises — hard errors for missing cipassword/invalid ciuser/unparseable SSH key/malformed static IP/missing ipconfig0 (Pitfall 6), a DHCP-DNS soft warning (Pitfall 14), no cloud-init CLI dependency (A5); `POST /provisioning/cloudinit/preview` wrapping both for the Plan-04-13 editor; 2 auto-fixed deviations — a Pitfall-16 server-side-filter gap and an overly-crude pure-transform test assertion; 28 new tests, 415 backend tests green; VM-08 + VM-01/D-15 + the VM-05/06/07 backend half shipped)
 - 2026-05-16 — Plan 03-07 frontend-backups (the Phase 3 backup UI: a per-VM Backups tab between Snapshots and Console — BackupsTab with a backup-files Card, a "Back up now" Database-icon primary button, 48px file rows with a MoreHorizontal Restore/Delete menu, and the BackupScheduleCard on top — a Switch + Daily/Weekly Select + keep-last-N number input + Save-schedule CTA, the whole card disabled when no backup storage; the D-08 no-storage bg-warning/10 banner; RestoreDialog defaulting to in-place overwrite behind a typed-name confirm — bg-destructive/10 data-loss warning, ENTER does not submit, CTA "Restore (overwrite)" — with a restore-as-new alternative (required New VMID + New name, CTA swaps to "Restore as new VM"); the global /backups page — an auth-gated SSR loader copying the audit-page analog + a shadcn table of the team-scoped scheduled-backup list, with a CalendarClock "Backups" sidebar nav item; the admin per-cluster backup-storage Select on the cluster edit form with a "None — backups disabled" option saved via the existing Save-changes CTA; the ActionToolbar "Back up now" More-menu item wired; api/lifecycle.ts + api/clusters.ts extended; 3 auto-fixed deviations aligning the plan's interface sketch to the live Plan 03-04 backend contracts; 11 new tests, 121 frontend tests green; LIFE-05/06/07 frontend-completed — Phase 3 complete)
 - 2026-05-16 — Plan 03-06 frontend-snapshots-lifecycle-bulk (the lifecycle UI for snapshots + the resize/clone/migrate operation set + inventory bulk actions: a hand-rolled recursive SnapshotTree — D-05, no tree-view npm dependency, role=tree/treeitem + aria-expanded + roving tabindex + 24px CSS indent guides — with a pure snapshot-tree.ts builder for node-env unit testing; the Snapshots tab filling the formerly-disabled Phase 2 placeholder, with the Snapshots-trigger Lock removed; SnapshotCreateDialog + restore/delete typed-name ConfirmByNameDialog wiring; ResizeDialog with hotplug-driven reboot-required warnings + disk-shrink inline error + persistent bg-destructive/10 notice + CTA-blocked-while-invalid + no lock-override field; MigrateDialog keeping bwlimit visible inside an always-present Advanced collapsible + 409 pre-flight inline notice; CloneDialog with linked/full mode + node/storage + overridable Auto-assigned VMID; ConvertTemplateDialog one-way warning; the ActionToolbar More menu wired to all five dialogs with Convert disabled+tooltipped for LXC; the inventory per-row MoreHorizontal power menu + Select toggle + 40px checkbox column + sticky bulk-action bar fanning out one bulkPower job per VM under a single batch confirm; 10 new snapshot-tree tests, 110 frontend tests green; LIFE-03/04/08/09/10/11 frontend-completed)
@@ -257,9 +262,9 @@ None.
 - 2026-05-14 — Requirements definition (89 v1 requirements across 13 categories)
 - 2026-05-14 — Roadmap (5-phase structure, 100% coverage)
 
-**Last session:** --stopped-at
-**Stopped at:** Phase 4 UI-SPEC approved
-**Resume file:** --resume-file
+**Last session:** 2026-05-16T20:03:55.558Z
+**Stopped at:** Completed 04-06-PLAN.md
+**Resume file:** None
 
 ---
 *State managed by GSD; do not edit phase counts manually — use `/gsd-transition` and `/gsd-progress`.*
