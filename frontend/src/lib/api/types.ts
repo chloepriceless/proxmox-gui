@@ -1037,3 +1037,27 @@ export interface NotificationFeed {
   items: NotificationItem[];
   unread_count: number;
 }
+
+// --- Node resources (Plan 04-16 backend — VM-10) ---------------------------
+
+/**
+ * One cluster node's live free CPU/RAM — mirrors the backend
+ * `app.clusters.schemas.NodeResourceItem` JSON returned by
+ * `GET /clusters/{id}/nodes/resources`.
+ *
+ * The create wizard's `clusterNodes` `$effect` maps `free_cpu` / `free_ram_mb`
+ * into the wizard's `NodeResource` shape (`$lib/components/wizard/node-fit`)
+ * so `computeNodeFit` can fire the VM-10 "won't fit on node-X" hint against
+ * live capacity. Named `NodeResourceApi` to avoid colliding with that wizard
+ * `NodeResource` type.
+ */
+export interface NodeResourceApi {
+  /** The Proxmox node name. */
+  node: string;
+  /** Free CPU cores on the node (a float — PVE `cpu` is a 0-1 load fraction). */
+  free_cpu: number;
+  /** Free RAM in MB on the node (integer). */
+  free_ram_mb: number;
+  /** PVE node status — `online` / `offline`. */
+  status: string;
+}

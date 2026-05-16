@@ -133,3 +133,80 @@ describe('allBlocked', () => {
     expect(allBlocked([])).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Live-data path (Plan 04-16 — VM-10)
+//
+// Before 04-16 the create wizard built `clusterNodes` with `freeCpu: null /
+// freeRamMb: null`, so `computeNodeFit` could only ever return fit-unknown.
+// 04-16 wires `GET /clusters/{id}/nodes/resources` into the wizard so each
+// node carries REAL free figures. These tests prove the two ends of that path:
+// real figures fire the "won't fit" verdict, and the degraded `null` path (the
+// resources fetch failed) still keeps every node pickable.
+// ---------------------------------------------------------------------------
+
+/**
+ * Map a `NodeResourceApi`-shaped row (the backend `NodeResourceItem` JSON the
+ * `getNodeResources` API call returns) into the wizard's `NodeResource` shape.
+ * This mirrors exactly what the `create/+page.svelte` `clusterNodes` `$effect`
+ * does after the resources fetch resolves.
+ */
+function fromApiRow(row: {
+  node: string;
+  free_cpu: number;
+  free_ram_mb: number;
+}): NodeResource {
+  return { node: row.node, freeCpu: row.free_cpu, freeRamMb: row.free_ram_mb };
+}
+
+describe('node-fit with live node-resources data (VM-10)', () => {
+  it('fires a "won\'t fit" verdict for a node whose live free RAM is below the request', () => {
+    // The backend route returned real figures: node-1 has 2 GB free.
+    const apiRows = [
+      { node: 'node-1', free_cpu: 8, free_ram_mb: 2 * GB, status: 'online' }
+    ];
+    const clusterNodes = apiRows.map(fromApiRow);
+    const fits = computeNodeFit({ requestedCpu: 2, requestedRamMb: 4 * GB }, clusterNodes);
+    expect(fits[0].fits).toBe(false);
+    expect(fits[0].reason).toBe('node-1 — 2 GB free, needs 4 GB');
+  });
+
+  it('marks every node blocked when an over-large request exceeds all live free RAM', () => {
+    const apiRows = [
+      { node: 'node-1', free_cpu: 8, free_ram_mb: 4 * GB, status: 'online' },
+      { node: 'node-2', free_cpu: 16, free_ram_mb: 8 * GB, status: 'online' }
+    ];
+    const clusterNodes = apiRows.map(fromApiRow);
+    // Request 16 GB — neither node has it.
+    const fits = computeNodeFit({ requestedCpu: 2, requestedRamMb: 16 * GB }, clusterNodes);
+    expect(allBlocked(fits)).toBe(true);
+  });
+
+  it('keeps the verdict fit-unknown when the resources fetch failed (null free figures)', () => {
+    // Degraded path: `getNodeResources` rejected, so the `$effect` fell back to
+    // inventory node names with `null` free figures. node-fit must stay
+    // advisory — every node pickable, no "won't fit".
+    const degradedNodes: NodeResource[] = [
+      { node: 'node-1', freeCpu: null, freeRamMb: null },
+      { node: 'node-2', freeCpu: null, freeRamMb: null }
+    ];
+    const fits = computeNodeFit({ requestedCpu: 4, requestedRamMb: 16 * GB }, degradedNodes);
+    expect(fits.every((f) => f.fits)).toBe(true);
+    expect(fits.every((f) => f.reason === null)).toBe(true);
+    expect(allBlocked(fits)).toBe(false);
+  });
+
+  it('a node missing from the resources response keeps null free figures (fit-unknown)', () => {
+    // The wizard merges inventory node names with the resources rows: a node
+    // present in inventory but absent from the resources response keeps
+    // `freeCpu: null / freeRamMb: null`. node-with-figures is judged; the
+    // figure-less node stays pickable.
+    const merged: NodeResource[] = [
+      { node: 'node-1', freeCpu: 8, freeRamMb: 2 * GB }, // had a resources row
+      { node: 'node-2', freeCpu: null, freeRamMb: null } // inventory-only
+    ];
+    const fits = computeNodeFit({ requestedCpu: 2, requestedRamMb: 4 * GB }, merged);
+    expect(fits[0].fits).toBe(false);
+    expect(fits[1].fits).toBe(true);
+  });
+});

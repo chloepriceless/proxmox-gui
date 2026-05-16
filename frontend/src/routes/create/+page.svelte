@@ -161,13 +161,18 @@
   const clusterId = $derived<number | null>(data.clusters[0]?.id ?? null);
 
   // -- cluster nodes + quota budget ---------------------------------------
-  // The provisioning backend exposes no team-scoped node-free-resource API in
-  // Phase 4 — node names are derived from the cluster inventory and carry
-  // `null` free figures, so node-fit is advisory (every node stays pickable;
-  // the backend's row-locked admission + PVE remain the real gate). The quota
-  // budget is read from the Phase-2 `api.quotas` figures.
+  // `clusterNodes` is populated from the live `GET /clusters/{id}/nodes/resources`
+  // read (Plan 04-16, VM-10) — each node carries its real free CPU/RAM so the
+  // node-fit hint can fire "won't fit on node-X". The node *names* come from the
+  // cluster inventory; the free figures are merged in from the resources route.
+  // GRACEFUL DEGRADATION: if the resources fetch fails (breaker open / PVE
+  // unreachable) the nodes keep `null` free figures — node-fit degrades to
+  // fit-unknown (every node stays pickable; the backend's row-locked admission
+  // + PVE remain the real gate). The quota budget is read from the Phase-2
+  // `api.quotas` figures.
 
-  /** The cluster's nodes (the node-fit input — free figures unknown → null). */
+  /** The cluster's nodes (the node-fit input — live free figures, `null` when
+   * the node-resources fetch failed). */
   let clusterNodes = $state<NodeResource[]>([]);
   /** The cluster's inventory VMs (the vm-clone source list). */
   let inventoryVms = $state<CloneSourceOption[]>([]);
@@ -180,14 +185,9 @@
     let cancelled = false;
     api.inventory
       .listForCluster({ clusterId: cid })
-      .then((inv) => {
+      .then(async (inv) => {
         if (cancelled) return;
         const nodeNames = [...new Set(inv.items.map((it) => it.node))].sort();
-        clusterNodes = nodeNames.map((node) => ({
-          node,
-          freeCpu: null,
-          freeRamMb: null
-        }));
         inventoryVms = inv.items
           .filter((it) => it.type === 'qemu')
           .map((it) => ({
@@ -195,6 +195,30 @@
             name: it.name ?? `VM ${it.vmid}`,
             node: it.node
           }));
+        // Fetch live per-node free CPU/RAM (VM-10). This is wrapped in its own
+        // `.catch` so a failure (breaker open / PVE unreachable) does NOT empty
+        // `clusterNodes` and does NOT block the wizard — node-fit stays
+        // advisory: the nodes simply keep `null` free figures (fit-unknown).
+        const resources = await api.clusters
+          .getNodeResources({ clusterId: cid })
+          .catch(() => null);
+        if (cancelled) return;
+        const byNode = new Map(
+          (resources ?? []).map((r) => [r.node, r] as const)
+        );
+        // Merge: every node from inventory AND from the resources response. A
+        // node with no resources row keeps `freeCpu: null / freeRamMb: null`.
+        const allNames = [
+          ...new Set([...nodeNames, ...(resources ?? []).map((r) => r.node)])
+        ].sort();
+        clusterNodes = allNames.map((node) => {
+          const row = byNode.get(node);
+          return {
+            node,
+            freeCpu: row ? row.free_cpu : null,
+            freeRamMb: row ? row.free_ram_mb : null
+          };
+        });
       })
       .catch(() => {
         if (!cancelled) {

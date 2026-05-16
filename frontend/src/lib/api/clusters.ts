@@ -21,7 +21,8 @@ import type {
   ClusterResponse,
   ClusterTestRequest,
   ClusterTestResponse,
-  ClusterUpdateRequest
+  ClusterUpdateRequest,
+  NodeResourceApi
 } from './types';
 
 type FetchLike = typeof fetch;
@@ -175,6 +176,32 @@ export async function listBackupStorages(
 ): Promise<BackupStorageItem[]> {
   return apiJson<BackupStorageItem[]>(
     `/clusters/${clusterId}/backup-storages`,
+    withFetch(opts, { method: 'GET' })
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Plan 04-16 additions — per-node free CPU/RAM for the node-fit hint (VM-10)
+// ---------------------------------------------------------------------------
+
+/**
+ * GET /api/v1/clusters/{id}/nodes/resources — per-node free CPU/RAM.
+ *
+ * Feeds the create wizard's node-fit hint (VM-10): the wizard maps these live
+ * `free_cpu` / `free_ram_mb` figures into `clusterNodes` so `computeNodeFit`
+ * can surface "won't fit on node-X" against real cluster capacity. A pure
+ * read behind the standard authenticated principal — a regular user runs the
+ * create wizard, so this is NOT admin-gated.
+ *
+ * The wizard wraps this call in its own `.catch` — a failure (breaker open /
+ * PVE unreachable) degrades node-fit to fit-unknown rather than blocking.
+ */
+export async function getNodeResources(
+  args: { clusterId: number },
+  opts?: MaybeFetch
+): Promise<NodeResourceApi[]> {
+  return apiJson<NodeResourceApi[]>(
+    `/clusters/${args.clusterId}/nodes/resources`,
     withFetch(opts, { method: 'GET' })
   );
 }
