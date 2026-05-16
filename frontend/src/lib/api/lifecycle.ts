@@ -16,9 +16,14 @@
 import { apiJson, type ApiInit } from '$lib/utils/api';
 import type {
   BulkJobAccepted,
+  CloneRequest,
   JobAccepted,
+  MigrateRequest,
   PowerActionName,
+  ResizeInfo,
+  ResizeRequest,
   ResourceKind,
+  SnapshotListResponse,
 } from './types';
 
 type FetchLike = typeof fetch;
@@ -92,5 +97,162 @@ export async function bulkPower(
   return apiJson<BulkJobAccepted>(
     `/clusters/${prefixCluster}/vms/bulk-power`,
     withFetch(opts, { method: 'POST', body: { action: args.action, targets: args.targets } })
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Plan 03-06 — snapshot lifecycle (Plan 03-03 backend contracts)
+//
+//   GET    /clusters/{id}/{vms|lxcs}/{vmid}/snapshots               → SnapshotListResponse
+//   POST   /clusters/{id}/{vms|lxcs}/{vmid}/snapshots               → 202 JobAccepted
+//   POST   /clusters/{id}/{vms|lxcs}/{vmid}/snapshots/{name}/rollback → 202 JobAccepted
+//   DELETE /clusters/{id}/{vms|lxcs}/{vmid}/snapshots/{name}         → 202 JobAccepted
+// ---------------------------------------------------------------------------
+
+/**
+ * GET .../snapshots — the flat parent-pointer snapshot list (a pure read, no
+ * job). The Snapshots tab hands this to `SnapshotTree.svelte`, which builds the
+ * indented hierarchy client-side (D-05).
+ */
+export async function listSnapshots(
+  args: { clusterId: number; vmid: number; type: ResourceKind },
+  opts?: MaybeFetch
+): Promise<SnapshotListResponse> {
+  return apiJson<SnapshotListResponse>(
+    `${basePath(args.clusterId, args.type, args.vmid)}/snapshots`,
+    withFetch(opts, { method: 'GET' })
+  );
+}
+
+/** POST .../snapshots — create a snapshot. `vmstate` captures running RAM. */
+export async function createSnapshot(
+  args: {
+    clusterId: number;
+    vmid: number;
+    type: ResourceKind;
+    name: string;
+    description: string;
+    vmstate: boolean;
+  },
+  opts?: MaybeFetch
+): Promise<JobAccepted> {
+  return apiJson<JobAccepted>(
+    `${basePath(args.clusterId, args.type, args.vmid)}/snapshots`,
+    withFetch(opts, {
+      method: 'POST',
+      body: { name: args.name, description: args.description, vmstate: args.vmstate },
+    })
+  );
+}
+
+/** POST .../snapshots/{name}/rollback — roll the VM back to a snapshot. */
+export async function rollbackSnapshot(
+  args: { clusterId: number; vmid: number; type: ResourceKind; name: string },
+  opts?: MaybeFetch
+): Promise<JobAccepted> {
+  return apiJson<JobAccepted>(
+    `${basePath(args.clusterId, args.type, args.vmid)}/snapshots/${encodeURIComponent(
+      args.name
+    )}/rollback`,
+    withFetch(opts, { method: 'POST' })
+  );
+}
+
+/** DELETE .../snapshots/{name} — delete a snapshot. */
+export async function deleteSnapshot(
+  args: { clusterId: number; vmid: number; type: ResourceKind; name: string },
+  opts?: MaybeFetch
+): Promise<JobAccepted> {
+  return apiJson<JobAccepted>(
+    `${basePath(args.clusterId, args.type, args.vmid)}/snapshots/${encodeURIComponent(
+      args.name
+    )}`,
+    withFetch(opts, { method: 'DELETE' })
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Plan 03-06 — resize lifecycle (Plan 03-03 backend contracts)
+//
+//   GET  /clusters/{id}/{vms|lxcs}/{vmid}/resize-info → ResizeInfo
+//   POST /clusters/{id}/{vms|lxcs}/{vmid}/resize      → 202 JobAccepted
+// ---------------------------------------------------------------------------
+
+/**
+ * GET .../resize-info — current cores/memory + the disk list + the
+ * hotplug-derived reboot-required flags. The Resize dialog reads this on open.
+ */
+export async function getResizeInfo(
+  args: { clusterId: number; vmid: number; type: ResourceKind },
+  opts?: MaybeFetch
+): Promise<ResizeInfo> {
+  return apiJson<ResizeInfo>(
+    `${basePath(args.clusterId, args.type, args.vmid)}/resize-info`,
+    withFetch(opts, { method: 'GET' })
+  );
+}
+
+/**
+ * POST .../resize — apply a CPU / memory / disk-grow change. The backend
+ * rejects a disk shrink 422 (LIFE-09 enforcement point); the UI min is a UX
+ * affordance only.
+ */
+export async function resize(
+  args: { clusterId: number; vmid: number; type: ResourceKind; body: ResizeRequest },
+  opts?: MaybeFetch
+): Promise<JobAccepted> {
+  return apiJson<JobAccepted>(
+    `${basePath(args.clusterId, args.type, args.vmid)}/resize`,
+    withFetch(opts, { method: 'POST', body: { ...args.body } })
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Plan 03-06 — clone / convert-template / migrate (Plan 03-04 backend contracts)
+//
+//   POST /clusters/{id}/{vms|lxcs}/{vmid}/clone            → 202 JobAccepted
+//   POST /clusters/{id}/vms/{vmid}/convert-template        → 202 JobAccepted
+//   POST /clusters/{id}/{vms|lxcs}/{vmid}/migrate          → 202 JobAccepted
+// ---------------------------------------------------------------------------
+
+/**
+ * POST .../clone — linked/full clone. Omit `new_vmid` to let the server
+ * auto-assign the VMID via its app-level reservation (Pitfall 1).
+ */
+export async function clone(
+  args: { clusterId: number; vmid: number; type: ResourceKind; body: CloneRequest },
+  opts?: MaybeFetch
+): Promise<JobAccepted> {
+  return apiJson<JobAccepted>(
+    `${basePath(args.clusterId, args.type, args.vmid)}/clone`,
+    withFetch(opts, { method: 'POST', body: { ...args.body } })
+  );
+}
+
+/**
+ * POST .../convert-template — convert a qemu VM to a template (one-way). The
+ * backend rejects an LXC 422; the toolbar disables the menu item for LXC.
+ */
+export async function convertTemplate(
+  args: { clusterId: number; vmid: number },
+  opts?: MaybeFetch
+): Promise<JobAccepted> {
+  return apiJson<JobAccepted>(
+    `/clusters/${args.clusterId}/vms/${args.vmid}/convert-template`,
+    withFetch(opts, { method: 'POST' })
+  );
+}
+
+/**
+ * POST .../migrate — live/offline migrate to another node. `bwlimit_mbps` is
+ * MB/s (0 = unlimited); the backend converts to PVE's KiB/s.
+ */
+export async function migrate(
+  args: { clusterId: number; vmid: number; type: ResourceKind; body: MigrateRequest },
+  opts?: MaybeFetch
+): Promise<JobAccepted> {
+  return apiJson<JobAccepted>(
+    `${basePath(args.clusterId, args.type, args.vmid)}/migrate`,
+    withFetch(opts, { method: 'POST', body: { ...args.body } })
   );
 }

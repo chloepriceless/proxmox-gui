@@ -520,3 +520,83 @@ export interface BulkJobAccepted {
 
 /** The four fast power actions the lifecycle toolbar exposes. */
 export type PowerActionName = 'start' | 'stop' | 'reboot' | 'shutdown';
+
+// ---------------------------------------------------------------------------
+// Phase 3 Snapshot + Resize + Clone + Migrate types (Plan 03-06)
+//
+// Snapshot / resize backend contracts are from Plan 03-03; clone / migrate /
+// template-convert from Plan 03-04. The snapshot list is the flat
+// parent-pointer shape — the SnapshotTree component builds the hierarchy.
+// ---------------------------------------------------------------------------
+
+/**
+ * Mirrors `app.lifecycle.schemas.SnapshotItem` — one flat node of the snapshot
+ * list. `parent` points at the parent snapshot's name (null for a root);
+ * `SnapshotTree.svelte` recurses on these pointers (D-05).
+ */
+export interface SnapshotItem {
+  name: string;
+  parent: string | null;
+  /** UNIX seconds the snapshot was taken, or null when PVE omits it. */
+  snaptime: number | null;
+  description: string | null;
+  /** True when the snapshot captured the running RAM state (qemu only). */
+  vmstate: boolean | null;
+}
+
+/** Mirrors `app.lifecycle.schemas.SnapshotListResponse` (GET .../snapshots). */
+export interface SnapshotListResponse {
+  snapshots: SnapshotItem[];
+}
+
+/** One resizable disk in a `ResizeInfo` (Plan 03-03 `DiskInfo`). */
+export interface DiskInfo {
+  /** PVE disk key, e.g. "scsi0". */
+  disk: string;
+  /** Current size in whole GB. */
+  size_gb: number;
+}
+
+/**
+ * Mirrors `app.lifecycle.schemas.ResizeInfoResponse` (GET .../resize-info).
+ * `cpu_hotplug` / `memory_hotplug` drive the reboot-required warnings.
+ */
+export interface ResizeInfo {
+  cores: number;
+  /** Memory in MB (PVE's native unit). */
+  memory: number;
+  cpu_hotplug: boolean;
+  memory_hotplug: boolean;
+  disks: DiskInfo[];
+}
+
+/** One disk-grow instruction in a `ResizeRequest` (Plan 03-03 `DiskGrow`). */
+export interface DiskGrowInput {
+  disk: string;
+  new_size_gb: number;
+}
+
+/** Write body of `POST .../resize`. Disks can only grow (LIFE-09). */
+export interface ResizeRequest {
+  cores?: number;
+  /** Memory in MB. */
+  memory?: number;
+  disks?: DiskGrowInput[];
+}
+
+/** Write body of `POST .../clone`. `new_vmid` omitted → server auto-assigns. */
+export interface CloneRequest {
+  name: string;
+  /** true = full clone; false = linked clone. */
+  full: boolean;
+  target_node: string;
+  target_storage?: string | null;
+  new_vmid?: number | null;
+}
+
+/** Write body of `POST .../migrate`. `bwlimit_mbps` 0 = unlimited. */
+export interface MigrateRequest {
+  target_node: string;
+  online: boolean;
+  bwlimit_mbps: number;
+}

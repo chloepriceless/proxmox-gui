@@ -12,6 +12,7 @@
   import MarkdownNotes from '$lib/components/inventory/MarkdownNotes.svelte';
   import Sparkline from '$lib/components/inventory/Sparkline.svelte';
   import ActionToolbar from '$lib/components/lifecycle/ActionToolbar.svelte';
+  import SnapshotsTab from '$lib/components/lifecycle/SnapshotsTab.svelte';
   import { api } from '$lib/api/client';
   import type { PageData } from './$types';
   import type { RRDSample, ResourceKind } from '$lib/api/types';
@@ -142,18 +143,9 @@
     <Tabs.List class="h-9">
       <Tabs.Trigger value="overview">Overview</Tabs.Trigger>
       <Tabs.Trigger value="activity">Activity</Tabs.Trigger>
-      <Tooltip.Provider>
-        <Tooltip.Root>
-          <Tooltip.Trigger>
-            {#snippet child({ props })}
-              <Tabs.Trigger value="snapshots" disabled {...props}>
-                <Lock class="size-3 mr-1" aria-hidden="true" /> Snapshots
-              </Tabs.Trigger>
-            {/snippet}
-          </Tooltip.Trigger>
-          <Tooltip.Content>Snapshots ship in Phase 3</Tooltip.Content>
-        </Tooltip.Root>
-      </Tooltip.Provider>
+      <!-- Snapshots tab — the Phase 2 Lock marker is removed; the tab activates
+           (UI-SPEC Implementation Note 4). -->
+      <Tabs.Trigger value="snapshots">Snapshots</Tabs.Trigger>
       <Tooltip.Provider>
         <Tooltip.Root>
           <Tooltip.Trigger>
@@ -344,6 +336,18 @@
             error="Couldn't load activity."
             lockedFilters={{ cluster_id: detail.cluster_id, vmid: detail.vmid }} />
         {/await}
+      </div>
+    </Tabs.Content>
+
+    <!-- Snapshots tab — fills the formerly-disabled Phase 2 placeholder. -->
+    <Tabs.Content value="snapshots">
+      <div class="mt-6">
+        <SnapshotsTab
+          clusterId={detail.cluster_id}
+          vmid={detail.vmid}
+          type={toResourceKind(detail.type)}
+          vmName={detail.name ?? `VM ${detail.vmid}`}
+        />
       </div>
     </Tabs.Content>
   </Tabs.Root>
