@@ -33,6 +33,8 @@ import * as teamsModule from './teams';
 import * as inventoryModule from './inventory';
 import * as auditModule from './audit';
 import * as quotasModule from './quotas';
+import * as jobsModule from './jobs';
+import * as lifecycleModule from './lifecycle';
 
 export { ApiError } from '$lib/utils/api';
 export type * from './types';
@@ -47,6 +49,8 @@ export const api = {
   inventory: inventoryModule,
   audit: auditModule,
   quotas: quotasModule,
+  jobs: jobsModule,
+  lifecycle: lifecycleModule,
 } as const;
 
 export type Api = typeof api;

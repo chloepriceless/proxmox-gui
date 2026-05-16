@@ -455,3 +455,68 @@ export interface QuotaPreview {
   would_exceed: boolean;
   dimensions: QuotaDimension[];
 }
+
+// ---------------------------------------------------------------------------
+// Phase 3 Job Queue + Lifecycle types (Plan 03-05)
+// ---------------------------------------------------------------------------
+
+/**
+ * The job state machine (`pending → claimed → running →
+ * succeeded/failed/orphaned/needs_review`). Mirrors the backend `jobs.state`
+ * column — see Plan 03-01 / 03-02.
+ */
+export type JobState =
+  | 'pending'
+  | 'claimed'
+  | 'running'
+  | 'succeeded'
+  | 'failed'
+  | 'orphaned'
+  | 'needs_review';
+
+/**
+ * Mirrors `app.jobs` `JobResponse` — one job row as the jobs API and the
+ * `/ws/jobs` WebSocket deliver it.
+ */
+export interface Job {
+  id: number;
+  /** e.g. "vm.power", "vm.clone", "vm.backup". */
+  kind: string;
+  state: JobState;
+  cluster_id: number | null;
+  team_id: number | null;
+  upid: string | null;
+  upid_node: string | null;
+  /** Raw PVE error / stderr — shown under "Show technical details". */
+  error: string | null;
+  /** Curated human-readable error — shown first on a failed row. */
+  friendly_error: string | null;
+  /** Set when the job is part of a bulk fan-out (D-11). */
+  batch_id: string | null;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+}
+
+/** Mirrors the `GET /api/v1/jobs` response — list + Topbar-badge counts. */
+export interface JobListResponse {
+  jobs: Job[];
+  running: number;
+  failed: number;
+}
+
+/** The 202 body every single-resource lifecycle mutation returns. */
+export interface JobAccepted {
+  job_id: number;
+  state: string;
+  kind: string;
+}
+
+/** The 202 body `POST /clusters/{id}/vms/bulk-power` returns (D-11). */
+export interface BulkJobAccepted {
+  batch_id: string;
+  job_ids: number[];
+}
+
+/** The four fast power actions the lifecycle toolbar exposes. */
+export type PowerActionName = 'start' | 'stop' | 'reboot' | 'shutdown';
