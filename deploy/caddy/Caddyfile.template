@@ -44,6 +44,22 @@ __SITE_ADDR__ {
 		-Server
 	}
 
+	# noVNC console WebSocket — latency-sensitive interactive stream
+	# (Phase 4, spike 04-03 §4). flush_interval -1 disables Caddy response
+	# buffering (the nginx `proxy_buffering off` equivalent) so the VNC
+	# framebuffer does not stall behind the proxy buffer. Pitfall 3 /
+	# Open Question 4. This MUST come before the generic `/api/*` block —
+	# Caddy matches `handle` blocks in declared order, so the more specific
+	# console-WS path has to be first. Caddy auto-handles the WS upgrade;
+	# no explicit Upgrade/Connection header_up directives are needed.
+	handle /api/v1/ws/console* {
+		reverse_proxy 127.0.0.1:8000 {
+			header_up Host {host}
+			header_up X-Real-IP {remote_host}
+			flush_interval -1
+		}
+	}
+
 	# FastAPI (REST + WebSocket in later phases).
 	# Caddy automatically sets X-Forwarded-For + X-Forwarded-Proto on the
 	# upstream request; we only need to add X-Real-IP explicitly.

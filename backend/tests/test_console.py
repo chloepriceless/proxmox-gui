@@ -30,10 +30,10 @@ upstream noVNC WebSocket is exercised through a fake ``websockets`` client.
 
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import patch
 
 import pytest
-from sqlalchemy import select
 
 from tests.factories import login_as, make_user
 from tests.fixtures.pve_responses import CLUSTER_RESOURCES_LXC, CLUSTER_RESOURCES_VM, FakeProxmox
@@ -299,3 +299,398 @@ async def test_mint_response_leaks_no_proxmox_host(client, session_factory):
     assert "8006" not in raw
     assert "vncwebsocket" not in raw
     assert "pve-console.test" not in raw
+
+
+# ===========================================================================
+# Task 2 — the reverse-proxied WebSocket relay
+# ===========================================================================
+
+
+class _FakeUpstream:
+    """A fake ``websockets`` client connection — the upstream noVNC WS leg.
+
+    Records bytes the relay sends; yields canned frames back to the relay's
+    ``async for`` upstream→browser pump, then ends (mimicking PVE closing the
+    socket — e.g. ticket expiry / session end).
+
+    When ``wait_for_send`` is set, the upstream→browser pump blocks on the
+    first ``__anext__`` until the relay has forwarded at least one
+    browser→upstream frame — so the bidirectional test can assert *both*
+    directions deterministically without a cancellation race.
+    """
+
+    def __init__(self, *, inbound: list | None = None, wait_for_send: bool = False) -> None:
+        self.sent: list = []
+        self._inbound = list(inbound or [])
+        self.closed = False
+        self._wait_for_send = wait_for_send
+        self._sent_event = asyncio.Event()
+
+    async def send(self, data) -> None:  # noqa: ANN001
+        self.sent.append(data)
+        self._sent_event.set()
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        if self._wait_for_send and not self._sent_event.is_set():
+            # Block the upstream→browser pump until the relay has forwarded a
+            # browser→upstream frame — deterministic bidirectional ordering.
+            await self._sent_event.wait()
+        if self._inbound:
+            return self._inbound.pop(0)
+        self.closed = True
+        raise StopAsyncIteration
+
+
+class _FakeConnectCM:
+    """An async context manager mimicking ``websockets.asyncio.client.connect``.
+
+    Records the URL it was opened with + the ssl argument so tests can assert
+    the single-encoding rule and the per-cluster TLS posture.
+    """
+
+    last_url: str | None = None
+    last_ssl: object = None
+
+    def __init__(self, url: str, *, ssl=None, upstream: _FakeUpstream | None = None):  # noqa: ANN001
+        type(self).last_url = url
+        type(self).last_ssl = ssl
+        self._upstream = upstream or _FakeUpstream()
+
+    async def __aenter__(self) -> _FakeUpstream:
+        return self._upstream
+
+    async def __aexit__(self, *exc) -> bool:  # noqa: ANN002
+        return False
+
+
+def _make_connect_factory(upstream: _FakeUpstream | None = None):
+    """Return a ``websockets_connect`` replacement that records its args."""
+
+    def _connect(url: str, *, ssl=None):  # noqa: ANN001
+        return _FakeConnectCM(url, ssl=ssl, upstream=upstream)
+
+    return _connect
+
+
+def _ws_test_app(session_factory, cookies: dict[str, str] | None = None):
+    """Build a fresh app with the per-test DB wired — for TestClient WS tests."""
+    from app.core.db import get_db
+    from app.main import create_app
+
+    app = create_app()
+
+    async def override_get_db():
+        async with session_factory() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+    return app
+
+
+def _reinstall_test_cipher() -> None:
+    """Re-install the deterministic test cipher.
+
+    ``TestClient.__enter__`` runs the app lifespan, which calls
+    ``install_cipher`` with a fresh *ephemeral* cipher (no master.key in the
+    test env) — clobbering the conftest autouse test cipher. The console relay
+    decrypts the per-cluster token via ``EncryptedSecret``, so the cipher used
+    to *read* the seeded rows must match the one used to *write* them. Call
+    this right after entering the ``TestClient`` context.
+    """
+    from app.core.cipher import SecretCipher
+    from app.models._types_init import install_cipher
+
+    install_cipher(SecretCipher(b"\x00" * 32))
+
+
+def test_relay_unauthenticated_closed_1008(session_factory):
+    """A console WS connect with no valid session is closed 1008 before accept()."""
+    from starlette.testclient import TestClient
+    from starlette.websockets import WebSocketDisconnect
+
+    app = _ws_test_app(session_factory)
+
+    with TestClient(app) as tc:
+        with pytest.raises(WebSocketDisconnect) as exc_info:
+            with tc.websocket_connect("/api/v1/ws/console/1/vms/100") as ws:
+                ws.receive_bytes()
+        assert exc_info.value.code == 1008
+
+
+@pytest.mark.asyncio
+async def test_relay_cross_tenant_closed(client, session_factory):
+    """A console WS connect for a resource the user does not own is closed."""
+    import anyio
+    from starlette.testclient import TestClient
+    from starlette.websockets import WebSocketDisconnect
+
+    owner = await make_user(session_factory, username="relayowner", is_admin=False)
+    cluster_id, team_id, _ = await _seed_cluster_and_token(session_factory, team_id=60)
+    await _add_user_to_team(session_factory, user_id=owner.id, team_id=team_id)
+    await make_user(session_factory, username="relayother", is_admin=False)
+
+    cookies = await login_as(client, username="relayother", password="testpass12345")
+    fake = _make_fake_for_mint()
+    app = _ws_test_app(session_factory)
+
+    def _run() -> int:
+        with patch("app.clusters.connector.ProxmoxAPI", return_value=fake):
+            with TestClient(app, cookies=cookies) as tc:
+                _reinstall_test_cipher()
+                try:
+                    with tc.websocket_connect(
+                        f"/api/v1/ws/console/{cluster_id}/vms/100"
+                    ) as ws:
+                        ws.receive_bytes()
+                except WebSocketDisconnect as exc:
+                    return exc.code
+        return -1
+
+    code = await anyio.to_thread.run_sync(_run)
+    assert code == 1008
+
+
+@pytest.mark.asyncio
+async def test_relay_opens_upstream_vncwebsocket(client, session_factory):
+    """An owning connection is accepted; the relay opens the upstream vncwebsocket."""
+    import anyio
+    from starlette.testclient import TestClient
+
+    from app.console import proxy as proxy_mod
+
+    user = await make_user(session_factory, username="relayup", is_admin=False)
+    cluster_id, team_id, _ = await _seed_cluster_and_token(
+        session_factory, team_id=61, host="pve-relay.test"
+    )
+    await _add_user_to_team(session_factory, user_id=user.id, team_id=team_id)
+
+    cookies = await login_as(client, username="relayup", password="testpass12345")
+    fake = _make_fake_for_mint()
+    app = _ws_test_app(session_factory)
+    _FakeConnectCM.last_url = None
+
+    def _run() -> None:
+        with (
+            patch("app.clusters.connector.ProxmoxAPI", return_value=fake),
+            patch.object(proxy_mod, "websockets_connect", _make_connect_factory()),
+        ):
+            with TestClient(app, cookies=cookies) as tc:
+                _reinstall_test_cipher()
+                # The relay opens the upstream WS BEFORE accept(); a fake
+                # upstream that yields nothing closes the session fast — that
+                # may surface as a WebSocketDisconnect at connect time. Either
+                # way the upstream URL was recorded by _FakeConnectCM.
+                try:
+                    with tc.websocket_connect(
+                        f"/api/v1/ws/console/{cluster_id}/vms/100"
+                    ) as ws:
+                        ws.receive_bytes()
+                except Exception:  # noqa: BLE001 — clean close after upstream end
+                    pass
+
+    await anyio.to_thread.run_sync(_run)
+    url = _FakeConnectCM.last_url
+    assert url is not None
+    assert url.startswith("wss://pve-relay.test:8006/api2/json/nodes/pve-01/qemu/100/vncwebsocket")
+    assert "port=5900" in url
+    assert "vncticket=" in url
+
+
+@pytest.mark.asyncio
+async def test_relay_encodes_vncticket_exactly_once(client, session_factory):
+    """The vncticket in the upstream URL is URL-encoded EXACTLY ONCE (Pitfall 2)."""
+    import anyio
+    from starlette.testclient import TestClient
+
+    from app.console import proxy as proxy_mod
+
+    user = await make_user(session_factory, username="relayenc", is_admin=False)
+    cluster_id, team_id, _ = await _seed_cluster_and_token(session_factory, team_id=62)
+    await _add_user_to_team(session_factory, user_id=user.id, team_id=team_id)
+
+    cookies = await login_as(client, username="relayenc", password="testpass12345")
+    fake = _make_fake_for_mint()
+    app = _ws_test_app(session_factory)
+    _FakeConnectCM.last_url = None
+
+    def _run() -> None:
+        with (
+            patch("app.clusters.connector.ProxmoxAPI", return_value=fake),
+            patch.object(proxy_mod, "websockets_connect", _make_connect_factory()),
+        ):
+            with TestClient(app, cookies=cookies) as tc:
+                _reinstall_test_cipher()
+                # The relay opens the upstream WS BEFORE accept(); a fast
+                # upstream close may surface as a connect-time disconnect.
+                try:
+                    with tc.websocket_connect(
+                        f"/api/v1/ws/console/{cluster_id}/vms/100"
+                    ) as ws:
+                        ws.receive_bytes()
+                except Exception:  # noqa: BLE001 — clean close after upstream end
+                    pass
+
+    await anyio.to_thread.run_sync(_run)
+    url = _FakeConnectCM.last_url
+    assert url is not None
+    vncticket_part = url.split("vncticket=", 1)[1]
+    # _VNC_TICKET = "PVEVNC:6A08C225::x3IL+fuHY/zdq=4UaxPrN6hi2qHcl"
+    # Single encoding: ':' -> %3A, '+' -> %2B, '/' -> %2F, '=' -> %3D.
+    assert "%3A" in vncticket_part  # ':' encoded once
+    assert "%2B" in vncticket_part  # '+' encoded once
+    assert "%2F" in vncticket_part  # '/' encoded once (safe="" is load-bearing)
+    # Double encoding would turn '%' into '%25' — must NOT happen.
+    assert "%25" not in vncticket_part
+    # Round-trips back to exactly the raw ticket — proves a single quote layer.
+    from urllib.parse import unquote
+
+    assert unquote(vncticket_part) == _VNC_TICKET
+
+
+@pytest.mark.asyncio
+async def test_relay_pumps_bytes_bidirectionally(client, session_factory):
+    """Bytes from the browser reach the upstream and upstream bytes reach the browser."""
+    import anyio
+    from starlette.testclient import TestClient
+
+    from app.console import proxy as proxy_mod
+
+    user = await make_user(session_factory, username="relaypump", is_admin=False)
+    cluster_id, team_id, _ = await _seed_cluster_and_token(session_factory, team_id=63)
+    await _add_user_to_team(session_factory, user_id=user.id, team_id=team_id)
+
+    cookies = await login_as(client, username="relaypump", password="testpass12345")
+    fake = _make_fake_for_mint()
+    app = _ws_test_app(session_factory)
+    # The upstream yields one RFB-style binary frame — but only AFTER the relay
+    # has forwarded a browser→upstream frame (deterministic both-directions).
+    upstream = _FakeUpstream(inbound=[b"\x00rfb-from-pve"], wait_for_send=True)
+
+    def _run() -> bytes:
+        with (
+            patch("app.clusters.connector.ProxmoxAPI", return_value=fake),
+            patch.object(
+                proxy_mod, "websockets_connect", _make_connect_factory(upstream)
+            ),
+        ):
+            with TestClient(app, cookies=cookies) as tc:
+                _reinstall_test_cipher()
+                with tc.websocket_connect(
+                    f"/api/v1/ws/console/{cluster_id}/vms/100"
+                ) as ws:
+                    ws.send_bytes(b"rfb-from-browser")
+                    received = ws.receive_bytes()
+                    return received
+
+    received = await anyio.to_thread.run_sync(_run)
+    # Upstream → browser: the canned PVE frame reached the browser.
+    assert received == b"\x00rfb-from-pve"
+    # Browser → upstream: the relay forwarded the browser's bytes.
+    assert b"rfb-from-browser" in upstream.sent
+
+
+@pytest.mark.asyncio
+async def test_relay_closes_browser_when_upstream_closes(client, session_factory):
+    """When the upstream WS closes, the browser-side connection is closed cleanly."""
+    import anyio
+    from starlette.testclient import TestClient
+    from starlette.websockets import WebSocketDisconnect
+
+    from app.console import proxy as proxy_mod
+
+    user = await make_user(session_factory, username="relayclose", is_admin=False)
+    cluster_id, team_id, _ = await _seed_cluster_and_token(session_factory, team_id=64)
+    await _add_user_to_team(session_factory, user_id=user.id, team_id=team_id)
+
+    cookies = await login_as(client, username="relayclose", password="testpass12345")
+    fake = _make_fake_for_mint()
+    app = _ws_test_app(session_factory)
+    # An upstream that immediately closes (no inbound frames) — e.g. ticket
+    # already expired at handshake.
+    upstream = _FakeUpstream(inbound=[])
+
+    def _run() -> bool:
+        with (
+            patch("app.clusters.connector.ProxmoxAPI", return_value=fake),
+            patch.object(
+                proxy_mod, "websockets_connect", _make_connect_factory(upstream)
+            ),
+        ):
+            with TestClient(app, cookies=cookies) as tc:
+                _reinstall_test_cipher()
+                with tc.websocket_connect(
+                    f"/api/v1/ws/console/{cluster_id}/vms/100"
+                ) as ws:
+                    try:
+                        ws.receive_bytes()
+                    except WebSocketDisconnect:
+                        return True
+        return False
+
+    closed = await anyio.to_thread.run_sync(_run)
+    assert closed is True
+
+
+@pytest.mark.asyncio
+async def test_relay_upstream_uses_per_cluster_tls_posture(client, session_factory):
+    """The upstream wss leg reuses the cluster's verify_ssl posture (spike §5)."""
+    import ssl as ssl_mod
+
+    import anyio
+    from starlette.testclient import TestClient
+
+    from app.console import proxy as proxy_mod
+
+    user = await make_user(session_factory, username="relaytls", is_admin=False)
+    # verify_ssl=False — the realistic home-lab PVE default.
+    cluster_id, team_id, _ = await _seed_cluster_and_token(
+        session_factory, team_id=65, verify_ssl=False
+    )
+    await _add_user_to_team(session_factory, user_id=user.id, team_id=team_id)
+
+    cookies = await login_as(client, username="relaytls", password="testpass12345")
+    fake = _make_fake_for_mint()
+    app = _ws_test_app(session_factory)
+    _FakeConnectCM.last_ssl = None
+
+    def _run() -> None:
+        with (
+            patch("app.clusters.connector.ProxmoxAPI", return_value=fake),
+            patch.object(proxy_mod, "websockets_connect", _make_connect_factory()),
+        ):
+            with TestClient(app, cookies=cookies) as tc:
+                _reinstall_test_cipher()
+                # The relay opens the upstream WS BEFORE accept(); a fast
+                # upstream close may surface as a connect-time disconnect.
+                try:
+                    with tc.websocket_connect(
+                        f"/api/v1/ws/console/{cluster_id}/vms/100"
+                    ) as ws:
+                        ws.receive_bytes()
+                except Exception:  # noqa: BLE001 — clean close after upstream end
+                    pass
+
+    await anyio.to_thread.run_sync(_run)
+    ctx = _FakeConnectCM.last_ssl
+    assert isinstance(ctx, ssl_mod.SSLContext)
+    # verify_ssl=False → CERT_NONE + hostname check off (proxmoxer parity).
+    assert ctx.verify_mode == ssl_mod.CERT_NONE
+    assert ctx.check_hostname is False
+
+
+def test_relay_unknown_kind_closed_1008(session_factory):
+    """A console WS connect with an unknown {kind} segment is closed 1008."""
+    from starlette.testclient import TestClient
+    from starlette.websockets import WebSocketDisconnect
+
+    app = _ws_test_app(session_factory)
+
+    with TestClient(app) as tc:
+        # No session either — but the kind guard would also reject this.
+        with pytest.raises(WebSocketDisconnect) as exc_info:
+            with tc.websocket_connect("/api/v1/ws/console/1/widgets/100") as ws:
+                ws.receive_bytes()
+        assert exc_info.value.code == 1008
