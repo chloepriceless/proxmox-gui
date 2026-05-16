@@ -580,3 +580,42 @@ async def list_backup_storages(
             detail="Couldn't reach the cluster to list its storages.",
         ) from exc
     return list(storages or [])
+
+
+# ---------------------------------------------------------------------------
+# Per-node resource enumeration (VM-10 — create-wizard node-fit hint)
+# ---------------------------------------------------------------------------
+
+
+async def list_node_resources(
+    db: AsyncSession,
+    registry: PVEConnectorRegistry,
+    *,
+    cluster_id: int,
+) -> list[dict]:
+    """Enumerate per-node CPU/RAM capacity for the create-wizard node-fit hint.
+
+    Reads PVE's ``/cluster/resources?type=node`` via the CLUSTER-ADMIN
+    connector (``registry.get``) — that connector can always enumerate
+    cluster-wide node capacity, whereas a per-team privsep token may not.
+    Returns the raw ``type=node`` rows; the route maps them to
+    :class:`~app.clusters.schemas.NodeResourceItem`.
+
+    Raises:
+        HTTPException(404): cluster not found.
+        HTTPException(502): the cluster is unreachable or returned an error.
+    """
+    try:
+        connector = await registry.get(cluster_id, db=db)
+    except LookupError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Cluster not found",
+        ) from exc
+    try:
+        rows = await connector.node_resources()
+    except (PVEUnreachable, PVEAPIError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Couldn't reach the cluster to read its node resources.",
+        ) from exc
+    return list(rows or [])

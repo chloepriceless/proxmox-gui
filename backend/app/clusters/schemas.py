@@ -202,3 +202,44 @@ class BackupStorageItem(BaseModel):
             storage=str(raw.get("storage") or ""),
             type=(str(raw["type"]) if raw.get("type") is not None else None),
         )
+
+
+class NodeResourceItem(BaseModel):
+    """One cluster node's live free CPU/RAM — for the create-wizard node-fit
+    hint (VM-10).
+
+    Derived from a PVE ``/cluster/resources?type=node`` row. The create
+    wizard's ``computeNodeFit`` compares a requested VM/LXC size against these
+    figures to surface a "won't fit on node-X" hint; a node whose ``status`` is
+    ``offline`` is still returned (the frontend decides how to present it).
+
+    Unit conversions performed in :meth:`from_pve`:
+
+    - PVE reports ``cpu`` as a 0-1 *load fraction* — free cores =
+      ``maxcpu * (1 - cpu)``.
+    - PVE reports ``maxmem`` / ``mem`` in *bytes* — free RAM MB =
+      ``(maxmem - mem) // (1024 * 1024)``.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    node: str
+    free_cpu: float  # free CPU cores
+    free_ram_mb: int  # free RAM in MB
+    status: str  # PVE node status — ``online`` / ``offline``
+
+    @classmethod
+    def from_pve(cls, row: dict[str, Any]) -> NodeResourceItem:
+        """Coerce one PVE ``/cluster/resources?type=node`` row into an item."""
+        maxcpu = float(row.get("maxcpu") or 0)
+        cpu_frac = float(row.get("cpu") or 0.0)  # 0-1 load fraction
+        free_cpu = max(0.0, maxcpu * (1.0 - cpu_frac))
+        maxmem = int(row.get("maxmem") or 0)  # bytes
+        mem = int(row.get("mem") or 0)  # bytes
+        free_ram_mb = max(0, (maxmem - mem) // (1024 * 1024))
+        return cls(
+            node=str(row.get("node") or ""),
+            free_cpu=free_cpu,
+            free_ram_mb=free_ram_mb,
+            status=str(row.get("status") or "unknown"),
+        )

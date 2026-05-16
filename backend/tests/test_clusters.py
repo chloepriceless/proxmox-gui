@@ -766,8 +766,15 @@ _NODE_RESOURCE_ROWS = [
 ]
 
 
-async def _register_cluster_for_resources(client, session_factory, suffix):
-    """Register a cluster (admin) and return its id + the admin cookies."""
+async def _register_cluster_for_resources(client, app, session_factory, suffix):
+    """Register a cluster (admin) and return its id + the admin cookies.
+
+    Also drops any connector the registry cached during registration —
+    ``register_cluster`` starts a health probe which calls ``registry.get``,
+    caching a connector wired to the *registration* FakeProxmox. The
+    node-resources GET runs under a different FakeProxmox patch, so the cache
+    must be invalidated for ``registry.get`` to rebuild against the new fake.
+    """
     _, cookies = await _login_admin(client, session_factory, f"admin_{suffix}")
     csrf = cookies["csrf_token"]
     fake = FakeProxmox(responses={"version.get": VERSION_OK})
@@ -777,16 +784,20 @@ async def _register_cluster_for_resources(client, session_factory, suffix):
             cookies=cookies, headers={"X-CSRF-Token": csrf},
             json=_valid_cluster_payload(),
         )).json()
-    return created["id"], cookies
+    cid = created["id"]
+    registry = getattr(app.state, "registry", None)
+    if registry is not None:
+        registry.invalidate(cid)
+    return cid, cookies
 
 
 @pytest.mark.asyncio
 async def test_node_resources_returns_per_node_free_capacity(
-    client, session_factory,
+    client, app, session_factory,
 ):
     """GET /{id}/nodes/resources → 200 with per-node free CPU/RAM figures."""
     cid, cookies = await _register_cluster_for_resources(
-        client, session_factory, "nr1",
+        client, app, session_factory, "nr1",
     )
     fake = FakeProxmox(responses={"cluster.resources.get": _NODE_RESOURCE_ROWS})
     with patch("app.clusters.connector.ProxmoxAPI", return_value=fake):
@@ -804,14 +815,14 @@ async def test_node_resources_returns_per_node_free_capacity(
 
 
 @pytest.mark.asyncio
-async def test_node_resources_unit_math(client, session_factory):
+async def test_node_resources_unit_math(client, app, session_factory):
     """The route performs the byte→MB / load-fraction→free-cores conversion.
 
     node-1: maxcpu=8, cpu=0.25 → free_cpu == 6.0;
             maxmem=16 GiB, mem=4 GiB → free_ram_mb == 12288.
     """
     cid, cookies = await _register_cluster_for_resources(
-        client, session_factory, "nr2",
+        client, app, session_factory, "nr2",
     )
     fake = FakeProxmox(responses={"cluster.resources.get": _NODE_RESOURCE_ROWS})
     with patch("app.clusters.connector.ProxmoxAPI", return_value=fake):
@@ -825,10 +836,10 @@ async def test_node_resources_unit_math(client, session_factory):
 
 
 @pytest.mark.asyncio
-async def test_node_resources_includes_offline_node(client, session_factory):
+async def test_node_resources_includes_offline_node(client, app, session_factory):
     """An offline node is still returned — the frontend, not the route, decides."""
     cid, cookies = await _register_cluster_for_resources(
-        client, session_factory, "nr3",
+        client, app, session_factory, "nr3",
     )
     fake = FakeProxmox(responses={"cluster.resources.get": _NODE_RESOURCE_ROWS})
     with patch("app.clusters.connector.ProxmoxAPI", return_value=fake):
@@ -842,24 +853,27 @@ async def test_node_resources_includes_offline_node(client, session_factory):
 
 
 @pytest.mark.asyncio
-async def test_node_resources_requires_authentication(client, session_factory):
+async def test_node_resources_requires_authentication(client, app, session_factory):
     """An unauthenticated request to the node-resources route gets 401."""
     # Register the cluster as admin so a valid id exists, then call WITHOUT
-    # cookies — the route must reject an anonymous caller.
+    # any session — the route must reject an anonymous caller.
     cid, _ = await _register_cluster_for_resources(
-        client, session_factory, "nr4",
+        client, app, session_factory, "nr4",
     )
+    # The AsyncClient persists the admin's login cookies in its jar; clear it
+    # so this request is genuinely anonymous.
+    client.cookies.clear()
     response = await client.get(f"/api/v1/clusters/{cid}/nodes/resources")
     assert response.status_code == 401
 
 
 @pytest.mark.asyncio
-async def test_node_resources_allows_non_admin_user(client, session_factory):
+async def test_node_resources_allows_non_admin_user(client, app, session_factory):
     """A regular (non-admin) user can read node resources — the create wizard
     is run by regular users, so the route is NOT admin-gated."""
     # First register a cluster as admin.
     cid, _ = await _register_cluster_for_resources(
-        client, session_factory, "nr5",
+        client, app, session_factory, "nr5",
     )
     # Now log in as a plain user and hit the route.
     await make_user(

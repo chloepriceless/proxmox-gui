@@ -18,7 +18,11 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.dependencies import csrf_protect, require_admin
+from app.auth.dependencies import (
+    csrf_protect,
+    get_current_principal,
+    require_admin,
+)
 from app.clusters import service
 from app.clusters.registry import PVEConnectorRegistry
 from app.clusters.schemas import (
@@ -28,6 +32,7 @@ from app.clusters.schemas import (
     ClusterTestRequest,
     ClusterTestResponse,
     ClusterUpdate,
+    NodeResourceItem,
 )
 from app.core.db import get_db
 
@@ -172,6 +177,31 @@ async def list_backup_storages(
         db, registry, cluster_id=cluster_id,
     )
     return [BackupStorageItem.from_pve(r) for r in rows]
+
+
+@router.get(
+    "/{cluster_id}/nodes/resources",
+    response_model=list[NodeResourceItem],
+    summary="Per-node free CPU/RAM for the create-wizard node-fit hint (VM-10)",
+    operation_id="clusters_node_resources",
+    dependencies=[Depends(get_current_principal)],
+)
+async def list_node_resources(
+    cluster_id: int,
+    db: AsyncSession = Depends(get_db),
+    registry: PVEConnectorRegistry = Depends(get_registry),
+) -> list[NodeResourceItem]:
+    """Expose per-node free CPU cores + free RAM MB for the node-fit hint.
+
+    AUTH: a pure READ behind the standard authenticated principal — a regular
+    (non-admin) user runs the create wizard, so this is NOT ``require_admin``,
+    and it is a GET so there is no ``csrf_protect``. Per-node capacity is
+    cluster-wide infrastructure data (node names + free CPU/RAM), not
+    tenant-scoped — same posture as ``list_backup_storages`` (T-04-16-01).
+    Synchronous read: no job enqueue, no 202.
+    """
+    rows = await service.list_node_resources(db, registry, cluster_id=cluster_id)
+    return [NodeResourceItem.from_pve(r) for r in rows]
 
 
 @router.post(
