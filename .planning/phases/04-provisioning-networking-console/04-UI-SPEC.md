@@ -1,10 +1,11 @@
 ---
 phase: 4
 slug: provisioning-networking-console
-status: draft
+status: approved
 shadcn_initialized: true
 preset: shadcn-svelte default (slate) — inherited from Phase 1
 created: 2026-05-16
+reviewed_at: 2026-05-16T00:00:00Z
 extends: .planning/phases/03-job-queue-lifecycle/03-UI-SPEC.md
 ---
 
