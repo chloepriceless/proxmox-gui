@@ -211,6 +211,8 @@ def create_app() -> FastAPI:
     from app.auth.routes import router as auth_router
     from app.clusters.routes import router as clusters_router
     from app.inventory.routes import router as inventory_router
+    from app.jobs.routes import router as jobs_router
+    from app.jobs.ws import router as jobs_ws_router
     from app.lifecycle.routes import router as lifecycle_router
     from app.me.routes import router as me_router
     from app.pats.routes import router as pats_router
@@ -251,6 +253,10 @@ def create_app() -> FastAPI:
     # Plan 03-02: power lifecycle routes — Start/Stop/Reboot/Shutdown/Delete +
     # bulk power, all returning 202 (LIFE-01..03, API-04).
     app.include_router(lifecycle_router, prefix="/api/v1", tags=["lifecycle"])
+    # Plan 03-02: jobs API (list/get/retry) + the Tasks-drawer WebSocket
+    # (/api/v1/jobs, /api/v1/ws/jobs).
+    app.include_router(jobs_router, prefix="/api/v1", tags=["jobs"])
+    app.include_router(jobs_ws_router, prefix="/api/v1", tags=["jobs"])
 
     return app
 

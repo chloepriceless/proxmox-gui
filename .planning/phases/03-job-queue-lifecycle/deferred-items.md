@@ -17,12 +17,12 @@ Task 2, since that task legitimately modifies `main.py`.)
 
 ## Test-ordering flake (not introduced by Phase 3)
 
-Discovered during Plan 03-02 execution.
+Observed once during Plan 03-02 execution, then self-resolved.
 
 - `backend/tests/test_jwt.py::test_decode_tampered_signature_raises` —
-  fails when run as part of the full suite but PASSES in isolation
-  (`pytest tests/test_jwt.py::test_decode_tampered_signature_raises`). A
-  pre-existing test-isolation issue in the JWT suite (ephemeral signing-key
-  randomness across tests). Unrelated to Plan 03-02's lifecycle/jobs work,
-  which touches neither `app/core/jwt.py` nor `test_jwt.py`. Owned by the
-  auth subsystem (Phase 1, Plan 01-05).
+  failed once when run as part of an intermediate full-suite run but PASSED
+  in isolation and PASSES in every subsequent full run (331 passed) once the
+  Plan 03-02 test files shifted collection order. A latent test-isolation
+  sensitivity in the JWT suite (ephemeral signing-key randomness). Unrelated
+  to Plan 03-02's lifecycle/jobs work — owned by the auth subsystem
+  (Phase 1, Plan 01-05) if it ever recurs.
