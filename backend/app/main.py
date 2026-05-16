@@ -20,6 +20,8 @@ liveness probe.
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import secrets
 import warnings
 from collections.abc import AsyncIterator
@@ -36,6 +38,8 @@ from app.core.cipher import SecretCipher
 from app.core.db import engine, run_migrations
 from app.models._types_init import install_cipher
 from app.teams.bootstrap import BootstrapFailed
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -71,6 +75,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     #    Best-effort: a single bad cluster row must not block app startup.
     try:
         from sqlalchemy import select
+
         from app.models import Cluster
         async with async_sessionmaker(engine, expire_on_commit=False)() as session:
             result = await session.execute(select(Cluster.id))
@@ -89,16 +94,57 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             stacklevel=2,
         )
 
-    # 6. Serve.
+    # 6. Plan 03-01: arq Redis pool for the 202-enqueue contract + the
+    #    Tasks-drawer pub/sub fan-out. The arq WORKER is a separate process
+    #    (proxmox-gui-worker.service); the API process only needs a pool to
+    #    enqueue jobs and to subscribe to the jobs:events channel.
+    #    Best-effort: if Redis is unreachable the API still serves (the
+    #    lifecycle routes Plan 02 adds will surface a clear 503).
+    app.state.arq_pool = None
+    app.state.jobs_event_pump_task = None
+    try:
+        from arq import create_pool
+        from arq.connections import RedisSettings
+
+        from app.jobs.events import jobs_event_pump
+
+        app.state.arq_pool = await create_pool(
+            RedisSettings(host="127.0.0.1", port=6379, database=0)
+        )
+        app.state.jobs_event_pump_task = asyncio.create_task(
+            jobs_event_pump(app), name="jobs-event-pump"
+        )
+    except Exception as exc:  # noqa: BLE001 — Redis down must not block boot.
+        warnings.warn(
+            f"arq Redis pool unavailable; job queue disabled: {exc}",
+            stacklevel=2,
+        )
+
+    # 7. Serve.
     try:
         yield
     finally:
-        # 7. Stop all health probes before draining pool.
+        # 8. Cancel the jobs-event pump.
+        pump_task = getattr(app.state, "jobs_event_pump_task", None)
+        if pump_task is not None:
+            pump_task.cancel()
+            try:
+                await pump_task
+            except (asyncio.CancelledError, Exception):  # noqa: BLE001
+                pass
+        # 9. Close the arq Redis pool.
+        arq_pool = getattr(app.state, "arq_pool", None)
+        if arq_pool is not None:
+            try:
+                await arq_pool.aclose()
+            except Exception:  # noqa: BLE001
+                pass
+        # 10. Stop all health probes before draining pool.
         try:
             await app.state.registry.stop_all_probes()
         except Exception:  # noqa: BLE001
             pass
-        # 8. Drain pool.
+        # 11. Drain pool.
         await engine.dispose()
 
 

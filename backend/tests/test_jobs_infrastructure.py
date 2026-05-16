@@ -16,9 +16,9 @@ from unittest.mock import patch
 
 import pytest
 import sqlalchemy as sa
-from alembic import command
 from alembic.config import Config
 
+from alembic import command
 from tests.fixtures.pve_responses import FakeProxmox
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
@@ -171,3 +171,207 @@ def test_0004_phase3_round_trips(fresh_db: str) -> None:
     engine3 = sa.create_engine(fresh_db)
     assert "backup_schedules" in sa.inspect(engine3).get_table_names()
     engine3.dispose()
+
+
+# ----------------------------------------------------------------------------
+# Task 2 — the arq WorkerSettings shape
+# ----------------------------------------------------------------------------
+
+
+def test_worker_settings_shape() -> None:
+    """WorkerSettings exposes the arq attributes; every func has max_tries=1."""
+    from app.jobs.worker import WorkerSettings
+
+    assert hasattr(WorkerSettings, "functions")
+    assert hasattr(WorkerSettings, "cron_jobs")
+    assert hasattr(WorkerSettings, "on_startup")
+    assert hasattr(WorkerSettings, "on_shutdown")
+    assert hasattr(WorkerSettings, "redis_settings")
+    # Every registered job function disables arq's own retry (D-16).
+    for f in WorkerSettings.functions:
+        assert getattr(f, "max_tries", None) == 1, (
+            f"function {f!r} must have max_tries=1"
+        )
+
+
+def test_worker_redis_settings_loopback() -> None:
+    """Redis binds loopback only — T-03-01-01."""
+    from app.jobs.worker import WorkerSettings
+
+    assert WorkerSettings.redis_settings.host == "127.0.0.1"
+    assert WorkerSettings.redis_settings.port == 6379
+
+
+def test_worker_startup_calls_reaper() -> None:
+    """on_startup must invoke the orphan reaper (LIFE-14)."""
+    src = (BACKEND_DIR / "app" / "jobs" / "worker.py").read_text()
+    assert "reap_orphans" in src
+
+
+# ----------------------------------------------------------------------------
+# Task 2 — the enqueue helper (commit-before-enqueue, idempotency dedup)
+# ----------------------------------------------------------------------------
+
+
+class _FakeArqPool:
+    """Records enqueue_job calls without touching Redis."""
+
+    def __init__(self) -> None:
+        self.enqueued: list[tuple] = []
+
+    async def enqueue_job(self, *args, **kwargs):  # noqa: ANN002, ANN003
+        self.enqueued.append((args, kwargs))
+        return None
+
+
+@pytest.mark.asyncio
+async def test_enqueue_job_inserts_pending_row_and_commits() -> None:
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from app.jobs.enqueue import enqueue_job
+    from app.models.base import Base
+
+    eng = create_async_engine("sqlite+aiosqlite:///:memory:", future=True)
+    async with eng.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(eng, expire_on_commit=False)
+    pool = _FakeArqPool()
+    async with factory() as session:
+        job = await enqueue_job(
+            session,
+            pool,
+            kind="vm.power",
+            cluster_id=None,
+            team_id=None,
+            actor_user_id=1,
+            payload={"action": "start", "vmid": 100},
+        )
+        assert job.state == "pending"
+        assert job.id is not None
+    # The arq pool was asked to enqueue exactly once.
+    assert len(pool.enqueued) == 1
+    await eng.dispose()
+
+
+@pytest.mark.asyncio
+async def test_enqueue_job_dedups_on_idempotency_key() -> None:
+    """A second call with identical (kind, actor, payload) returns the SAME job."""
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from app.jobs.enqueue import enqueue_job
+    from app.models.base import Base
+
+    eng = create_async_engine("sqlite+aiosqlite:///:memory:", future=True)
+    async with eng.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(eng, expire_on_commit=False)
+    pool = _FakeArqPool()
+    async with factory() as session:
+        job1 = await enqueue_job(
+            session, pool, kind="vm.power", cluster_id=None, team_id=None,
+            actor_user_id=1, payload={"action": "start", "vmid": 100},
+        )
+        job2 = await enqueue_job(
+            session, pool, kind="vm.power", cluster_id=None, team_id=None,
+            actor_user_id=1, payload={"action": "start", "vmid": 100},
+        )
+        assert job1.id == job2.id, "idempotency-key collision must return the in-flight job"
+    await eng.dispose()
+
+
+# ----------------------------------------------------------------------------
+# Task 2 — the orphan reaper (boot-time edge cases, LIFE-14)
+# ----------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_reaper_resolves_stopped_upid_job_to_succeeded() -> None:
+    """A job with a UPID whose task is stopped+OK resolves to succeeded."""
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from app.jobs.reaper import reap_orphans
+    from app.models import Job
+    from app.models.base import Base
+
+    eng = create_async_engine("sqlite+aiosqlite:///:memory:", future=True)
+    async with eng.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(eng, expire_on_commit=False)
+    upid = "UPID:pve-01:0001:000A:65000000:qmstart:100:gui-team-1@pve:"
+    async with factory() as session:
+        job = Job(
+            kind="vm.power", state="running", payload="{}",
+            upid=upid, upid_node="pve-01",
+        )
+        session.add(job)
+        await session.commit()
+        job_id = job.id
+
+    # A registry whose task_status reports the task already stopped+OK.
+    class _StoppedConnector:
+        async def task_status(self, *, node, upid):  # noqa: ANN001
+            return {"status": "stopped", "exitstatus": "OK"}
+
+        async def task_log(self, *, node, upid, limit=200):  # noqa: ANN001
+            return "done"
+
+    class _Registry:
+        async def get_for_team(self, *, cluster_id, team_id, db=None):  # noqa: ANN001
+            return _StoppedConnector()
+
+    ctx = {
+        "sessionmaker": factory,
+        "registry": _Registry(),
+        "redis": _FakeRedis(),
+        "arq_pool": _FakeArqPool(),
+    }
+    await reap_orphans(ctx)
+
+    async with factory() as session:
+        refreshed = await session.get(Job, job_id)
+        assert refreshed.state == "succeeded"
+    await eng.dispose()
+
+
+@pytest.mark.asyncio
+async def test_reaper_marks_no_upid_running_job_needs_review() -> None:
+    """A claimed/running job with NO upid → needs_review (outcome unknown)."""
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from app.jobs.reaper import reap_orphans
+    from app.models import Job
+    from app.models.base import Base
+
+    eng = create_async_engine("sqlite+aiosqlite:///:memory:", future=True)
+    async with eng.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(eng, expire_on_commit=False)
+    async with factory() as session:
+        job = Job(kind="vm.clone", state="claimed", payload="{}")
+        session.add(job)
+        await session.commit()
+        job_id = job.id
+
+    class _Registry:
+        async def get_for_team(self, *, cluster_id, team_id, db=None):  # noqa: ANN001
+            raise AssertionError("reaper must not call PVE for a no-upid job")
+
+    ctx = {
+        "sessionmaker": factory,
+        "registry": _Registry(),
+        "redis": _FakeRedis(),
+        "arq_pool": _FakeArqPool(),
+    }
+    await reap_orphans(ctx)
+
+    async with factory() as session:
+        refreshed = await session.get(Job, job_id)
+        assert refreshed.state == "needs_review"
+    await eng.dispose()
+
+
+class _FakeRedis:
+    """No-op Redis stand-in for publish during reaper/poller tests."""
+
+    async def publish(self, channel, payload):  # noqa: ANN001
+        return None
