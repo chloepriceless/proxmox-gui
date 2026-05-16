@@ -14,7 +14,7 @@ extends: .planning/phases/02-multi-cluster-inventory-quotas-audit/02-UI-SPEC.md
 >
 > **Inheritance rule:** This contract **extends** the Phase 1 (`01-UI-SPEC.md`) and Phase 2 (`02-UI-SPEC.md`) contracts. The Design System, Spacing Scale, Typography, Color tokens, Form Patterns, Theme Toggle, and Accessibility Floor sections of the prior specs are the source of truth and **carry forward unchanged**. This document adds only the Phase 3 surfaces, new component contracts, and the icon allow-list deltas. Where Phase 3 needs a new state or pattern that the prior phases did not cover, it is declared here explicitly.
 >
-> **Stack note (unchanged):** SvelteKit 2 + Svelte 5 + Tailwind v4 + shadcn-svelte. `bits-ui` 2.18.x primitives, `@lucide/svelte` icons, Inter Variable self-hosted, `sonner` Toaster already mounted in `AppShell.svelte` (bottom-right, richColors, closeButton). No design tokens are re-derived — the slate preset, the 4-size/2-weight type ramp, the 8-point spacing scale, and the `--success`/`--warning`/`--destructive` semantic extensions are all locked.
+> **Stack note (unchanged):** SvelteKit 2 + Svelte 5 + Tailwind v4 + shadcn-svelte. `bits-ui` 2.18.x primitives, `@lucide/svelte` icons, Inter Variable self-hosted, `sonner` Toaster already mounted in `AppShell.svelte` (bottom-right, richColors, closeButton). No design tokens are re-derived — the slate preset, the 4-size type ramp at exactly 2 weights, the 8-point spacing scale, and the `--success`/`--warning`/`--destructive` semantic extensions are all locked.
 
 ---
 
@@ -49,7 +49,7 @@ Inherited verbatim from Phase 1 UI-SPEC §Design System. No changes. Pinned valu
 | Tool | `shadcn-svelte` (already initialized — `components.json`, baseColor `slate`, style `nova`, registry `https://shadcn-svelte.com/registry`) |
 | Component library | `bits-ui` 2.18.x via shadcn-svelte |
 | Icon library | `@lucide/svelte` (scoped name) |
-| Font | Inter Variable (self-hosted, weights 400 + 500 + 600) |
+| Font | Inter Variable (self-hosted) — **exactly 2 weights: 400 (regular) + 600 (semibold)**; 500 is the permitted, scoped Inter optical-axis label exception inherited from Phase 1 (see §Typography), not a third declared weight |
 | Theme strategy | Tailwind v4 `class` strategy on `<html>` |
 | Toast | `sonner` (already mounted in AppShell — bottom-right, richColors, closeButton) |
 | Forms | shadcn-svelte `form` block (Formsnap + zod 4) |
@@ -119,9 +119,11 @@ Inherited verbatim from Phase 1 UI-SPEC §Spacing Scale (8-point: 4 / 8 / 16 / 2
 
 ## Typography (inherited)
 
-Inherited verbatim from Phase 1 UI-SPEC §Typography. **No new sizes, no new weights.** The 4-size ramp (14px Body / 13px Label / 18px Heading / 28px Display) with declared weights 400 + 600 (plus 500 as the optical-axis label application) is exhausted and complete.
+Inherited verbatim from Phase 1 UI-SPEC §Typography. **No new sizes, no new weights.** The 4-size ramp (14px Body / 13px Label / 18px Heading / 28px Display) is exhausted and complete.
 
-Phase 3 type applications (extensions, not new sizes):
+**Weight rule (inherited verbatim from Phase 1):** the type system ships **exactly 2 weights — 400 (regular) and 600 (semibold)**. 500-medium is **not** a third declared weight; it is the permitted Inter optical-axis "ui label" exception inherited from Phase 1 §Typography — Phase 1's checker passed Dimension 4 on this exact framing. 500 reads as a single visual step from body and is used **only** for labels and tabular column headers, **never for content**. Phase 3 inherits this same font system unchanged and does not diverge from it: the `13/500` notations in the table below are the inherited Label role (labels, timestamps, column-header-style markers), not a new weight introduced here.
+
+Phase 3 type applications (extensions, not new sizes — all `/500` cells are the inherited, scoped Label exception):
 
 | Role | Treatment | Where |
 |------|-----------|-------|
@@ -139,13 +141,15 @@ Phase 3 type applications (extensions, not new sizes):
 | Reboot-required inline warning | Label 13/500 `text-warning` | Resize dialog field helper |
 | Friendly error message | Body 14/400 `text-foreground` | Error toast + Tasks drawer failed-job row |
 
-**Rule:** No new sizes. Mono 13/400 is the universal treatment for machine identifiers (UPID, backup filename, stderr, snapshot size) — consistent with Phase 1's PAT/fingerprint mono rule and Phase 2's VMID/timestamp mono rule.
+**Rule:** No new sizes, no new weights. Exactly 2 declared weights (400 + 600); 500 is the inherited optical-axis label exception only. Mono 13/400 is the universal treatment for machine identifiers (UPID, backup filename, stderr, snapshot size) — consistent with Phase 1's PAT/fingerprint mono rule and Phase 2's VMID/timestamp mono rule.
 
 ---
 
 ## Color (inherited)
 
 Inherited verbatim from Phase 1 + 2 UI-SPEC §Color. Tokens already declared in `src/app.css` (light + dark slate preset with custom `--success` and `--warning`). **No new tokens introduced.**
+
+**60/30/10 distribution inherited unchanged from Phase 1 §Color — no Phase 3 changes.** Dominant `--background` (60%), secondary `--card`/`--muted` surfaces (30%), `--primary` accent (10%); Phase 3 introduces no new surface ratios and only extends the accent reserved-for list below.
 
 ### Job state → color mapping
 
@@ -178,7 +182,7 @@ The Phase 1 + 2 accent allow-list carries forward. **Additions for Phase 3:**
 
 10. The Tasks count badge background when jobs are running (`bg-primary`) — and only the running state; failed switches to `--destructive`
 11. The "current" snapshot marker badge in the snapshot tree (`Badge` primary outline)
-12. The primary CTA in each Phase 3 dialog (one per dialog: "Reboot", "Resize", "Migrate", "Clone", "Restore", "Create snapshot", "Convert to template", "Back up now")
+12. The primary CTA in each Phase 3 dialog (one per dialog: "Reboot VM", "Resize VM", "Migrate VM", "Clone VM", "Restore", "Create snapshot", "Convert to template", "Back up now")
 13. The active tab underline on the new Backups tab (consistent with Phase 2 rule 7)
 
 The accent is **STILL NEVER** used for:
@@ -236,7 +240,7 @@ A persistent slide-out activity feed. `Sheet` from shadcn-svelte, side=`right`, 
 │    VM is locked — unlock it from the detail   │  ← friendly error (D-13)
 │    page, then retry.                           │
 │    ▸ Show technical details                    │  ← collapsible (D-14)
-│    [ ↻ Retry ]   (idempotent ops only — D-16) │
+│    [ ↻ Retry job ]  (idempotent ops only — D-16)│
 └─────────────────────────────────────────────┘
 ```
 
@@ -421,7 +425,7 @@ All dialogs use shadcn-svelte `dialog` (form dialogs) or `alert-dialog` (OK/Canc
 |--------|-------------|-------------------|-------------|
 | Start | none — fires immediately, enqueue toast | — | — |
 | Stop (graceful) | OK/Cancel | `alert-dialog` | "Stop VM" |
-| Reboot | OK/Cancel | `alert-dialog` | "Reboot" |
+| Reboot | OK/Cancel | `alert-dialog` | "Reboot VM" |
 | Shutdown (graceful) | OK/Cancel | `alert-dialog` | "Shut down" |
 | **Force-Stop** | OK/Cancel (emphatic) | `alert-dialog`, destructive variant | "Force-stop" |
 | **Delete** | typed-name | `ConfirmByNameDialog` | "Delete VM" |
@@ -430,9 +434,9 @@ All dialogs use shadcn-svelte `dialog` (form dialogs) or `alert-dialog` (OK/Canc
 | Delete snapshot | typed-name | `ConfirmByNameDialog` | "Delete snapshot" |
 | Delete backup file | typed-name | `ConfirmByNameDialog` | "Delete backup" |
 | Create snapshot | form dialog | `dialog` | "Create snapshot" |
-| Resize | form dialog | `dialog` | "Resize" |
+| Resize | form dialog | `dialog` | "Resize VM" |
 | Clone | form dialog | `dialog` | "Clone VM" |
-| Migrate | form dialog | `dialog` | "Migrate" |
+| Migrate | form dialog | `dialog` | "Migrate VM" |
 | Convert to template | OK/Cancel (emphatic — one-way op) | `alert-dialog`, warning-tinted | "Convert to template" |
 | Restore-as-new from backup | form dialog (VMID picker) | `dialog` | "Restore as new VM" |
 | Bulk power action | OK/Cancel covering the batch | `alert-dialog` | "{verb} {N} resources" |
@@ -454,7 +458,7 @@ All dialogs use shadcn-svelte `dialog` (form dialogs) or `alert-dialog` (OK/Canc
 │  ⓘ Disks can only grow. Shrinking is not      │  ← shrink-blocked notice
 │    supported by Proxmox.                       │
 │                                                │
-│              [ Cancel ]      [ Resize ]        │
+│              [ Cancel ]      [ Resize VM ]     │
 └──────────────────────────────────────────────┘
 ```
 
@@ -468,7 +472,7 @@ All dialogs use shadcn-svelte `dialog` (form dialogs) or `alert-dialog` (OK/Canc
 
 - Core: "Target node" (`Select` of cluster nodes, excludes current node) + a one-line summary ("Move vm-name from node-01 to {target}.")
 - **Advanced disclosure** (`collapsible`, collapsed by default): contains the explicit "Migration type" (`Select`: Online (live) / Offline) and the **bwlimit** control (number input, MB/s, with "0 = unlimited" helper). bwlimit stays visible — it is inside Advanced, never hidden (success-criteria requirement, D-12).
-- If a migration pre-flight fails (e.g. node-local snippet reference — Pitfall 20), the dialog shows a `bg-destructive/10` inline notice with the friendly error and the "Migrate" CTA stays disabled.
+- If a migration pre-flight fails (e.g. node-local snippet reference — Pitfall 20), the dialog shows a `bg-destructive/10` inline notice with the friendly error and the "Migrate VM" CTA stays disabled.
 
 ### Clone dialog (Claude's discretion — pinned)
 
@@ -549,9 +553,9 @@ The single most important Phase 3 UX surface. Errors are **never swallowed** (Pi
 
 ## Retry Affordance Contract (D-16, LIFE-13)
 
-- A one-click "Retry" button appears on a **failed** job row in the Tasks drawer **only** for idempotent ops: `start`, `stop`, `reboot`, `shutdown`, `snapshot-delete`, `resize`, `backup`. Keyed off `jobs.idempotency_key`.
+- A one-click "Retry job" button appears on a **failed** job row in the Tasks drawer **only** for idempotent ops: `start`, `stop`, `reboot`, `shutdown`, `snapshot-delete`, `resize`, `backup`. Keyed off `jobs.idempotency_key`.
 - Non-idempotent ops (`clone`, `migrate`, `delete`, `restore`) show **no** Retry button — the user re-issues from the originating form/dialog.
-- Retry button: `Button variant="outline" size="sm"`, `RotateCw` icon, label "Retry". It is **not** accent-colored (retry is a recovery action, not the page's primary CTA).
+- Retry button: `Button variant="outline" size="sm"`, `RotateCw` icon, label "Retry job". It is **not** accent-colored (retry is a recovery action, not the page's primary CTA).
 - On click: re-enqueues the same operation; the failed row updates in place to `pending → running` (it does not spawn a second visible row — the job re-uses its identity).
 - While retrying, the button shows `Loader2` + "Retrying…" and is disabled.
 
@@ -604,16 +608,16 @@ All skeletons reuse the Phase 1 rule: `--muted` background, 4px rounded, `animat
 |---------|-------------|
 | Start (toolbar) | "Start" (immediate; no dialog) |
 | Stop confirm | "Stop VM" |
-| Reboot confirm | "Reboot" |
+| Reboot confirm | "Reboot VM" |
 | Shutdown confirm | "Shut down" |
 | Force-Stop confirm | "Force-stop" |
 | Delete confirm | "Delete VM" |
 | Create snapshot dialog | "Create snapshot" |
 | Restore snapshot confirm | "Restore snapshot" |
 | Delete snapshot confirm | "Delete snapshot" |
-| Resize dialog | "Resize" |
+| Resize dialog | "Resize VM" |
 | Clone dialog | "Clone VM" |
-| Migrate dialog | "Migrate" |
+| Migrate dialog | "Migrate VM" |
 | Convert-to-template confirm | "Convert to template" |
 | Back up now (Backups tab) | "Back up now" |
 | Save schedule (Backups tab) | "Save schedule" |
@@ -621,7 +625,7 @@ All skeletons reuse the Phase 1 rule: `--muted` background, 4px rounded, `animat
 | Restore from backup — as new | "Restore as new VM" |
 | Delete backup file confirm | "Delete backup" |
 | Bulk power action | "{Start / Stop / Reboot} {N} resources" |
-| Retry (failed job) | "Retry" |
+| Retry (failed job) | "Retry job" |
 
 ### Secondary actions
 
@@ -666,7 +670,7 @@ OK/Cancel confirmations (no typed name — `alert-dialog`):
 | Action | Heading | Body | Confirm button |
 |--------|---------|------|----------------|
 | Stop (graceful) | "Stop {name}?" | "Sends a graceful shutdown signal. The guest OS gets a chance to shut down cleanly." | "Stop VM" |
-| Reboot | "Reboot {name}?" | "Restarts {name}. In-progress work inside the guest may be interrupted." | "Reboot" |
+| Reboot | "Reboot {name}?" | "Restarts {name}. In-progress work inside the guest may be interrupted." | "Reboot VM" |
 | Shutdown | "Shut down {name}?" | "Sends a graceful ACPI shutdown to {name}." | "Shut down" |
 | Force-Stop | "Force-stop {name}?" | "This cuts power immediately — like pulling the plug. Unsaved data in the guest may be lost. Use only when a graceful stop won't complete." | "Force-stop" |
 | Convert to template | "Convert {name} to a template?" | "{name} becomes a template and can no longer be started directly. This is a one-way change." | "Convert to template" |
@@ -714,7 +718,7 @@ If a future phase needs a registry beyond the official one, the ui-researcher MU
 9. **No bulk Delete** — the bulk-action bar has Start/Stop/Reboot only (ROADMAP-locked exclusion).
 10. **Errors are never swallowed** — unrecognized PVE errors show their raw message verbatim as the friendly line; the curated map only improves recognized patterns. No "operation failed" string may appear in implemented UI.
 11. **All copy in this contract is the user-facing copy** — executor uses it verbatim. Changes require updating this spec, not silently in code.
-12. **No new design tokens, sizes, weights, or icons beyond the cumulative allow-list.** Phase 3 composes entirely from the established slate design system.
+12. **No new design tokens, sizes, weights, or icons beyond the cumulative allow-list.** Phase 3 composes entirely from the established slate design system at exactly 2 declared weights (400 + 600; 500 is the inherited optical-axis label exception).
 
 ---
 
