@@ -6,9 +6,9 @@
         Heading "Pick a cloud image".
     - template-clone (VM-02): a `Select` of the cluster's PVE templates + a
         linked/full `clone_mode` radio. Heading "Pick a template to clone".
-    - blank-iso (VM-03): an ISO picker (`api.iso.listIsos`). Heading "Pick an
-        installation ISO". The full ISO library browser is owned by Plan 04-13
-        — this step renders a basic ISO `Select` until that lands.
+    - blank-iso (VM-03): the full `IsoLibrary` browser (Plan 04-13) — the
+        on-storage ISO table + command search, the curated ISO list, and the
+        free-URL download. Heading "Pick an installation ISO".
     - vm-clone (VM-04): a `Select` of the user's existing VMs + the linked/full
         `clone_mode` radio. Heading "Pick a VM to clone".
 
@@ -26,9 +26,10 @@
   import { Label } from '$lib/components/ui/label';
   import HelpTooltip from '$lib/components/shared/HelpTooltip.svelte';
   import EmptyState from '$lib/components/shared/EmptyState.svelte';
+  import IsoLibrary from './IsoLibrary.svelte';
   import Disc from '@lucide/svelte/icons/disc';
   import { api } from '$lib/api/client';
-  import type { CloudImage, IsoItem } from '$lib/api/types';
+  import type { CloudImage } from '$lib/api/types';
   import type { VmSourceKind } from './vm-wizard';
 
   /** One pickable clone source (a PVE template or an existing VM). */
@@ -101,51 +102,35 @@
   let imagesError = $state<string | null>(null);
 
   // -- blank-iso (VM-03) ---------------------------------------------------
+  // The on-storage ISO list, the curated list, and the free-URL download are
+  // owned by the `IsoLibrary` browser (Plan 04-13) — it fetches `listIsos`
+  // itself. This step passes the curated cloud-image list (also fetched here)
+  // through as the IsoLibrary's curated set.
 
-  /** The on-storage ISO list — fetched for the blank-iso path. */
-  let isos = $state<IsoItem[]>([]);
-  /** True while the ISO fetch is in flight. */
-  let isosLoading = $state(false);
-  /** An ISO load error, or `null`. */
-  let isosError = $state<string | null>(null);
-
-  /** Fetch the source list the active path needs. */
+  /**
+   * Fetch the source list the active path needs. The cloud-image path needs
+   * the curated image list; the blank-iso path's `IsoLibrary` also consumes
+   * the curated list (the same curated download pattern serves both — D-15).
+   */
   $effect(() => {
     const kind = sourceKind;
+    if (kind !== 'cloud-image' && kind !== 'blank-iso') return;
     let cancelled = false;
-    if (kind === 'cloud-image') {
-      imagesLoading = true;
-      api.iso
-        .listCloudImages({ clusterId })
-        .then((list) => {
-          if (!cancelled) {
-            cloudImages = list;
-            imagesError = null;
-          }
-        })
-        .catch(() => {
-          if (!cancelled) imagesError = "Couldn't load cloud images.";
-        })
-        .finally(() => {
-          if (!cancelled) imagesLoading = false;
-        });
-    } else if (kind === 'blank-iso' && node) {
-      isosLoading = true;
-      api.iso
-        .listIsos({ clusterId, teamId, node })
-        .then((list) => {
-          if (!cancelled) {
-            isos = list;
-            isosError = null;
-          }
-        })
-        .catch(() => {
-          if (!cancelled) isosError = "Couldn't load ISOs.";
-        })
-        .finally(() => {
-          if (!cancelled) isosLoading = false;
-        });
-    }
+    imagesLoading = true;
+    api.iso
+      .listCloudImages({ clusterId })
+      .then((list) => {
+        if (!cancelled) {
+          cloudImages = list;
+          imagesError = null;
+        }
+      })
+      .catch(() => {
+        if (!cancelled) imagesError = "Couldn't load cloud images.";
+      })
+      .finally(() => {
+        if (!cancelled) imagesLoading = false;
+      });
     return () => {
       cancelled = true;
     };
@@ -226,64 +211,30 @@
     {/if}
   {:else if sourceKind === 'blank-iso'}
     <!-- ====================== blank-iso (VM-03) ========================= -->
+    <!--
+      The full ISO library browser (Plan 04-13) — the on-storage ISO table
+      with a command search, the curated ISO list, and the free-URL download
+      (D-16/D-17). It fetches `listIsos` itself; the curated cloud-image list
+      is passed through. Selecting an on-storage ISO patches `iso_volid`.
+    -->
     <header class="flex flex-col gap-1">
       <h2 class="text-[18px] font-semibold leading-tight tracking-tight">
         Pick an installation ISO
       </h2>
       <p class="text-muted-foreground text-[14px]">
-        Browse ISOs on storage or download a new one.
+        Browse ISOs on storage, pick a curated one, or download one by URL.
       </p>
     </header>
 
-    {#if isosLoading}
-      <p class="text-muted-foreground text-[13px]">Loading ISOs…</p>
-    {:else if isosError}
-      <div class="bg-destructive/10 rounded-md p-3">
-        <p class="text-destructive text-[13px]">{isosError}</p>
-      </div>
-    {:else}
-      <div class="flex flex-col gap-1.5">
-        <div class="flex items-center gap-1.5">
-          <Label for="vm-iso">Installation ISO</Label>
-          <HelpTooltip
-            label="Installation ISO"
-            text="The .iso the blank VM boots from. The full ISO library browser — including downloading a new ISO by URL — ships with the ISO library plan."
-          />
-        </div>
-        {#if isos.length > 0}
-          <Select.Root
-            type="single"
-            value={value.iso_volid || undefined}
-            onValueChange={(v) => v && patch({ iso_volid: v })}
-          >
-            <Select.Trigger id="vm-iso" class="w-full">
-              {isos.find((i) => i.volid === value.iso_volid)?.filename ||
-                value.iso_volid ||
-                'Select an ISO'}
-            </Select.Trigger>
-            <Select.Content>
-              {#each isos as iso (iso.volid)}
-                <Select.Item value={iso.volid}>{iso.filename}</Select.Item>
-              {/each}
-            </Select.Content>
-          </Select.Root>
-        {:else}
-          <Input
-            id="vm-iso"
-            placeholder="local:iso/debian-12.iso"
-            value={value.iso_volid}
-            oninput={(e) => patch({ iso_volid: e.currentTarget.value })}
-          />
-          <p class="text-muted-foreground text-[13px]">
-            No ISOs found on storage. Enter an ISO volume id, or download one
-            from the ISO library.
-          </p>
-        {/if}
-        {#if errors.iso_volid}
-          <p class="text-destructive text-[13px]">{errors.iso_volid}</p>
-        {/if}
-      </div>
-    {/if}
+    <IsoLibrary
+      {clusterId}
+      {teamId}
+      {node}
+      curated={cloudImages}
+      value={value.iso_volid}
+      error={errors.iso_volid}
+      onSelect={(volid) => patch({ iso_volid: volid })}
+    />
   {:else}
     <!-- ============= template-clone (VM-02) / vm-clone (VM-04) ========== -->
     <header class="flex flex-col gap-1">
