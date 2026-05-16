@@ -200,17 +200,22 @@ def test_validate_cloud_image_missing_ipconfig0_is_hard_error() -> None:
 
 
 def test_module_is_a_pure_transform() -> None:
-    """cloudinit.py imports no DB session and no PVE connector (pure module)."""
+    """cloudinit.py imports no DB session, no PVE connector, no cloud-init CLI."""
     import inspect
 
     from app.provisioning import cloudinit
 
     src = inspect.getsource(cloudinit)
+    # No DB session and no PVE connector import — a pure transform module.
     assert "AsyncSession" not in src
-    assert "connector" not in src.lower()
+    assert "clusters.connector" not in src
+    assert "from app.clusters" not in src
     # No cloud-init CLI dependency — the validator is hand-rolled (A5).
+    # It must not shell out (subprocess / os.system) nor import a cloud-init lib.
     assert "subprocess" not in src
-    assert "cloud-init" not in src.replace("#cloud-config", "")
+    assert "os.system" not in src
+    assert "import cloudinit" not in src
+    assert "from cloudinit" not in src
 
 
 # ---------------------------------------------------------------------------

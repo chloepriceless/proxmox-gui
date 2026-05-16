@@ -24,6 +24,7 @@ The 202 body is a ``ProvisioningJobAcceptedResponse`` — it carries the reserve
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request, status
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import Principal, csrf_protect, get_current_principal
@@ -33,6 +34,11 @@ from app.core.source_ip import extract_source_ip
 from app.inventory.access import _get_registry, resolve_resource
 from app.lifecycle.routes import _require_arq_pool
 from app.provisioning import service
+from app.provisioning.cloudinit import (
+    CloudInitForm,
+    render_cloudinit_preview,
+    validate_cloudinit_form,
+)
 from app.provisioning.schemas import (
     CreateLxcRequest,
     CreateQemuRequest,
@@ -117,3 +123,109 @@ async def create_qemu(
         resolved=resolved,
     )
     return _job_accepted(job, vmid)
+
+
+# ---------------------------------------------------------------------------
+# Cloud-Init preview (VM-05/06/07 — Plan 04-05 Task 2)
+#
+# A pure transform endpoint — no PVE call, no DB write. It wraps the
+# ``provisioning/cloudinit`` module so the two-pane Cloud-Init editor (Plan
+# 04-13's frontend) gets the rendered YAML AND the block-hard/warn-soft verdict
+# in a single round-trip.
+# ---------------------------------------------------------------------------
+
+
+class CloudInitPreviewRequest(BaseModel):
+    """Body of ``POST .../provisioning/cloudinit/preview`` — the editor form."""
+
+    model_config = ConfigDict(extra="forbid")
+    ciuser: str | None = Field(default=None, max_length=64)
+    cipassword: str | None = Field(default=None, max_length=128)
+    sshkeys: list[str] = Field(default_factory=list)
+    ip_mode: str = Field(default="dhcp", max_length=16)
+    ip_address: str | None = Field(default=None, max_length=64)
+    gateway: str | None = Field(default=None, max_length=64)
+    nameservers: list[str] = Field(default_factory=list)
+    packages: list[str] = Field(default_factory=list)
+    runcmd: list[str] = Field(default_factory=list)
+    source_kind: str = Field(default="cloud-image", max_length=32)
+
+
+class YamlLineOut(BaseModel):
+    """One rendered ``#cloud-config`` line — ``injected`` marks a PVE default."""
+
+    model_config = ConfigDict(extra="forbid")
+    text: str
+    injected: bool
+
+
+class FieldErrorOut(BaseModel):
+    """One hard validation error — names the offending form field."""
+
+    model_config = ConfigDict(extra="forbid")
+    field: str
+    message: str
+
+
+class CloudInitVerdictOut(BaseModel):
+    """The block-hard / warn-soft validation verdict (D-12)."""
+
+    model_config = ConfigDict(extra="forbid")
+    hard_errors: list[FieldErrorOut]
+    soft_warnings: list[str]
+    ok: bool
+
+
+class CloudInitPreviewResponse(BaseModel):
+    """``200`` body — the rendered lines + the verdict in one payload."""
+
+    model_config = ConfigDict(extra="forbid")
+    lines: list[YamlLineOut]
+    verdict: CloudInitVerdictOut
+
+
+@router.post(
+    "/clusters/{cluster_id}/provisioning/cloudinit/preview",
+    response_model=CloudInitPreviewResponse,
+    summary="Render the effective #cloud-config + validate the form (VM-05/06/07)",
+    operation_id="provisioning_cloudinit_preview",
+    dependencies=[Depends(csrf_protect)],
+)
+async def cloudinit_preview(
+    cluster_id: int,
+    payload: CloudInitPreviewRequest,
+    principal: Principal = Depends(get_current_principal),
+) -> CloudInitPreviewResponse:
+    """Render + validate the Cloud-Init form — a pure transform.
+
+    No PVE call, no DB write. ``cluster_id`` is in the path purely for URL
+    consistency with the rest of the provisioning surface. The frontend
+    Cloud-Init editor calls this on every form change for the live YAML pane
+    (``render_cloudinit_preview``) and the block-hard/warn-soft verdict
+    (``validate_cloudinit_form``).
+    """
+    form = CloudInitForm(
+        ciuser=payload.ciuser,
+        cipassword=payload.cipassword,
+        sshkeys=payload.sshkeys,
+        ip_mode=payload.ip_mode,
+        ip_address=payload.ip_address,
+        gateway=payload.gateway,
+        nameservers=payload.nameservers,
+        packages=payload.packages,
+        runcmd=payload.runcmd,
+        source_kind=payload.source_kind,
+    )
+    lines = render_cloudinit_preview(form)
+    verdict = validate_cloudinit_form(form)
+    return CloudInitPreviewResponse(
+        lines=[YamlLineOut(text=ln.text, injected=ln.injected) for ln in lines],
+        verdict=CloudInitVerdictOut(
+            hard_errors=[
+                FieldErrorOut(field=e.field, message=e.message)
+                for e in verdict.hard_errors
+            ],
+            soft_warnings=verdict.soft_warnings,
+            ok=verdict.ok,
+        ),
+    )
