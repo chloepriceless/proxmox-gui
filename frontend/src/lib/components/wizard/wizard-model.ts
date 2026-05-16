@@ -91,6 +91,19 @@ export function canAdvanceFromPathStep(path: WizardPath | null): boolean {
   return path !== null;
 }
 
+/**
+ * Whether closing the wizard now should prompt the discard `alert-dialog`
+ * (UI-SPEC §"Wizard chrome contract" — "Closing mid-wizard prompts an
+ * alert-dialog"). There is "progress to discard" once a path has been chosen
+ * OR the user has moved past Step 1. With no progress the close is silent.
+ */
+export function shouldPromptDiscard(
+  path: WizardPath | null,
+  activeStep: number
+): boolean {
+  return path !== null || activeStep > 1;
+}
+
 // ---------------------------------------------------------------------------
 // The six path-picker cards (Copywriting Contract — pinned verbatim)
 // ---------------------------------------------------------------------------

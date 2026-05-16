@@ -31,8 +31,10 @@ import {
   stepsForPath,
   canAdvanceFromPathStep,
   inventoryPathForJob,
+  shouldPromptDiscard,
   WIZARD_STEP_LABEL
 } from '$lib/components/wizard/wizard-model';
+import { load as createLoad } from '../src/routes/create/+page.server';
 
 // ---------------------------------------------------------------------------
 // A tiny in-memory Storage double — mirrors the `Storage` interface surface
@@ -304,5 +306,71 @@ describe('inventoryPathForJob — D-04 post-submit landing', () => {
     });
     expect(path).toBe('/inventory/2/300');
     expect(path).not.toContain('999');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Discard prompt — closing the wizard mid-progress
+// ---------------------------------------------------------------------------
+
+describe('shouldPromptDiscard — the close-wizard discard gate', () => {
+  it('does NOT prompt when nothing has been chosen (Step 1, no path)', () => {
+    expect(shouldPromptDiscard(null, 1)).toBe(false);
+  });
+
+  it('prompts once a path card has been chosen', () => {
+    expect(shouldPromptDiscard('plain-lxc', 1)).toBe(true);
+  });
+
+  it('prompts once the user has moved past Step 1', () => {
+    expect(shouldPromptDiscard('cloud-image', 3)).toBe(true);
+  });
+
+  it('prompts whenever there is progress to lose', () => {
+    // Any non-null path OR any step > 1 means there is a draft to discard.
+    expect(shouldPromptDiscard(null, 2)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// /create SSR loader — auth gate (T-04-10-01)
+// ---------------------------------------------------------------------------
+
+/** Build the minimal event the `create/+page.server.ts` loader reads. */
+function loaderEvent(opts: {
+  user: { id: number } | null;
+  pathname?: string;
+}): Parameters<typeof createLoad>[0] {
+  return {
+    locals: { user: opts.user },
+    url: new URL(`http://localhost${opts.pathname ?? '/create'}`),
+    fetch: (async () => new Response('[]')) as unknown as typeof fetch
+  } as unknown as Parameters<typeof createLoad>[0];
+}
+
+describe('/create SSR loader — auth gate', () => {
+  it('redirects an unauthenticated user to /login (303) with ?next preserved', async () => {
+    let thrown: unknown;
+    try {
+      await createLoad(loaderEvent({ user: null }));
+    } catch (e) {
+      thrown = e;
+    }
+    // SvelteKit `redirect()` throws a `{ status, location }` Redirect object.
+    expect(thrown).toBeTruthy();
+    const redir = thrown as { status?: number; location?: string };
+    expect(redir.status).toBe(303);
+    expect(redir.location).toContain('/login');
+    expect(redir.location).toContain('next=');
+    expect(decodeURIComponent(redir.location ?? '')).toContain('/create');
+  });
+
+  it('does NOT redirect an authenticated user — returns the wizard data', async () => {
+    const result = await createLoad(loaderEvent({ user: { id: 1 } }));
+    expect(result).toBeTruthy();
+    expect((result as { user: unknown }).user).toEqual({ id: 1 });
+    // The cluster list is an array (the fake fetch returns `[]`).
+    expect(Array.isArray((result as { clusters: unknown }).clusters)).toBe(true);
+    expect((result as { loadError: boolean }).loadError).toBe(false);
   });
 });
