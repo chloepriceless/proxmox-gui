@@ -34,6 +34,7 @@ from app.jobs.clone_migrate_functions import (
 )
 from app.jobs.functions import noop_job, run_power_action
 from app.jobs.provisioning_functions import (
+    run_community_script,
     run_create_lxc,
     run_create_qemu,
     run_download,
@@ -144,6 +145,10 @@ class WorkerSettings:
         func(run_create_qemu, name='vm.create.qemu', max_tries=1, timeout=14400),
         func(run_create_lxc, name='lxc.create', max_tries=1, timeout=3600),
         func(run_download, name='storage.download', max_tries=1, timeout=14400),
+        # Plan 04-06: community-script two-stage create + install. Non-
+        # idempotent (D-16) — max_tries=1; a long install (immich/nextcloudpi)
+        # can run for many minutes, so a 1h timeout.
+        func(run_community_script, name='lxc.community-script', max_tries=1, timeout=3600),
     ]
     # Plan 03-04: scheduled-backup cron — fire due schedules every 5 minutes
     # (RESEARCH §Pattern 1). The cron entry point enqueues vm.backup jobs.

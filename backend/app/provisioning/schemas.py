@@ -289,6 +289,79 @@ class CreateQemuRequest(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Community-script LXC create (LXC-03 — Plan 04-06)
+# ---------------------------------------------------------------------------
+
+
+class CommunityScriptRequest(BaseModel):
+    """Body of ``POST /clusters/{id}/provisioning/community-script``.
+
+    A one-click community-scripts deploy (LXC-03). ``script_slug`` names the
+    catalog entry — it is validated against the catalog entry set in the
+    service so an unknown slug never resolves to a script (threat T-04-06-01).
+
+    ``script_options`` carries the D-07 parsed-option values; it is
+    defaults-only when the catalog metadata could not be parsed. The values
+    flow as discrete env-var entries to ``lxc_exec``'s ``command`` list — never
+    interpolated into a shell string (threat T-04-06-01).
+
+    Modelled on ``CreateLxcRequest`` — same sizing/network fields; the
+    ``ostemplate`` is resolved by the service from the catalog entry's
+    ``install_methods`` ``os``/``version`` (D-07), so it is not in the body.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    team_id: int = Field(..., ge=1)
+    node: str = Field(..., min_length=1, max_length=64)
+    storage: str = Field(..., min_length=1, max_length=128)
+    script_slug: str = Field(..., min_length=1, max_length=128)
+    hostname: str = Field(..., min_length=1, max_length=64)
+    cpu_cores: int = Field(..., ge=1, le=512)
+    memory_mb: int = Field(..., ge=16)
+    disk_gb: int = Field(..., ge=1)
+    network: NetworkConfig | None = None
+    unprivileged: bool = True
+    ssh_public_keys: str | None = Field(default=None, max_length=8192)
+    script_options: dict[str, str] = Field(default_factory=dict)
+
+    @property
+    def requested_ram_bytes(self) -> int:
+        return self.memory_mb * 1024 * 1024
+
+    @property
+    def requested_disk_bytes(self) -> int:
+        return self.disk_gb * 1024 * 1024 * 1024
+
+    def to_pve_config(self, *, pool: str, ostemplate: str) -> dict[str, Any]:
+        """Translate the wizard input into proxmoxer kwargs for ``create_lxc``.
+
+        ``ostemplate`` is resolved by the service from the catalog entry's
+        ``install_methods`` ``os``/``version`` and passed in here; it is NOT
+        part of the returned dict (``connector.create_lxc`` takes it as a
+        named arg). ``pool`` is always carried so PVE creates the container
+        inside the team pool (Pitfall 5/7).
+
+        The community-script container is created STOPPED — stage 2 starts it
+        before running the install stage, mirroring the upstream sequence
+        (``pct create`` → ``pct start`` → install).
+        """
+        config: dict[str, Any] = {
+            "hostname": self.hostname,
+            "cores": self.cpu_cores,
+            "memory": self.memory_mb,
+            "rootfs": f"{self.storage}:{self.disk_gb}",
+            "unprivileged": 1 if self.unprivileged else 0,
+            "pool": pool,
+            "ostemplate": ostemplate,
+        }
+        net = self.network or NetworkConfig(id="vmbr0")
+        config["net0"] = net.lxc_net0()
+        if self.ssh_public_keys:
+            config["ssh-public-keys"] = self.ssh_public_keys
+        return config
+
+
+# ---------------------------------------------------------------------------
 # Response
 # ---------------------------------------------------------------------------
 

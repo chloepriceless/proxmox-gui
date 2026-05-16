@@ -366,3 +366,422 @@ def test_connector_lxc_exec_routes_through_breaker() -> None:
 
     src = inspect.getsource(PVEConnector.lxc_exec)
     assert "_call_with_breaker" in src
+
+
+# ===========================================================================
+# Community-script create endpoint (Task 2)
+# ===========================================================================
+
+_VZCREATE_UPID = "UPID:pve-01:0002:000B:65000000:vzcreate:150:gui-team-90@pve:"
+_START_UPID = "UPID:pve-01:0004:000D:65000000:vzstart:150:gui-team-90@pve:"
+
+
+async def _seed_cluster_and_token(
+    session_factory, *, team_id: int, poolid: str | None = None,
+):
+    """Seed Cluster + Team + TeamClusterToken; return (cluster_id, team_id, poolid)."""
+    from app.models import Cluster, Team, TeamClusterToken
+
+    poolid = poolid or f"gui-team-{team_id}"
+    async with session_factory() as session:
+        team = Team(id=team_id, name=f"gui-team-{team_id}", personal=False,
+                    is_active=True)
+        session.add(team)
+        await session.flush()
+        cluster = Cluster(
+            name=f"cluster-{team_id}", host="pve-cs.test", port=8006,
+            verify_ssl=False, token_user="root@pam", token_name="gui",
+            api_token_secret="bootstrap-secret", is_active=True,
+        )
+        session.add(cluster)
+        await session.flush()
+        token = TeamClusterToken(
+            team_id=team.id, cluster_id=cluster.id,
+            userid=f"gui-team-{team_id}@pve", tokenid="api",
+            token_secret=f"team-{team_id}-secret", poolid=poolid,
+        )
+        session.add(token)
+        await session.commit()
+        await session.refresh(cluster)
+        return cluster.id, team.id, poolid
+
+
+async def _add_user_to_team(session_factory, *, user_id: int, team_id: int):
+    from app.models import TeamMembership
+
+    async with session_factory() as session:
+        session.add(TeamMembership(team_id=team_id, user_id=user_id))
+        await session.commit()
+
+
+async def _set_team_quota(session_factory, *, team_id, cluster_id, vm_count):
+    from app.models import Quota
+
+    async with session_factory() as session:
+        session.add(Quota(team_id=team_id, cluster_id=cluster_id,
+                           vm_count=vm_count))
+        await session.commit()
+
+
+def _make_fake_for_community_script():
+    """A FakeProxmox pre-wired for nextid + the LXC create dispatch."""
+    fake = FakeProxmox(
+        responses={
+            "nodes.pve-01.lxc.post": {"data": _VZCREATE_UPID},
+            "cluster.nextid.get": 150,
+        }
+    )
+    # resolve / quota admission read /cluster/resources thrice.
+    for _ in range(3):
+        fake.queue_response("cluster.resources.get", CLUSTER_RESOURCES_VM)
+    return fake
+
+
+@pytest.mark.asyncio
+async def test_community_script_create_returns_202(client, session_factory) -> None:
+    """POST .../provisioning/community-script → 202; kind lxc.community-script."""
+    from app.models import Job
+
+    user = await make_user(session_factory, username="csuser", is_admin=False)
+    cluster_id, team_id, _ = await _seed_cluster_and_token(
+        session_factory, team_id=90,
+    )
+    await _add_user_to_team(session_factory, user_id=user.id, team_id=team_id)
+
+    fake = _make_fake_for_community_script()
+    with patch("app.clusters.connector.ProxmoxAPI", return_value=fake):
+        cookies = await login_as(client, username="csuser",
+                                 password="testpass12345")
+        csrf = cookies.get("csrf_token", "")
+        resp = await client.post(
+            f"/api/v1/clusters/{cluster_id}/provisioning/community-script",
+            json={
+                "team_id": team_id, "node": "pve-01", "storage": "local",
+                "script_slug": "pihole", "hostname": "ct-pihole",
+                "cpu_cores": 1, "memory_mb": 512, "disk_gb": 4,
+            },
+            cookies=cookies, headers={"X-CSRF-Token": csrf},
+        )
+    assert resp.status_code == 202, resp.text
+    body = resp.json()
+    assert body["kind"] == "lxc.community-script"
+    assert body["vmid"] == 150
+
+    async with session_factory() as db:
+        rows = (await db.execute(
+            sa.select(Job).where(Job.kind == "lxc.community-script")
+        )).scalars().all()
+    assert len(rows) == 1
+    payload = json.loads(rows[0].payload)
+    assert payload["script_slug"] == "pihole"
+    assert payload["commit_sha"] == _FLOOR_SHA
+
+
+@pytest.mark.asyncio
+async def test_community_script_unknown_slug_returns_422(
+    client, session_factory
+) -> None:
+    """An unknown script_slug → 422 (threat T-04-06-01 — slug validated)."""
+    user = await make_user(session_factory, username="csbad", is_admin=False)
+    cluster_id, team_id, _ = await _seed_cluster_and_token(
+        session_factory, team_id=91,
+    )
+    await _add_user_to_team(session_factory, user_id=user.id, team_id=team_id)
+
+    fake = _make_fake_for_community_script()
+    with patch("app.clusters.connector.ProxmoxAPI", return_value=fake):
+        cookies = await login_as(client, username="csbad",
+                                 password="testpass12345")
+        csrf = cookies.get("csrf_token", "")
+        resp = await client.post(
+            f"/api/v1/clusters/{cluster_id}/provisioning/community-script",
+            json={
+                "team_id": team_id, "node": "pve-01", "storage": "local",
+                "script_slug": "definitely-not-a-real-script",
+                "hostname": "ct-x", "cpu_cores": 1, "memory_mb": 512,
+                "disk_gb": 4,
+            },
+            cookies=cookies, headers={"X-CSRF-Token": csrf},
+        )
+    assert resp.status_code == 422, resp.text
+
+
+@pytest.mark.asyncio
+async def test_community_script_quota_exceeded_returns_409(
+    client, session_factory
+) -> None:
+    """An over-quota community-script create → 409 (admission before reserve)."""
+    user = await make_user(session_factory, username="csquota", is_admin=False)
+    cluster_id, team_id, _ = await _seed_cluster_and_token(
+        session_factory, team_id=92, poolid="gui-team-42",
+    )
+    await _add_user_to_team(session_factory, user_id=user.id, team_id=team_id)
+    # The fixture pool has 2 VMs; vm_count=2 leaves zero headroom.
+    await _set_team_quota(session_factory, team_id=team_id,
+                          cluster_id=cluster_id, vm_count=2)
+
+    fake = _make_fake_for_community_script()
+    with patch("app.clusters.connector.ProxmoxAPI", return_value=fake):
+        cookies = await login_as(client, username="csquota",
+                                 password="testpass12345")
+        csrf = cookies.get("csrf_token", "")
+        resp = await client.post(
+            f"/api/v1/clusters/{cluster_id}/provisioning/community-script",
+            json={
+                "team_id": team_id, "node": "pve-01", "storage": "local",
+                "script_slug": "pihole", "hostname": "ct-q",
+                "cpu_cores": 1, "memory_mb": 512, "disk_gb": 4,
+            },
+            cookies=cookies, headers={"X-CSRF-Token": csrf},
+        )
+    assert resp.status_code == 409, resp.text
+
+
+@pytest.mark.asyncio
+async def test_community_script_cross_tenant_returns_403(
+    client, session_factory
+) -> None:
+    """A community-script create for a team the principal is not in → 403."""
+    await make_user(session_factory, username="csxt", is_admin=False)
+    cluster_id, other_team_id, _ = await _seed_cluster_and_token(
+        session_factory, team_id=93,
+    )
+    # The user has only their personal team — not team 93.
+
+    fake = _make_fake_for_community_script()
+    with patch("app.clusters.connector.ProxmoxAPI", return_value=fake):
+        cookies = await login_as(client, username="csxt",
+                                 password="testpass12345")
+        csrf = cookies.get("csrf_token", "")
+        resp = await client.post(
+            f"/api/v1/clusters/{cluster_id}/provisioning/community-script",
+            json={
+                "team_id": other_team_id, "node": "pve-01",
+                "storage": "local", "script_slug": "pihole",
+                "hostname": "ct-xt", "cpu_cores": 1, "memory_mb": 512,
+                "disk_gb": 4,
+            },
+            cookies=cookies, headers={"X-CSRF-Token": csrf},
+        )
+    assert resp.status_code == 403, resp.text
+
+
+# ===========================================================================
+# run_community_script two-stage job (Task 2)
+# ===========================================================================
+
+
+def test_run_community_script_is_two_stage() -> None:
+    """run_community_script is two-stage — create_lxc then lxc_exec; no delete."""
+    import inspect
+
+    from app.jobs import provisioning_functions
+
+    src = inspect.getsource(provisioning_functions.run_community_script)
+    assert "create_lxc" in src  # stage 1
+    assert "lxc_exec" in src  # stage 2 runs inside the container
+    assert "publish_event" in src  # D-08 output streaming
+    assert "dispatch_and_poll" in src  # stage 1 is UPID-polled
+    # Pitfall 8 — a stage-2 failure must NEVER delete the container.
+    assert "vm_delete" not in src
+    assert ".delete" not in src
+    assert inspect.iscoroutinefunction(
+        provisioning_functions.run_community_script
+    )
+
+
+async def _build_worker_ctx(session_factory, connector):
+    """Build an arq ``ctx`` dict + a fake registry returning ``connector``."""
+
+    class _FakeRegistry:
+        async def get_for_team(self, *, cluster_id, team_id, db=None):  # noqa: ANN001
+            return connector
+
+    class _FakeRedis:
+        async def publish(self, *a, **kw):  # noqa: ANN002, ANN003
+            return None
+
+    return {
+        "sessionmaker": session_factory,
+        "registry": _FakeRegistry(),
+        "redis": _FakeRedis(),
+    }
+
+
+async def _seed_community_script_job(session_factory, *, vmid: int = 150):
+    """Insert a pending lxc.community-script Job row; return its id."""
+    from app.models import Job
+
+    payload = {
+        "node": "pve-01", "vmid": vmid, "is_lxc": True,
+        "config": {
+            "hostname": "ct-pihole", "cores": 1, "memory": 512,
+            "rootfs": "local:4", "unprivileged": 1, "pool": "gui-team-90",
+            "ostemplate": "local:vztmpl/debian-12-standard_amd64.tar.zst",
+            "net0": "name=eth0,bridge=vmbr0,ip=dhcp",
+        },
+        "script_slug": "pihole", "script_options": {},
+        "commit_sha": _FLOOR_SHA, "application": "Pi-hole",
+    }
+    async with session_factory() as session:
+        job = Job(
+            kind="lxc.community-script", cluster_id=1, team_id=90,
+            actor_user_id=1, payload=json.dumps(payload),
+            idempotency_key=f"cs-{vmid}", state="pending",
+        )
+        session.add(job)
+        await session.commit()
+        await session.refresh(job)
+        return job.id
+
+
+@pytest.mark.asyncio
+async def test_run_community_script_stage1_creates_then_stage2_execs(
+    session_factory,
+) -> None:
+    """Stage 1 creates the LXC (UPID-polled), stage 2 lxc_execs the install."""
+    from app.jobs.provisioning_functions import run_community_script
+    from app.jobs.service import get_job
+
+    # FakeProxmox: vzcreate UPID, the task polls stopped/OK, then start.
+    fake = FakeProxmox(
+        responses={
+            "nodes.pve-01.lxc.post": {"data": _VZCREATE_UPID},
+            "nodes.pve-01.lxc.150.status.start.post": {"data": _START_UPID},
+            "nodes.pve-01.tasks.get": {"status": "stopped", "exitstatus": "OK"},
+        }
+    )
+    # Both the create task and the start task poll the same tasks path.
+    fake.queue_response(
+        f"nodes.pve-01.tasks.{_VZCREATE_UPID}.status.get",
+        {"status": "stopped", "exitstatus": "OK"},
+    )
+    fake.queue_response(
+        f"nodes.pve-01.tasks.{_VZCREATE_UPID}.log.get", [{"n": 1, "t": "done"}],
+    )
+    conn = _connector(fake)
+
+    lxc_exec_calls: list[dict] = []
+
+    async def _fake_lxc_exec(*, node, vmid, command, **kw):  # noqa: ANN001
+        lxc_exec_calls.append({"node": node, "vmid": vmid, "command": command})
+        return {"exit_code": 0, "output": "Pi-hole installed\n"}
+
+    conn.lxc_exec = _fake_lxc_exec  # type: ignore[method-assign]
+
+    job_id = await _seed_community_script_job(session_factory, vmid=150)
+    ctx = await _build_worker_ctx(session_factory, conn)
+    await run_community_script(ctx, job_id)
+
+    # Stage 1 issued the create.
+    create_calls = fake.find_calls("nodes.pve-01.lxc.post")
+    assert len(create_calls) == 1
+    # Stage 2 ran lxc_exec inside the created container (not the host).
+    assert len(lxc_exec_calls) == 1
+    assert lxc_exec_calls[0]["vmid"] == 150
+    # The install command targets the install-stage script at the pinned SHA.
+    assert _FLOOR_SHA in " ".join(lxc_exec_calls[0]["command"])
+
+    async with session_factory() as db:
+        final = await get_job(db, job_id)
+    assert final.state == "succeeded"
+
+
+@pytest.mark.asyncio
+async def test_run_community_script_stage2_failure_keeps_lxc(
+    session_factory,
+) -> None:
+    """A stage-2 install failure marks the job failed but issues NO LXC delete."""
+    from app.jobs.provisioning_functions import run_community_script
+    from app.jobs.service import get_job
+
+    fake = FakeProxmox(
+        responses={
+            "nodes.pve-01.lxc.post": {"data": _VZCREATE_UPID},
+            "nodes.pve-01.lxc.150.status.start.post": {"data": _START_UPID},
+        }
+    )
+    fake.queue_response(
+        f"nodes.pve-01.tasks.{_VZCREATE_UPID}.status.get",
+        {"status": "stopped", "exitstatus": "OK"},
+    )
+    fake.queue_response(
+        f"nodes.pve-01.tasks.{_VZCREATE_UPID}.log.get", [{"n": 1, "t": "done"}],
+    )
+    conn = _connector(fake)
+
+    async def _failing_lxc_exec(*, node, vmid, command, **kw):  # noqa: ANN001
+        # The install stage RAN but exited non-zero.
+        return {"exit_code": 13, "output": "install error: package missing\n"}
+
+    conn.lxc_exec = _failing_lxc_exec  # type: ignore[method-assign]
+
+    job_id = await _seed_community_script_job(session_factory, vmid=150)
+    ctx = await _build_worker_ctx(session_factory, conn)
+    await run_community_script(ctx, job_id)
+
+    async with session_factory() as db:
+        final = await get_job(db, job_id)
+    # The job failed...
+    assert final.state == "failed"
+    # ...but the container is KEPT — NO delete call was ever issued (Pitfall 8).
+    delete_calls = [c for c in fake.calls if c[0].endswith(".delete")]
+    assert delete_calls == [], f"a stage-2 failure must NOT delete: {delete_calls}"
+
+
+@pytest.mark.asyncio
+async def test_run_community_script_captures_output_to_audit(
+    session_factory,
+) -> None:
+    """The install output is captured to the audit log (CLAUDE.md #8)."""
+    from app.jobs.provisioning_functions import run_community_script
+    from app.models import AuditLog
+
+    fake = FakeProxmox(
+        responses={
+            "nodes.pve-01.lxc.post": {"data": _VZCREATE_UPID},
+            "nodes.pve-01.lxc.150.status.start.post": {"data": _START_UPID},
+        }
+    )
+    fake.queue_response(
+        f"nodes.pve-01.tasks.{_VZCREATE_UPID}.status.get",
+        {"status": "stopped", "exitstatus": "OK"},
+    )
+    fake.queue_response(
+        f"nodes.pve-01.tasks.{_VZCREATE_UPID}.log.get", [{"n": 1, "t": "done"}],
+    )
+    conn = _connector(fake)
+
+    async def _fake_lxc_exec(*, node, vmid, command, on_output=None, **kw):  # noqa: ANN001
+        if on_output is not None:
+            on_output("UNIQUE-INSTALL-MARKER line 1\n")
+        return {"exit_code": 0, "output": "UNIQUE-INSTALL-MARKER line 1\n"}
+
+    conn.lxc_exec = _fake_lxc_exec  # type: ignore[method-assign]
+
+    job_id = await _seed_community_script_job(session_factory, vmid=150)
+    ctx = await _build_worker_ctx(session_factory, conn)
+    await run_community_script(ctx, job_id)
+
+    async with session_factory() as db:
+        rows = (await db.execute(
+            sa.select(AuditLog).where(
+                AuditLog.action == "lxc.community-script"
+            )
+        )).scalars().all()
+    # The terminal audit row carries the captured install output.
+    assert any(
+        r.payload_after and "UNIQUE-INSTALL-MARKER" in str(r.payload_after)
+        for r in rows
+    ), "install output was not captured to the audit log"
+
+
+def test_worker_registers_community_script_kind() -> None:
+    """The worker registers lxc.community-script with max_tries=1."""
+    import inspect
+
+    from app.jobs import worker
+
+    src = inspect.getsource(worker)
+    assert "func(run_community_script, name='lxc.community-script'" in src
+    assert "max_tries=1" in src

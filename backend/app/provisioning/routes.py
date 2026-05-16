@@ -40,6 +40,7 @@ from app.provisioning.cloudinit import (
     validate_cloudinit_form,
 )
 from app.provisioning.schemas import (
+    CommunityScriptRequest,
     CreateLxcRequest,
     CreateQemuRequest,
     ProvisioningJobAcceptedResponse,
@@ -121,6 +122,42 @@ async def create_qemu(
         registry=registry,
         source_ip=extract_source_ip(request),
         resolved=resolved,
+    )
+    return _job_accepted(job, vmid)
+
+
+# ---- Create community-script LXC (LXC-03 — Plan 04-06) --------------------
+@router.post(
+    "/clusters/{cluster_id}/provisioning/community-script",
+    response_model=ProvisioningJobAcceptedResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="One-click community-script deploy — two-stage create + install job",
+    operation_id="provisioning_community_script",
+    dependencies=[Depends(csrf_protect)],
+)
+async def create_community_script(
+    cluster_id: int,
+    request: Request,
+    payload: CommunityScriptRequest,
+    principal: Principal = Depends(get_current_principal),
+    db: AsyncSession = Depends(get_db),
+    registry: PVEConnectorRegistry = Depends(_get_registry),
+) -> ProvisioningJobAcceptedResponse:
+    """Enqueue a two-stage ``lxc.community-script`` job (LXC-03).
+
+    The job creates the empty LXC (UPID-polled) then runs ONLY the upstream
+    install stage inside it via ``pct exec`` (Pitfall 10 — never on the host),
+    streaming the output to the Tasks drawer (D-08). Like every provisioning
+    create the owning team is named in the body; a cross-tenant team → 403.
+    """
+    job, vmid = await service.enqueue_community_script(
+        db,
+        _require_arq_pool(request),
+        principal=principal,
+        cluster_id=cluster_id,
+        request=payload,
+        registry=registry,
+        source_ip=extract_source_ip(request),
     )
     return _job_accepted(job, vmid)
 
