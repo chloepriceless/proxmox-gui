@@ -28,6 +28,12 @@ dependencies = [
     "python-multipart==0.0.27",
     "httpx==0.28.1",
     "pybreaker==1.4.1",
+    # The console WebSocket relay (app/console/proxy.py) opens the upstream
+    # wss://pve-host:8006/.../vncwebsocket leg with the `websockets` client —
+    # httpx cannot do WebSocket. `websockets` is already installed via
+    # `uvicorn[standard]`; this is an explicit contractual pin (spike 04-03
+    # §3), not a new install. Phase 4 introduces no new backend libraries.
+    "websockets==16.0",
 ]
 
 [dependency-groups]
