@@ -130,7 +130,7 @@ Inherited verbatim from Phase 1 UI-SPEC §Spacing Scale (8-point: 4 / 8 / 16 / 2
 | Network picker group header | 32px (`h-8`) | `bg-muted/40`; groups "SDN VNets" vs "Legacy bridges" |
 | noVNC console iframe container | min 480px tall, 16:10 aspect, grows to fill the tab panel | Bordered `card`-style container; a "Fullscreen" affordance expands it |
 | Notification bell button (Topbar) | 36px × 36px (`h-9 w-9`) | Icon-only `variant="ghost"`; unread badge overlaps top-right — identical chrome to the Phase-3 Tasks icon |
-| Notification unread badge | 18px circle (`h-[18px] min-w-[18px]`) | Overlaps the bell icon; shows the unread count; hidden at 0; `9+` above 9 |
+| Notification unread badge | 20px circle (`h-5 min-w-[1.25rem]`) | Overlaps the bell icon; shows the unread count; hidden at 0; `9+` above 9. 20px (multiple of 4) gives the `9+` overflow label room; matches the Phase-3 Tasks-badge chrome family |
 | Notification panel | 380px wide | `dropdown-menu`/`popover` panel; one step narrower than the 400px QuotaIndicator drawer — it is a lightweight feed, not a full Sheet |
 | Notification row | min 56px (`min-h-14`) | Matches the Tasks-drawer job-row height |
 | Provisioning banner | 48px tall (`h-12`) | Full-width strip below the detail-page header while a create job runs |
@@ -143,6 +143,8 @@ Inherited verbatim from Phase 1 UI-SPEC §Spacing Scale (8-point: 4 / 8 / 16 / 2
 ## Typography (inherited)
 
 Inherited verbatim from Phase 1 UI-SPEC §Typography. **No new sizes, no new weights.** The 4-size ramp (28px Display / 18px Heading / 14px Body / 13px Label) is exhausted and complete.
+
+**Line height (inherited — locked, restated for completeness):** Body and Label text use **1.5** line-height (`leading-normal` — 14px Body renders at 21px line height); Heading and Display use **1.2** (`leading-tight`). These values are locked in the **Phase 1 UI-SPEC §Typography** ramp table and carry forward unchanged — Phase 4 introduces no new line-height values. Mono blocks (commit hash, YAML pane, ISO filename, IP address) use the same 13px / 1.5 treatment defined in Phase 1 §Typography "Mono use".
 
 **Weight rule (inherited verbatim from Phase 1 + 3):** the type system ships **exactly 2 weights — 400 (regular) and 600 (semibold)**. 500-medium is **not** a third declared weight; it is the permitted Inter optical-axis "ui label" exception inherited from Phase 1 §Typography. All `/500` cells below are the inherited Label role (labels, column headers, badge text), not a new weight.
 
@@ -262,7 +264,7 @@ A single unified wizard on one route. Step 1 is a six-card path picker; the wiza
 ```
 
 **Wizard chrome contract:**
-- Header: title "Create" (Heading 18/600) + a close `X` (top-right). Closing mid-wizard prompts an `alert-dialog`: "Discard this draft? — Your wizard progress will be lost." / CTA "Discard draft".
+- Header: title "Create" (Heading 18/600) + a close `X` (top-right). The icon-only `X` close button **must** carry `aria-label="Close wizard"`. Closing mid-wizard prompts an `alert-dialog`: "Discard this draft? — Your wizard progress will be lost." / CTA "Discard draft".
 - Stepper rail: a horizontal stepper (default) above the step body, OR a 200px left vertical rail — executor picks one, stays consistent. Active step `bg-primary`; completed steps `--success` with a check; future steps `--muted`. Step labels are Label 13/500.
 - Footer bar: 64px sticky, `[← Back]` left (`variant="ghost"`, hidden on Step 1), `[Next →]` right (accent). On the final Review step the right button becomes the path-specific provisioning CTA (see Copywriting Contract).
 - The step body is `max-w-[45rem]` centered, **except** the Cloud-Init step which uses the full content width for its two-pane layout.
@@ -456,7 +458,7 @@ Fills the disabled placeholder. The tab trigger's `Lock` marker + "Console ships
 - **The iframe is NOT rendered on page load.** The tab initially shows a centered placeholder: `MonitorPlay` icon (24px), heading "Console" (Heading 18/600), body "Open a live console session to {name}. The session opens in this panel." (Body 14/400 muted), and an accent "Open console" primary button.
 - **Mint-on-click (CON-02, Pitfall 3):** the `vncticket` is minted server-side **only when the user clicks "Open console"** — never on page load (the ticket lives ~30–40s). On click, the GUI mints the ticket and renders the `<iframe>` pointed at the GUI's own reverse-proxied noVNC URL.
 - **Reverse-proxied (CON-03):** all console traffic flows through the GUI's reverse-proxied WebSocket — no direct Proxmox exposure to the browser.
-- **iframe container:** a bordered (`--border`) `card`-style container, min 480px tall, 16:10 aspect, grows to fill the tab panel. A "Fullscreen" affordance (`Maximize2` icon, top-right of the container) expands it.
+- **iframe container:** a bordered (`--border`) `card`-style container, min 480px tall, 16:10 aspect, grows to fill the tab panel. A "Fullscreen" affordance (`Maximize2` icon, top-right of the container) expands it. The Fullscreen control is icon-only and **must** carry `aria-label="Fullscreen"` **and** `title="Fullscreen"`.
 - **Reconnect (CON-02):** because the ticket is short-lived, the tab shows a "Reconnect" button (`RefreshCw` icon) — visible in the container's top bar — that re-mints a fresh ticket and reloads the iframe. If the session drops, a `bg-warning/10` strip ("Console session ended.") appears with the Reconnect button. The exact reconnect-UX details are Claude's discretion — the pinned contract is: never auto-mint on load; always offer an explicit re-mint.
 - **Loading:** between the click and the iframe handshake, the placeholder shows a `Loader2` spinner + "Connecting to console…".
 
@@ -465,7 +467,7 @@ Fills the disabled placeholder. The tab trigger's `Lock` marker + "Console ships
 A new icon button in the Topbar **right cluster**, positioned **left of the Phase-3 Tasks icon** (order left→right: `[Bell] [Tasks] [Quota] [ThemeToggle] [UserMenu]`).
 
 - Icon: `Bell` (16px), button `h-9 w-9`, `variant="ghost"`. When unread items exist the icon may swap to `BellRing`.
-- Unread count badge overlapping top-right: 18px circle, shows the unread completion count; hidden at 0; `9+` above 9. `bg-primary` normally; `bg-destructive` when any unread item is a **failed** job.
+- Unread count badge overlapping top-right: 20px circle (`h-5 min-w-[1.25rem]`), shows the unread completion count; hidden at 0; `9+` above 9. `bg-primary` normally; `bg-destructive` when any unread item is a **failed** job.
 - `aria-label="Notifications: {N} unread. Open notifications."`
 - Click opens a 380px `dropdown-menu`/`popover` panel — a scrollable feed of recent **task completions only** (D-22): job done/failed events.
 - **Derived feed (D-23):** the panel reads recent rows from the existing Phase-3 `jobs` table and tracks a per-user "last seen" timestamp for the unread count — **no new notification table**.
@@ -594,7 +596,7 @@ All skeletons reuse the Phase 1 rule: `--muted` background, 4px rounded, `animat
 
 | Surface | Primary CTA |
 |---------|-------------|
-| `/inventory` Create button | "Create" |
+| `/inventory` Create button | "Create" *(accepted single-word convention — see note below)* |
 | Wizard — intermediate steps | "Next" |
 | Wizard — Back | "Back" |
 | Wizard — final CTA, Plain LXC path | "Create container" |
@@ -611,6 +613,8 @@ All skeletons reuse the Phase 1 rule: `--muted` background, 4px rounded, `animat
 | Admin Sync catalog | "Sync catalog" |
 | Networks admin tab — save | "Save changes" *(the team-page existing CTA — reused)* |
 | Notification panel row | (rows are click-to-navigate — no per-row button) |
+
+**Single-word `/inventory` "Create" CTA — accepted convention.** The page-header button on `/inventory` is intentionally the single word "Create" with no noun. It is an **inventory-screen page-action affordance** — its noun is supplied by the page it lives on (the VM/LXC inventory) and by the wizard it opens, whose Step-1 heading is "Choose what to create". Spelling out a noun here is ambiguous (the button creates either a VM **or** an LXC — the path is chosen inside the wizard), so a single-word page action is the correct, deliberate choice. This mirrors the Hetzner-Cloud "create server" entry-point convention and the Phase-2 list-screen action pattern. Every **terminal** provisioning CTA inside the wizard footer is a full verb+noun ("Create container", "Create VM", "Deploy script", "Clone VM") — the verb+noun rule applies to the committing action, and the `/inventory` button merely opens the wizard.
 
 ### Secondary actions
 
