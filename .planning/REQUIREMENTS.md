@@ -88,10 +88,10 @@ Requirements for initial release. Each maps to roadmap phases via the Traceabili
 
 - [x] **VM-01
 **: User can deploy a VM from a Cloud-Init image (Ubuntu, Debian, Rocky, etc.)
-- [ ] **VM-02**: User can deploy a VM from an existing PVE template (linked or full clone)
+- [x] **VM-02**: User can deploy a VM from an existing PVE template (linked or full clone)
 - [x] **VM-03
 **: User can deploy a blank VM with a mounted ISO
-- [ ] **VM-04**: User can clone an existing VM (linked or full)
+- [x] **VM-04**: User can clone an existing VM (linked or full)
 - [x] **VM-05
 **: User can edit Cloud-Init config in a two-pane editor (form + live YAML preview)
 - [x] **VM-06
@@ -100,8 +100,8 @@ Requirements for initial release. Each maps to roadmap phases via the Traceabili
 **: Cloud-Init schema validation runs before submit
 - [x] **VM-08
 **: User can browse an ISO library across storages (with URL-download for new ISOs)
-- [ ] **VM-09**: User can pick target host, storage, network, CPU, RAM, disk in the VM wizard
-- [ ] **VM-10**: Wizard shows real-time quota delta and node fit hints (e.g., "won't fit on node-1")
+- [x] **VM-09**: User can pick target host, storage, network, CPU, RAM, disk in the VM wizard
+- [x] **VM-10**: Wizard shows real-time quota delta and node fit hints (e.g., "won't fit on node-1")
 
 ### Networking (SDN)
 
@@ -274,20 +274,20 @@ Which phases cover which requirements. Updated during roadmap creation.
 | LXC-05 | Phase 4 | Pending |
 | LXC-06 | Phase 4 | Pending |
 | LXC-07 | Phase 4 | Pending |
-| VM-01 | Phase 4 | Pending |
-| VM-02 | Phase 4 | Pending |
-| VM-03 | Phase 4 | Pending |
-| VM-04 | Phase 4 | Pending |
+| VM-01 | Phase 4 | Complete (Plan 04-05 backend + 04-12 cloud-image wizard path) |
+| VM-02 | Phase 4 | Complete (Plan 04-12 template-clone wizard path) |
+| VM-03 | Phase 4 | Complete (Plan 04-05 backend + 04-12 blank-iso wizard path) |
+| VM-04 | Phase 4 | Complete (Plan 04-12 vm-clone wizard path) |
 | VM-05 | Phase 4 | Pending |
 | VM-06 | Phase 4 | Pending |
 | VM-07 | Phase 4 | Pending |
 | VM-08 | Phase 4 | Pending |
-| VM-09 | Phase 4 | Pending |
-| VM-10 | Phase 4 | Pending |
-| NET-01 | Phase 4 | Pending |
+| VM-09 | Phase 4 | Complete (Plan 04-12 VM Resources step) |
+| VM-10 | Phase 4 | Complete (Plan 04-12 node-fit selector + quota-delta line) |
+| NET-01 | Phase 4 | Complete (Plan 04-07 backend + 04-12 SDN network picker) |
 | NET-02 | Phase 4 | Complete (Plan 04-07 backend + 04-14 Networks admin tab) |
-| NET-03 | Phase 4 | Pending |
-| NET-04 | Phase 4 | Pending |
+| NET-03 | Phase 4 | Complete (Plan 04-07 backend + 04-12 IPAM auto-pick in the picker) |
+| NET-04 | Phase 4 | Complete (Plan 04-07 backend + 04-12 legacy-bridge fallback in the picker) |
 | LIFE-01 | Phase 3 | Complete (Plan 03-02) |
 | LIFE-02 | Phase 3 | Complete (Plan 03-02) |
 | LIFE-03 | Phase 3 | Complete (Plan 03-02 + 03-06 frontend) |

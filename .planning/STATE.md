@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_plan: 12
+current_plan: 13
 status: executing
-stopped_at: Completed 04-14-PLAN.md
+stopped_at: Completed 04-12-PLAN.md
 last_updated: "2026-05-16T22:00:00.000Z"
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 38
-  completed_plans: 36
-  percent: 95
+  completed_plans: 37
+  percent: 97
 ---
 
 # STATE: Proxmox Self-Service GUI
@@ -30,13 +30,13 @@ progress:
 
 Phase: 04 (provisioning-networking-console) — EXECUTING
 Plan: 14 of 14
-Current Plan: 12
+Current Plan: 13
 
 - **Milestone:** v1
 - **Phase:** 4
-- **Plan:** 04-14 console-bell-networks-banner ✅ complete
-- **Status:** Executing Phase 04 — Wave 5 complete (04-11 LXC wizard + 04-14 console/bell/networks done); 04-12 VM wizard + 04-13 Cloud-Init editor remain
-- **Progress:** [█████████▌] 95%
+- **Plan:** 04-12 frontend-vm-wizard ✅ complete
+- **Status:** Executing Phase 04 — Wave 6 complete (04-12 VM wizard: 4 paths + node-fit selector + quota-delta line + SDN-aware network picker); only 04-13 Cloud-Init editor remains
+- **Progress:** [█████████▋] 97%
 
 ## Phases at a Glance
 
@@ -91,6 +91,7 @@ Current Plan: 12
 | Phase 04 P10 | ~8 min | 2 tasks | 12 files | 32 new / 171 frontend |
 | Phase 04 P11 | ~11 min | 2 tasks | 9 files | 37 new / 208 frontend |
 | Phase 04 P14 | ~30 min | 2 tasks | 21 files | 8 new / 485 backend + 43 new / 251 frontend |
+| Phase 04 P12 | ~12 min | 2 tasks | 11 files | 55 new / 306 frontend |
 
 ## Accumulated Context
 
@@ -232,6 +233,9 @@ Current Plan: 12
 | `list_notifications` normalises naive SQLite timestamps to aware-UTC before the cursor comparison | A naive-vs-aware `datetime` `>` comparison raises; the DB returns naive `created_at`/`last_seen_at` | Plan 04-14 SUMMARY |
 | The console iframe `src` is validated through `consoleIframeSrc` — any `:8006`/`vncwebsocket` URL throws rather than ever reaching the browser (CON-03) | A single chokepoint makes "the iframe never points at the Proxmox host" provable + testable | Plan 04-14 SUMMARY |
 | Phase-4 component logic lives in `node`-testable `.ts` modules; `.svelte` files import them WITHOUT the `.ts` extension and are covered by `svelte-check` | The vitest env is `node`-only (no DOM) — the established Phase 1-4 discipline (`lxc-wizard.ts`); `allowImportingTsExtensions` is off so the extension must be dropped | Plan 04-14 SUMMARY |
+| `NodeSelect` is pure-prop-driven — it takes a `NodeResource[]` prop; Phase 4 ships no team-scoped node-free-resource API, so node-fit is advisory (a `null` free figure keeps the node pickable) | The backend's row-locked quota admission + PVE remain the real placement gate (T-04-12-02); the node-fit logic ships complete + tested, only the live-data feed awaits a future endpoint | Plan 04-12 SUMMARY |
+| The LXC Resources step is retro-enriched by composing `NodeSelect`+`QuotaDeltaLine` in the `/create` route ALONGSIDE `LxcResourcesStep` | That file is Plan 04-11's and exposes comment-only mount markers (not prop slots); composing in the route satisfies the enrichment with no cross-wave file edit (the approach the 04-11 SUMMARY offered) | Plan 04-12 SUMMARY |
+| `vm-wizard.ts` owns the network-picker logic (`networkGroups`/`isNetworkPickable`/`defaultIpAssignment`/`buildNetworkConfig`) and the quota-delta logic (`computeQuotaDelta`) | Both are framework-free and unit-testable in the `node` env; the `.svelte` files are thin render shells (the 04-10 `wizard-model.ts` discipline) | Plan 04-12 SUMMARY |
 
 ### Open Questions (resolve before/during named phase)
 
@@ -263,12 +267,13 @@ None.
 
 ## Session Continuity
 
-**To resume:** Phase 04 executing — Wave 5 complete (04-11 LXC wizard paths + 04-14 console tab / notification bell / Networks admin tab / provisioning banner). Next is Wave 6: Plan 04-12 (VM wizard, 4 paths + node-fit + SDN-aware network picker) and Wave 7: Plan 04-13 (Cloud-Init two-pane editor + ISO library browser) — they plug their step bodies into the 04-10 wizard shell. After 04-13, Phase 4 is complete.
+**To resume:** Phase 04 executing — Wave 6 complete (04-12 VM wizard: the four VM source paths + the shared node-fit selector + quota-delta line + SDN-aware network picker, all wired into `/create` and retro-fitted into the LXC paths). Only Wave 7 remains: Plan 04-13 (Cloud-Init two-pane editor + ISO library browser) — it plugs the Cloud-Init step body into the marked VM-path mount point in `create/+page.svelte`. After 04-13, Phase 4 is complete.
 
 **Next milestone:** First end-to-end "click → running VM/LXC" lands at the end of Phase 4.
 
 **Recently completed:**
 
+- 2026-05-16 — Plan 04-12 frontend-vm-wizard (the Wave-6 VM wizard paths + the shared node-fit/quota/network building blocks: `node-fit.ts` — the pure `computeNodeFit` returning per-node `{fits, reason}` (a node with insufficient free RAM/CPU → `fits:false` + a human reason like "node-1 — 2 GB free, needs 4 GB", a `null` free figure → fit-unknown/pickable) + `allBlocked`; `vm-wizard.ts` — the framework-free VM-wizard logic: `vmStepsForPath` (every VM path `Path → Source → Resources → Network → Cloud-Init → Review`, D-13), `sourceKindForPath`/`isClonePath`, `validateVmStep` (per-`source_kind` source rules; clone paths need only name+node, non-clone need full sizing+storage), `buildQemuRequest` (the discriminated `CreateQemuRequest` per `source_kind`), `mapQemuCreateError`, the network-picker helpers (`networkGroups`/`isNetworkPickable` — a non-`applied` VNet non-pickable T-04-12-04 — `defaultIpAssignment` — Auto-pick for an IPAM VNet D-20 — `findNetworkOption`/`buildNetworkConfig`), and `computeQuotaDelta` (the live "+N vCPU, +N GB RAM" delta + over-quota verdict, D-08); `NodeSelect.svelte` — the shared node-fit selector disabling unfit nodes (`opacity-50` + disabled option) with the reason inline, an `bg-warning/10` all-blocked notice + a `blocked` signal, a free-text fallback (D-24, VM-10); `QuotaDeltaLine.svelte` — the live quota-delta line (`text-muted-foreground` in-budget, `text-destructive` + a `HelpTooltip` over-quota); `NetworkPicker.svelte` — the SDN-aware grouped `radio-group` (SDN VNets + Legacy bridges under 32px `bg-muted/40` headers) calling `api.networks.listNetworks`, an IP-assignment radio with IPAM auto-pick pre-filling `suggested_ip` (editable), a `bg-warning/10` no-networks notice (NET-01..04); `VmSourceStep.svelte` — the four per-path source steps switching on `source_kind` (cloud-image picker VM-01, template-clone `Select`+clone-mode radio VM-02, blank-iso picker VM-03, vm-clone `Select`+clone-mode radio VM-04); `VmResourcesStep.svelte` — the VM Resources step embedding `NodeSelect`+`QuotaDeltaLine`+storage+sizing, `Next` gated on all-blocked/over-quota, clone paths hiding sizing; `ReviewStep.svelte` — the shared read-only `card`-section Review with "Edit" jump-back links + the repeated quota-delta line (VM + LXC paths); `create/+page.svelte` wires the four VM paths into the 04-10 orchestration surface (Source → Resources → NetworkPicker → Cloud-Init mount point → Review), submitting via `createQemu` + routing to `/inventory/{cluster}/{vmid}` on the 202 (D-04), a 409/4xx surfacing inline via `mapQemuCreateError` (T-04-12-02) — and retro-enriches the LXC Resources step with `NodeSelect`+`QuotaDeltaLine` + the LXC Network step with `NetworkPicker` (composed in the route alongside `LxcResourcesStep`, NO cross-wave edit to that 04-11 file); 0 auto-fixed bugs, 3 interface adjustments matching established Phase-4 patterns — `NodeSelect` takes node data as a prop (no node-free-resource API exists, node-fit is advisory), tests are node-env logic-only, the Cloud-Init step is a 04-13 placeholder; 1 `svelte-check` warning resolved (`state_referenced_locally` on `NetworkPicker`'s `value` seed, fixed with `untrack`); 55 new tests, 306 frontend tests green, `svelte-check` 0/0; VM-01/02/03/04/09/10 + NET-01/02/03/04 frontend-completed)
 - 2026-05-16 — Plan 04-14 console-bell-networks-banner (the final Wave-5 Phase-4 UX surfaces: a new `notifications/` backend module — `service.list_notifications`/`mark_seen` serve a DERIVED completions feed over the existing `jobs` table (D-23, no new storage): the recent terminal `succeeded`/`failed` rows for the caller's teams (D-22 — completions only, in-flight excluded) + an `unread_count` derived from the per-user `NotificationSeen` cursor; `routes.py` exposes `GET /notifications` + the CSRF-protected `POST /notifications/seen` (returns the refreshed feed); `api/notifications.ts` the typed `listNotifications`/`markSeen` client re-exported on the `api` namespace; `NotificationBell.svelte` — a 36px ghost bell left of the Tasks icon in `Topbar.svelte` with a 20px unread badge (hidden at 0, `9+` overflow, `bg-primary` normally, `bg-destructive` when any unread item is a failed job), a 380px popover feed reconciled from the REST feed + the live `jobsStore`, opening calls `markSeen` (UI-07); `ConsoleTab.svelte` — the embedded noVNC console tab filling the formerly-disabled placeholder: on mount ONLY a centered placeholder, NO `<iframe>` (CON-02 — never mint on page load), on "Open console" `mintVncProxy` is called and the iframe renders at the returned `relay_url` — `consoleIframeSrc` throws on any `:8006`/`vncwebsocket` URL so the Proxmox host never reaches the browser (CON-03) — plus Reconnect + a `Maximize2` Fullscreen control; `NetworksTab.svelte` — a third "Networks" tab on `admin/teams/[id]` parallel to Quotas (D-18), per-cluster SDN-VNet (unchecked until granted) + legacy-bridge (checked-by-default — D-19) checkbox groups saved via `setTeamNetworkScope` (NET-02); the VM-detail provisioning banner (`bg-primary/10`+`Loader2` while a create job runs, `bg-destructive/10`+friendly-error+"View in Tasks" on failure, NO Retry — provisioning is non-idempotent D-16, self-dismisses on success); the Console `Tabs.Trigger`'s `Lock` marker + tooltip removed; component logic extracted to four `node`-testable `.ts` modules (`notification-feed.ts`/`console-tab.ts`/`networks-tab.ts`/`provisioning-banner.ts`); 2 auto-fixed `svelte-check` deviations — `.ts` import extensions dropped, a `$state` var named `state` renamed to `phase`; 8 new backend tests (485 total) + 43 new frontend tests (251 total), `svelte-check` clean; CON-01/02/03 + NET-02 + UI-04/UI-07 frontend-completed)
 - 2026-05-16 — Plan 04-11 frontend-lxc-wizard (the Wave-5 LXC wizard paths: `lxc-wizard.ts` — the framework-free LXC wizard logic extracted for `node`-env unit testing — `lxcStepsForPath` the path-conditional LXC step list (`Path → Source → Resources → Network → Review`, no Cloud-Init), `curatedEntries`/`catalogCategories`/`filterCatalog` the catalog browsing logic (curated-shortlist split LXC-01, the unique category set, the case-insensitive name/description + category filter LXC-02), `scriptAttribution` the LXC-04 disclosure block, `parseScriptOptions` the D-07 configurable-option parser with a `parsed:false` defaults-only fallback, `LXC_RESOURCE_DEFAULTS`/`LXC_FEATURE_FLAGS` the LXC-07 toggle defaults (unprivileged ON, nesting OFF, keyctl/fuse), `validateLxcStep`/`buildLxcRequest`/`buildCommunityScriptRequest`/`mapLxcCreateError`; `CatalogBrowser.svelte` — the community-scripts catalog browser with a "Curated / Full catalog" toggle (curated = 96px featured cards LXC-01; full = a `command` search box + `Tag`-badge category chips LXC-02), calling `api.catalog.listCatalog` once per view + filtering client-side, a no-match `EmptyState`; `ScriptDetailPanel.svelte` — the LXC-04 mandatory pre-deploy disclosure `dialog` showing the source (`ExternalLink` GitHub link), commit (`GitCommitHorizontal`, Mono), last-reviewed (`CalendarCheck`) — refined by `api.catalog.getCatalogEntry` — a `ShieldQuestion` `bg-muted` attribution notice, and the D-07 option form (or the `bg-warning/10` defaults-only notice) (T-04-11-01); `LxcTemplateStep.svelte` — the plain-LXC vztmpl template picker; `LxcResourcesStep.svelte` — the LXC Resources step (node/storage `Select`s, CPU/Memory/Disk inputs, the LXC-07 toggles — unprivileged `Switch` default ON, nesting `Switch`, keyctl/fuse `Checkbox` group — a `HelpTooltip` on every PVE-specific field D-25, an owning-team `Select` when the user has >1 team, and documented mount slots for Plan 04-12's `NodeSelect`/`QuotaDeltaLine`); a new admin-gated `/admin` landing page hosting the `RefreshCw` Sync-catalog control (D-05, T-04-11-02); `create/+page.svelte` wires the two LXC paths into the 04-10 orchestration surface — both submit via `createLxc`/`createCommunityScript` + route to `/inventory/{cluster}/{vmid}` on the 202 (D-04), a 409/4xx surfacing inline via `mapLxcCreateError` without navigating (T-04-11-03); 1 auto-fixed deviation — a `state_referenced_locally` on `ScriptDetailPanel`'s `attribution` fixed with a `$derived` + nullable override; 2 Rule-2/3 fixes — node/storage/template lists are props with a free-text fallback (no wizard API exists), `team_id` resolved in the route; 37 new tests, 208 frontend tests green, `svelte-check` clean; LXC-01/02/04/05/06/07 frontend-completed)
 
