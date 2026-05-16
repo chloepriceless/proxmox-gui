@@ -73,6 +73,30 @@ def _reset_rate_limit_buckets():
     rate_limit._buckets.clear()
 
 
+@pytest.fixture(autouse=True)
+def _reset_vmid_reservations():
+    """Clear the in-process VMID reservation state between tests.
+
+    ``app.lifecycle.clone._reserved`` is a module-level per-cluster reserved
+    set (single-process design — Pitfall 1). The in-memory test DB resets per
+    test, so ``cluster.id`` autoincrement restarts at 1 every test — without
+    this reset, a VMID reserved by one test still appears live to the next
+    test on the same cluster_id, shifting the allocated id (a false-positive
+    assertion failure, never a real bug). The harness owns isolation, not the
+    production module.
+    """
+    try:
+        from app.lifecycle import clone
+    except ImportError:
+        yield
+        return
+    clone._reserved.clear()
+    clone._cluster_locks.clear()
+    yield
+    clone._reserved.clear()
+    clone._cluster_locks.clear()
+
+
 @pytest_asyncio.fixture
 async def engine():
     """Per-test in-memory SQLite engine with full schema created."""

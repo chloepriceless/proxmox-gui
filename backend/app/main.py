@@ -220,6 +220,7 @@ def create_app() -> FastAPI:
     from app.lifecycle.snapshot_routes import router as snapshot_router
     from app.me.routes import router as me_router
     from app.pats.routes import router as pats_router
+    from app.provisioning.routes import router as provisioning_router
     from app.quotas.routes import router as quotas_router
     from app.setup.routes import router as setup_router
     from app.ssh_keys.routes import router as ssh_keys_router
@@ -269,6 +270,9 @@ def create_app() -> FastAPI:
     # Plan 03-04: clone / template-convert / migrate routes — all 202, with
     # VMID reservation + quota admission + migrate pre-flights (LIFE-10, LIFE-11).
     app.include_router(clone_migrate_router, prefix="/api/v1", tags=["lifecycle"])
+    # Plan 04-04: provisioning create routes — LXC + VM create (LXC-05..07,
+    # VM-01..04), all 202 returning the reserved VMID (D-04).
+    app.include_router(provisioning_router, prefix="/api/v1", tags=["provisioning"])
     # Plan 03-02: jobs API (list/get/retry) + the Tasks-drawer WebSocket
     # (/api/v1/jobs, /api/v1/ws/jobs).
     app.include_router(jobs_router, prefix="/api/v1", tags=["jobs"])

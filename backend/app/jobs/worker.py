@@ -33,6 +33,11 @@ from app.jobs.clone_migrate_functions import (
     run_template_convert,
 )
 from app.jobs.functions import noop_job, run_power_action
+from app.jobs.provisioning_functions import (
+    run_create_lxc,
+    run_create_qemu,
+    run_download,
+)
 from app.jobs.reaper import reap_orphans
 from app.jobs.resize_functions import run_resize
 from app.jobs.snapshot_functions import (
@@ -134,6 +139,11 @@ class WorkerSettings:
         func(run_clone, name='vm.clone', max_tries=1, timeout=14400),
         func(run_template_convert, name='vm.template', max_tries=1, timeout=300),
         func(run_migrate, name='vm.migrate', max_tries=1, timeout=14400),
+        # Plan 04-04: provisioning creates + ISO/cloud-image download. All
+        # non-idempotent (D-16) — max_tries=1; a failed create has no Retry.
+        func(run_create_qemu, name='vm.create.qemu', max_tries=1, timeout=14400),
+        func(run_create_lxc, name='lxc.create', max_tries=1, timeout=3600),
+        func(run_download, name='storage.download', max_tries=1, timeout=14400),
     ]
     # Plan 03-04: scheduled-backup cron — fire due schedules every 5 minutes
     # (RESEARCH §Pattern 1). The cron entry point enqueues vm.backup jobs.

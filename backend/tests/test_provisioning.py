@@ -416,8 +416,10 @@ async def test_create_payload_carries_team_pool(client, session_factory) -> None
 async def test_create_rejected_when_quota_exceeded(client, session_factory) -> None:
     """A create that would exceed the team quota → 409 (admission before reserve)."""
     user = await make_user(session_factory, username="provquota", is_admin=False)
+    # The CLUSTER_RESOURCES_VM fixture rows live in pool "gui-team-42" — seed
+    # the team's token poolid to match so quota usage counts those 2 VMs.
     cluster_id, team_id, _ = await _seed_cluster_and_token(
-        session_factory, team_id=73,
+        session_factory, team_id=73, poolid="gui-team-42",
     )
     await _add_user_to_team(session_factory, user_id=user.id, team_id=team_id)
     # The fixture pool has 2 VMs; a vm_count quota of 2 leaves zero headroom.
