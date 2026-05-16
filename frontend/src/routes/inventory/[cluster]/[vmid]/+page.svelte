@@ -135,6 +135,7 @@
       type={toResourceKind(detail.type)}
       status={detail.status}
       vmName={detail.name ?? `VM ${detail.vmid}`}
+      node={detail.node}
     />
   </div>
 

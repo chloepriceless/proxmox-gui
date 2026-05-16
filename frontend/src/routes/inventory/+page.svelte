@@ -3,7 +3,9 @@
   import { page } from '$app/stores';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
+  import { Checkbox } from '$lib/components/ui/checkbox';
   import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
+  import * as AlertDialog from '$lib/components/ui/alert-dialog';
   import * as Accordion from '$lib/components/ui/accordion';
   import * as Table from '$lib/components/ui/table';
   import { Badge } from '$lib/components/ui/badge';
@@ -13,10 +15,22 @@
   import CirclePause from '@lucide/svelte/icons/circle-pause';
   import CircleAlert from '@lucide/svelte/icons/circle-alert';
   import Clock from '@lucide/svelte/icons/clock';
+  import MoreHorizontal from '@lucide/svelte/icons/more-horizontal';
+  import ListChecks from '@lucide/svelte/icons/list-checks';
+  import Play from '@lucide/svelte/icons/play';
+  import Square from '@lucide/svelte/icons/square';
+  import RotateCw from '@lucide/svelte/icons/rotate-cw';
+  import Power from '@lucide/svelte/icons/power';
+  import { toast } from 'svelte-sonner';
   import ClusterSection from '$lib/components/inventory/ClusterSection.svelte';
   import FilterChip from '$lib/components/inventory/FilterChip.svelte';
   import TagPill from '$lib/components/inventory/TagPill.svelte';
-  import type { ClusterInventory, VMInventoryItem } from '$lib/api/types';
+  import { api } from '$lib/api/client';
+  import type {
+    ClusterInventory,
+    PowerActionName,
+    VMInventoryItem,
+  } from '$lib/api/types';
   import type { PageData } from './$types';
 
   let { data }: { data: PageData } = $props();
@@ -93,7 +107,265 @@
       ? data.inventory
       : data.inventory.filter((c) => c.cluster_id === clusterFilter)
   );
+
+  // ---- Per-row power menu (D-09) ----
+  function vmName(it: VMInventoryItem): string {
+    return it.name ?? `VM ${it.vmid}`;
+  }
+
+  /** Map the API resource kind from the Proxmox-native item type. */
+  function kindOf(it: VMInventoryItem): 'vm' | 'lxc' {
+    return it.type === 'lxc' ? 'lxc' : 'vm';
+  }
+
+  /** Title-case label for toast / dialog copy. */
+  function label(action: PowerActionName): string {
+    return action.charAt(0).toUpperCase() + action.slice(1);
+  }
+
+  /** Whether a power action is allowed for the row's current status. */
+  function actionDisabled(it: VMInventoryItem, action: PowerActionName): boolean {
+    if (action === 'start') return it.status === 'running';
+    // stop / reboot / shutdown need a running guest.
+    return it.status !== 'running';
+  }
+
+  async function rowPower(it: VMInventoryItem, action: PowerActionName) {
+    try {
+      await api.lifecycle.power({
+        clusterId: it.cluster_id,
+        vmid: it.vmid,
+        type: kindOf(it),
+        action,
+      });
+      toast(`${label(action)} queued for ${vmName(it)}.`);
+    } catch {
+      toast.error(`Couldn’t queue ${label(action)} for ${vmName(it)}. Try again.`);
+    }
+  }
+
+  // ---- Bulk-select mode (D-11, LIFE-03) ----
+  let bulkMode = $state(false);
+  /** Keys of selected rows — "clusterId:vmid". */
+  let selected = $state<Set<string>>(new Set());
+
+  function rowKey(it: VMInventoryItem): string {
+    return `${it.cluster_id}:${it.vmid}`;
+  }
+
+  /** Every visible (filtered) item across all visible clusters. */
+  const visibleItems = $derived(
+    clusters.flatMap((c) => c.items.filter(matchesFilter))
+  );
+
+  function isSelected(it: VMInventoryItem): boolean {
+    return selected.has(rowKey(it));
+  }
+
+  function toggleRow(it: VMInventoryItem) {
+    const key = rowKey(it);
+    const next = new Set(selected);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    selected = next;
+  }
+
+  /** Header "select all (filtered)" — checked / indeterminate / unchecked. */
+  const allChecked = $derived(
+    visibleItems.length > 0 && visibleItems.every(isSelected)
+  );
+  const someChecked = $derived(visibleItems.some(isSelected) && !allChecked);
+
+  function toggleSelectAll() {
+    if (allChecked) {
+      selected = new Set();
+    } else {
+      selected = new Set(visibleItems.map(rowKey));
+    }
+  }
+
+  function clearSelection() {
+    selected = new Set();
+  }
+
+  function toggleBulkMode() {
+    bulkMode = !bulkMode;
+    if (!bulkMode) selected = new Set();
+  }
+
+  /** The selected items, resolved back to inventory rows. */
+  const selectedItems = $derived(
+    visibleItems.filter(isSelected)
+  );
+
+  const selectedClusterNames = $derived(
+    Array.from(
+      new Set(
+        selectedItems.map(
+          (it) =>
+            data.inventory.find((c) => c.cluster_id === it.cluster_id)?.cluster_name ??
+            `Cluster ${it.cluster_id}`
+        )
+      )
+    )
+  );
+
+  // ---- Bulk confirm dialog (D-11) ----
+  let bulkDialogOpen = $state(false);
+  let bulkAction = $state<PowerActionName>('start');
+  let bulkBusy = $state(false);
+
+  function openBulkConfirm(action: PowerActionName) {
+    if (selectedItems.length === 0) return;
+    bulkAction = action;
+    bulkDialogOpen = true;
+  }
+
+  /** "This will reboot 3 resources: vm-100, vm-101, vm-102 …" (truncated). */
+  const bulkNameList = $derived.by(() => {
+    const names = selectedItems.map(vmName);
+    if (names.length <= 6) return names.join(', ');
+    return `${names.slice(0, 6).join(', ')} and ${names.length - 6} more`;
+  });
+
+  async function confirmBulk() {
+    if (bulkBusy || selectedItems.length === 0) return;
+    bulkBusy = true;
+    try {
+      await api.lifecycle.bulkPower({
+        action: bulkAction,
+        targets: selectedItems.map((it) => ({
+          cluster_id: it.cluster_id,
+          vmid: it.vmid,
+        })),
+      });
+      toast(`${label(bulkAction)} started for ${selectedItems.length} resources.`);
+      bulkDialogOpen = false;
+      selected = new Set();
+    } catch {
+      toast.error(`Couldn’t queue the bulk ${bulkAction}. Try again.`);
+    } finally {
+      bulkBusy = false;
+    }
+  }
 </script>
+
+<!-- Per-row "⋯" power menu — context-aware; NO Delete (UI-SPEC D-09). -->
+{#snippet rowMenu(item: VMInventoryItem)}
+  <DropdownMenu.Root>
+    <DropdownMenu.Trigger>
+      {#snippet child({ props })}
+        <Button
+          {...props}
+          variant="ghost"
+          class="h-9 w-9 p-0"
+          aria-label={`Actions for ${vmName(item)}`}
+          onclick={(e: MouseEvent) => e.stopPropagation()}
+        >
+          <MoreHorizontal class="size-4" aria-hidden="true" />
+        </Button>
+      {/snippet}
+    </DropdownMenu.Trigger>
+    <DropdownMenu.Content align="end">
+      <DropdownMenu.Item
+        disabled={actionDisabled(item, 'start')}
+        onSelect={() => rowPower(item, 'start')}
+      >
+        <Play class="size-4 mr-2" aria-hidden="true" /> Start
+      </DropdownMenu.Item>
+      <DropdownMenu.Item
+        disabled={actionDisabled(item, 'stop')}
+        onSelect={() => rowPower(item, 'stop')}
+      >
+        <Square class="size-4 mr-2" aria-hidden="true" /> Stop
+      </DropdownMenu.Item>
+      <DropdownMenu.Item
+        disabled={actionDisabled(item, 'reboot')}
+        onSelect={() => rowPower(item, 'reboot')}
+      >
+        <RotateCw class="size-4 mr-2" aria-hidden="true" /> Reboot
+      </DropdownMenu.Item>
+      <DropdownMenu.Item
+        disabled={actionDisabled(item, 'shutdown')}
+        onSelect={() => rowPower(item, 'shutdown')}
+      >
+        <Power class="size-4 mr-2" aria-hidden="true" /> Shutdown
+      </DropdownMenu.Item>
+      <DropdownMenu.Separator />
+      <DropdownMenu.Item
+        onSelect={() => goto(`/inventory/${item.cluster_id}/${item.vmid}`)}
+      >
+        Open detail →
+      </DropdownMenu.Item>
+    </DropdownMenu.Content>
+  </DropdownMenu.Root>
+{/snippet}
+
+<!-- One inventory row — shared by the single-cluster + accordion views. -->
+{#snippet inventoryRow(item: VMInventoryItem)}
+  <Table.Row
+    class="hover:bg-muted/50 h-14 {bulkMode ? '' : 'cursor-pointer'}"
+    onclick={() => {
+      if (!bulkMode) goto(`/inventory/${item.cluster_id}/${item.vmid}`);
+    }}
+  >
+    {#if bulkMode}
+      <Table.Cell class="w-10">
+        <!-- svelte-ignore a11y_click_events_have_key_events -->
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div onclick={(e) => e.stopPropagation()}>
+          <Checkbox
+            checked={isSelected(item)}
+            onCheckedChange={() => toggleRow(item)}
+            aria-label={`Select ${vmName(item)}`}
+          />
+        </div>
+      </Table.Cell>
+    {/if}
+    <Table.Cell class="w-[140px]">
+      {#if item.status === 'running'}
+        <CirclePlay class="size-4 text-success inline mr-1" />
+      {:else if item.status === 'paused'}
+        <CirclePause class="size-4 text-warning inline mr-1" />
+      {:else if item.status === 'stopped'}
+        <CircleStop class="size-4 text-muted-foreground inline mr-1" />
+      {:else}
+        <CircleAlert class="size-4 text-destructive inline mr-1" />
+      {/if}
+      <span class="text-[14px]">{item.status}</span>
+    </Table.Cell>
+    <Table.Cell>
+      <div class="font-medium text-[14px]">{vmName(item)}</div>
+      <div class="font-mono text-[13px] text-muted-foreground">{item.vmid}</div>
+    </Table.Cell>
+    <Table.Cell>
+      <div class="flex flex-wrap gap-1">
+        {#each item.tags.slice(0, 3) as t (t)}
+          <TagPill
+            tag={t}
+            onClick={() => {
+              const nxt = Array.from(new Set([...Array.from(tagFilter), t])).join(',');
+              setParam('tag', nxt);
+            }}
+          />
+        {/each}
+        {#if item.tags.length > 3}
+          <Badge variant="outline">+{item.tags.length - 3}</Badge>
+        {/if}
+      </div>
+    </Table.Cell>
+    <Table.Cell class="text-muted-foreground text-[14px]">{item.node}</Table.Cell>
+    <Table.Cell class="text-right">
+      <div class="flex items-center justify-end gap-1">
+        {#if item.is_stale}
+          <Clock class="size-4 text-warning inline" aria-label="Stale data" />
+        {/if}
+        {@render rowMenu(item)}
+        <ChevronRight class="size-4 text-muted-foreground" aria-hidden="true" />
+      </div>
+    </Table.Cell>
+  </Table.Row>
+{/snippet}
 
 <!-- Page header -->
 <header class="flex flex-row items-start justify-between gap-4 mb-6">
@@ -112,6 +384,14 @@
       oninput={(e) => setParam('q', (e.target as HTMLInputElement).value)}
       class="flex-1"
     />
+    <Button
+      variant="outline"
+      size="sm"
+      onclick={toggleBulkMode}
+      aria-pressed={bulkMode}
+    >
+      <ListChecks class="size-3.5" aria-hidden="true" /> Select
+    </Button>
     <DropdownMenu.Root>
       <DropdownMenu.Trigger>
         {#snippet child({ props })}
@@ -167,6 +447,38 @@
   {/if}
 </div>
 
+<!-- Bulk-action bar — slides in at ≥1 selected. Only Start / Stop / Reboot
+     buttons; a batch destructive action is intentionally excluded
+     (ROADMAP-locked exclusion — UI-SPEC Implementation Note 9). -->
+{#if bulkMode && selectedItems.length > 0}
+  <div
+    class="sticky top-[7.5rem] z-10 -mx-6 mb-6 flex h-14 items-center justify-between
+           gap-3 border-b border-border bg-muted px-6"
+  >
+    <div class="flex items-center gap-3">
+      <span class="text-[14px] font-medium">{selectedItems.length} selected</span>
+      <button
+        type="button"
+        class="text-[13px] text-primary underline-offset-4 hover:underline"
+        onclick={clearSelection}
+      >
+        Clear selection
+      </button>
+    </div>
+    <div class="flex items-center gap-2">
+      <Button variant="outline" size="sm" onclick={() => openBulkConfirm('start')}>
+        <Play class="size-3.5" aria-hidden="true" /> Start
+      </Button>
+      <Button variant="outline" size="sm" onclick={() => openBulkConfirm('stop')}>
+        <Square class="size-3.5" aria-hidden="true" /> Stop
+      </Button>
+      <Button variant="outline" size="sm" onclick={() => openBulkConfirm('reboot')}>
+        <RotateCw class="size-3.5" aria-hidden="true" /> Reboot
+      </Button>
+    </div>
+  </div>
+{/if}
+
 <!-- Main content -->
 {#if data.loadError}
   <div class="border-border bg-muted/30 flex flex-col items-center gap-3 rounded-md border border-dashed px-6 py-10 text-center">
@@ -190,52 +502,24 @@
   {:else}
     <div class="rounded-md border border-border">
       <Table.Root>
+        {#if bulkMode}
+          <Table.Header>
+            <Table.Row>
+              <Table.Head class="w-10">
+                <Checkbox
+                  checked={allChecked}
+                  indeterminate={someChecked}
+                  onCheckedChange={toggleSelectAll}
+                  aria-label="Select all filtered"
+                />
+              </Table.Head>
+              <Table.Head colspan={5}></Table.Head>
+            </Table.Row>
+          </Table.Header>
+        {/if}
         <Table.Body>
           {#each filtered as item (item.vmid)}
-            <Table.Row
-              class="hover:bg-muted/50 cursor-pointer h-14"
-              onclick={() => goto(`/inventory/${item.cluster_id}/${item.vmid}`)}
-            >
-              <Table.Cell class="w-[140px]">
-                {#if item.status === 'running'}
-                  <CirclePlay class="size-4 text-success inline mr-1" />
-                {:else if item.status === 'paused'}
-                  <CirclePause class="size-4 text-warning inline mr-1" />
-                {:else if item.status === 'stopped'}
-                  <CircleStop class="size-4 text-muted-foreground inline mr-1" />
-                {:else}
-                  <CircleAlert class="size-4 text-destructive inline mr-1" />
-                {/if}
-                <span class="text-[14px]">{item.status}</span>
-              </Table.Cell>
-              <Table.Cell>
-                <div class="font-medium text-[14px]">{item.name ?? `VM ${item.vmid}`}</div>
-                <div class="font-mono text-[13px] text-muted-foreground">{item.vmid}</div>
-              </Table.Cell>
-              <Table.Cell>
-                <div class="flex flex-wrap gap-1">
-                  {#each item.tags.slice(0, 3) as t (t)}
-                    <TagPill
-                      tag={t}
-                      onClick={() => {
-                        const nxt = Array.from(new Set([...Array.from(tagFilter), t])).join(',');
-                        setParam('tag', nxt);
-                      }}
-                    />
-                  {/each}
-                  {#if item.tags.length > 3}
-                    <Badge variant="outline">+{item.tags.length - 3}</Badge>
-                  {/if}
-                </div>
-              </Table.Cell>
-              <Table.Cell class="text-muted-foreground text-[14px]">{item.node}</Table.Cell>
-              <Table.Cell class="text-right w-[40px]">
-                {#if item.is_stale}
-                  <Clock class="size-4 text-warning inline mr-2" aria-label="Stale data" />
-                {/if}
-                <ChevronRight class="size-4 text-muted-foreground inline" />
-              </Table.Cell>
-            </Table.Row>
+            {@render inventoryRow(item)}
           {/each}
         </Table.Body>
       </Table.Root>
@@ -269,52 +553,24 @@
         {:else}
           <div class="rounded-md border border-border">
             <Table.Root>
+              {#if bulkMode}
+                <Table.Header>
+                  <Table.Row>
+                    <Table.Head class="w-10">
+                      <Checkbox
+                        checked={allChecked}
+                        indeterminate={someChecked}
+                        onCheckedChange={toggleSelectAll}
+                        aria-label="Select all filtered"
+                      />
+                    </Table.Head>
+                    <Table.Head colspan={5}></Table.Head>
+                  </Table.Row>
+                </Table.Header>
+              {/if}
               <Table.Body>
                 {#each filtered as item (item.vmid)}
-                  <Table.Row
-                    class="hover:bg-muted/50 cursor-pointer h-14"
-                    onclick={() => goto(`/inventory/${item.cluster_id}/${item.vmid}`)}
-                  >
-                    <Table.Cell class="w-[140px]">
-                      {#if item.status === 'running'}
-                        <CirclePlay class="size-4 text-success inline mr-1" />
-                      {:else if item.status === 'paused'}
-                        <CirclePause class="size-4 text-warning inline mr-1" />
-                      {:else if item.status === 'stopped'}
-                        <CircleStop class="size-4 text-muted-foreground inline mr-1" />
-                      {:else}
-                        <CircleAlert class="size-4 text-destructive inline mr-1" />
-                      {/if}
-                      <span class="text-[14px]">{item.status}</span>
-                    </Table.Cell>
-                    <Table.Cell>
-                      <div class="font-medium text-[14px]">{item.name ?? `VM ${item.vmid}`}</div>
-                      <div class="font-mono text-[13px] text-muted-foreground">{item.vmid}</div>
-                    </Table.Cell>
-                    <Table.Cell>
-                      <div class="flex flex-wrap gap-1">
-                        {#each item.tags.slice(0, 3) as t (t)}
-                          <TagPill
-                            tag={t}
-                            onClick={() => {
-                              const nxt = Array.from(new Set([...Array.from(tagFilter), t])).join(',');
-                              setParam('tag', nxt);
-                            }}
-                          />
-                        {/each}
-                        {#if item.tags.length > 3}
-                          <Badge variant="outline">+{item.tags.length - 3}</Badge>
-                        {/if}
-                      </div>
-                    </Table.Cell>
-                    <Table.Cell class="text-muted-foreground text-[14px]">{item.node}</Table.Cell>
-                    <Table.Cell class="text-right w-[40px]">
-                      {#if item.is_stale}
-                        <Clock class="size-4 text-warning inline mr-2" aria-label="Stale data" />
-                      {/if}
-                      <ChevronRight class="size-4 text-muted-foreground inline" />
-                    </Table.Cell>
-                  </Table.Row>
+                  {@render inventoryRow(item)}
                 {/each}
               </Table.Body>
             </Table.Root>
@@ -324,3 +580,33 @@
     {/each}
   </Accordion.Root>
 {/if}
+
+<!-- Bulk confirm — a single alert-dialog covering the whole batch (D-11). -->
+<AlertDialog.Root bind:open={bulkDialogOpen}>
+  <AlertDialog.Content>
+    <AlertDialog.Header>
+      <AlertDialog.Title>
+        {label(bulkAction)} {selectedItems.length} resources?
+      </AlertDialog.Title>
+      <AlertDialog.Description>
+        This {bulkAction}s {selectedItems.length} resources: {bulkNameList}. Each runs as
+        its own task.
+        {#if selectedClusterNames.length > 1}
+          Spanning {selectedClusterNames.join(' and ')}.
+        {/if}
+      </AlertDialog.Description>
+    </AlertDialog.Header>
+    <AlertDialog.Footer>
+      <Button
+        variant="ghost"
+        onclick={() => (bulkDialogOpen = false)}
+        disabled={bulkBusy}
+      >
+        Cancel
+      </Button>
+      <Button onclick={confirmBulk} disabled={bulkBusy}>
+        {label(bulkAction)} {selectedItems.length} resources
+      </Button>
+    </AlertDialog.Footer>
+  </AlertDialog.Content>
+</AlertDialog.Root>

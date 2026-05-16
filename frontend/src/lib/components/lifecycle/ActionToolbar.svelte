@@ -31,12 +31,17 @@
   import Cpu from '@lucide/svelte/icons/cpu';
   import Copy from '@lucide/svelte/icons/copy';
   import ArrowRightLeft from '@lucide/svelte/icons/arrow-right-left';
-  import BadgePlus from '@lucide/svelte/icons/badge-plus';
+  import FileStack from '@lucide/svelte/icons/file-stack';
   import { toast } from 'svelte-sonner';
   import ConfirmByNameDialog from '$lib/components/forms/ConfirmByNameDialog.svelte';
   import PowerConfirmDialog, {
     type PowerConfirmKind,
   } from './PowerConfirmDialog.svelte';
+  import SnapshotCreateDialog from './SnapshotCreateDialog.svelte';
+  import ResizeDialog from './ResizeDialog.svelte';
+  import CloneDialog from './CloneDialog.svelte';
+  import MigrateDialog from './MigrateDialog.svelte';
+  import ConvertTemplateDialog from './ConvertTemplateDialog.svelte';
   import { api } from '$lib/api/client';
   import type { PowerActionName, ResourceKind } from '$lib/api/types';
 
@@ -48,11 +53,13 @@
     status: string;
     /** Display name (Delete typed-name target + toast copy). */
     vmName: string;
+    /** The node this VM runs on — Clone/Migrate dialogs need it. */
+    node: string;
     /** True when the cluster is unreachable — disables the whole toolbar. */
     clusterUnreachable?: boolean;
     /**
-     * Called when a "More" menu item is chosen — Plans 06/07 hook the dialogs
-     * up. Until then the items dispatch the intent and a toast confirms.
+     * Called when a "More" menu item is chosen, after the toolbar has opened
+     * the matching dialog. Optional — kept for observers / analytics.
      */
     onMoreAction?: (
       action: 'snapshot' | 'backup' | 'resize' | 'clone' | 'migrate' | 'template'
@@ -65,6 +72,7 @@
     type,
     status,
     vmName,
+    node,
     clusterUnreachable = false,
     onMoreAction,
   }: Props = $props();
@@ -149,8 +157,56 @@
     }
   }
 
+  // --- "More" menu dialog state ------------------------------------------
+  let snapshotDialogOpen = $state(false);
+  let resizeDialogOpen = $state(false);
+  let cloneDialogOpen = $state(false);
+  let migrateDialogOpen = $state(false);
+  let convertDialogOpen = $state(false);
+
+  // Convert-to-template is qemu-only — the backend rejects an LXC 422.
+  const isLxc = $derived(type === 'lxc');
+
+  /** Open the dialog the chosen "More" item owns (Plan 03-06 wires these). */
   function more(action: 'snapshot' | 'backup' | 'resize' | 'clone' | 'migrate' | 'template') {
+    switch (action) {
+      case 'snapshot':
+        snapshotDialogOpen = true;
+        break;
+      case 'resize':
+        resizeDialogOpen = true;
+        break;
+      case 'clone':
+        cloneDialogOpen = true;
+        break;
+      case 'migrate':
+        migrateDialogOpen = true;
+        break;
+      case 'template':
+        convertDialogOpen = true;
+        break;
+      case 'backup':
+        // "Back up now" stays a TODO — Plan 03-07 owns the backup dialog.
+        break;
+    }
     onMoreAction?.(action);
+  }
+
+  /** Snapshot-create submit — enqueues the 202 job + the toast. */
+  async function onSnapshotCreate(d: {
+    name: string;
+    description: string;
+    vmstate: boolean;
+  }) {
+    await api.lifecycle.createSnapshot({
+      clusterId,
+      vmid,
+      type,
+      name: d.name,
+      description: d.description,
+      vmstate: d.vmstate,
+    });
+    toast(`Snapshot started for ${vmName}.`);
   }
 </script>
 
@@ -240,7 +296,6 @@
           {/snippet}
         </DropdownMenu.Trigger>
         <DropdownMenu.Content align="start">
-          <!-- TODO(03-06): wire Snapshot dialog -->
           <DropdownMenu.Item onSelect={() => more('snapshot')}>
             <Camera class="size-4 mr-2" aria-hidden="true" /> Snapshot
           </DropdownMenu.Item>
@@ -248,23 +303,38 @@
           <DropdownMenu.Item onSelect={() => more('backup')}>
             <Database class="size-4 mr-2" aria-hidden="true" /> Back up now
           </DropdownMenu.Item>
-          <!-- TODO(03-06): wire Resize dialog -->
           <DropdownMenu.Item onSelect={() => more('resize')}>
             <Cpu class="size-4 mr-2" aria-hidden="true" /> Resize
           </DropdownMenu.Item>
           <DropdownMenu.Separator />
-          <!-- TODO(03-07): wire Clone dialog -->
           <DropdownMenu.Item onSelect={() => more('clone')}>
             <Copy class="size-4 mr-2" aria-hidden="true" /> Clone
           </DropdownMenu.Item>
-          <!-- TODO(03-07): wire Migrate dialog -->
           <DropdownMenu.Item onSelect={() => more('migrate')}>
             <ArrowRightLeft class="size-4 mr-2" aria-hidden="true" /> Migrate
           </DropdownMenu.Item>
-          <!-- TODO(03-07): wire Convert-to-template dialog -->
-          <DropdownMenu.Item onSelect={() => more('template')}>
-            <BadgePlus class="size-4 mr-2" aria-hidden="true" /> Convert to template
-          </DropdownMenu.Item>
+          {#if isLxc}
+            <!-- Container-to-template conversion isn't supported (backend 422). -->
+            <Tooltip.Root>
+              <Tooltip.Trigger>
+                {#snippet child({ props })}
+                  <div {...props}>
+                    <DropdownMenu.Item disabled>
+                      <FileStack class="size-4 mr-2" aria-hidden="true" />
+                      Convert to template
+                    </DropdownMenu.Item>
+                  </div>
+                {/snippet}
+              </Tooltip.Trigger>
+              <Tooltip.Content>
+                Container-to-template conversion isn't supported here.
+              </Tooltip.Content>
+            </Tooltip.Root>
+          {:else}
+            <DropdownMenu.Item onSelect={() => more('template')}>
+              <FileStack class="size-4 mr-2" aria-hidden="true" /> Convert to template
+            </DropdownMenu.Item>
+          {/if}
         </DropdownMenu.Content>
       </DropdownMenu.Root>
 
@@ -303,3 +373,36 @@
   confirmLabel="Delete VM"
   onConfirm={confirmDelete}
 />
+
+<!-- "More" menu dialogs — Plan 03-06 wires Snapshot/Resize/Clone/Migrate/
+     Convert; "Back up now" stays a Plan 03-07 TODO. -->
+<SnapshotCreateDialog
+  bind:open={snapshotDialogOpen}
+  {vmName}
+  onSubmit={onSnapshotCreate}
+/>
+<ResizeDialog bind:open={resizeDialogOpen} {clusterId} {vmid} {type} {vmName} />
+<CloneDialog
+  bind:open={cloneDialogOpen}
+  {clusterId}
+  {vmid}
+  {type}
+  {vmName}
+  currentNode={node}
+/>
+<MigrateDialog
+  bind:open={migrateDialogOpen}
+  {clusterId}
+  {vmid}
+  {type}
+  {vmName}
+  currentNode={node}
+/>
+{#if !isLxc}
+  <ConvertTemplateDialog
+    bind:open={convertDialogOpen}
+    {clusterId}
+    {vmid}
+    {vmName}
+  />
+{/if}
