@@ -221,6 +221,7 @@ def create_app() -> FastAPI:
     from app.lifecycle.routes import router as lifecycle_router
     from app.lifecycle.snapshot_routes import router as snapshot_router
     from app.me.routes import router as me_router
+    from app.networks.routes import router as networks_router
     from app.pats.routes import router as pats_router
     from app.provisioning.routes import router as provisioning_router
     from app.quotas.routes import router as quotas_router
@@ -281,6 +282,9 @@ def create_app() -> FastAPI:
     # Plan 04-06: community-scripts catalog — curated shortlist + searchable
     # full catalog (LXC-01/02/04) + admin sync re-pin (D-05).
     app.include_router(catalog_router, prefix="/api/v1", tags=["catalog"])
+    # Plan 04-07: networks — the SDN-aware team-scoped picker + the admin
+    # per-team network-scoping endpoints (NET-01..04).
+    app.include_router(networks_router, prefix="/api/v1", tags=["networks"])
     # Plan 03-02: jobs API (list/get/retry) + the Tasks-drawer WebSocket
     # (/api/v1/jobs, /api/v1/ws/jobs).
     app.include_router(jobs_router, prefix="/api/v1", tags=["jobs"])
