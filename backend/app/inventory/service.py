@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import json
 import re
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import Principal
-from app.clusters.connector import PVEConnector
 from app.clusters.registry import PVEConnectorRegistry
 from app.inventory.access import (
     ResolvedResource,
@@ -23,7 +24,54 @@ from app.inventory.schemas import (
     VMDetail,
     VMInventoryItem,
 )
-from app.models import Cluster
+from app.models import Cluster, Job
+
+#: A ``vm.power`` action → the run-state the VM is in once that action
+#: succeeds. Anything not listed (unknown action) yields no override.
+_POWER_ACTION_STATUS = {
+    "start": "running",
+    "reboot": "running",
+    "stop": "stopped",
+    "shutdown": "stopped",
+}
+
+
+async def _recent_power_outcomes(
+    db: AsyncSession, cluster_id: int, *, window_seconds: int = 90
+) -> dict[int, str]:
+    """Map ``vmid`` → run-state implied by a recently-succeeded ``vm.power`` job.
+
+    ``/cluster/resources`` (the inventory list's source) is fed by Proxmox
+    ``pvestatd`` on a ~10s tick and the connector caches it for 30s, so a VM's
+    run-state in the list can lag a power action by tens of seconds. A
+    succeeded ``vm.power`` job IS the authoritative outcome — overlay it for a
+    short window so the list reflects the action at once, then fall back to
+    PVE's own view once it has caught up.
+    """
+    cutoff = datetime.now(UTC) - timedelta(seconds=window_seconds)
+    rows = await db.execute(
+        select(Job)
+        .where(
+            Job.kind == "vm.power",
+            Job.state == "succeeded",
+            Job.cluster_id == cluster_id,
+            Job.finished_at.is_not(None),
+            Job.finished_at >= cutoff,
+        )
+        .order_by(Job.finished_at)
+    )
+    outcomes: dict[int, str] = {}
+    for job in rows.scalars():
+        try:
+            payload = json.loads(job.payload)
+        except (ValueError, TypeError):
+            continue
+        vmid = payload.get("vmid")
+        status = _POWER_ACTION_STATUS.get(payload.get("action"))
+        if isinstance(vmid, int) and status is not None:
+            # rows are ordered oldest-first → the most recent action wins.
+            outcomes[vmid] = status
+    return outcomes
 
 
 async def list_inventory_for_cluster(
@@ -78,6 +126,17 @@ async def list_inventory_for_cluster(
         except Exception as exc:  # noqa: BLE001
             last_error = str(exc)
             is_stale = True
+    # Overlay the authoritative outcome of any just-completed power action —
+    # /cluster/resources lags real run-state by pvestatd's tick plus the 30s
+    # connector cache, so a stopped VM can still read "running" here for tens
+    # of seconds. A succeeded vm.power job is ground truth for that window.
+    outcomes = await _recent_power_outcomes(db, cluster_id)
+    if outcomes:
+        for item in items:
+            implied = outcomes.get(item.vmid)
+            if implied is not None and implied != item.status:
+                item.status = implied
+
     # cluster_status reflects cluster reachability, which is owned by the
     # admin-token connector (the one health_probe_loop runs against). The
     # per-team connectors don't get their own probe, so falling back to
