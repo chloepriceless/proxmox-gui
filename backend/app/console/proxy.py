@@ -164,11 +164,19 @@ async def console_relay(
     # 1. AUTH BEFORE accept() — cookie-only, no PAT (reuse jobs/ws.py verbatim).
     user = await _resolve_ws_user(websocket, db)
     if user is None:
+        logger.info(
+            "console relay rejected: unauthenticated (cluster=%s vmid=%s)",
+            cluster_id, vmid,
+        )
         await websocket.close(code=_WS_POLICY_VIOLATION)
         return
 
     # The URL kind segment must be a known resource type.
     if kind not in _KIND_IS_LXC:
+        logger.info(
+            "console relay rejected: unknown kind %r (cluster=%s vmid=%s)",
+            kind, cluster_id, vmid,
+        )
         await websocket.close(code=_WS_POLICY_VIOLATION)
         return
 
@@ -186,7 +194,10 @@ async def console_relay(
             vmid=vmid,
         )
     except Exception as exc:  # noqa: BLE001 — any resolve failure → policy close
-        logger.debug("console relay ownership check failed: %s", exc)
+        logger.info(
+            "console relay rejected: ownership check failed (cluster=%s vmid=%s): %r",
+            cluster_id, vmid, exc,
+        )
         await websocket.close(code=_WS_POLICY_VIOLATION)
         return
 
@@ -200,7 +211,10 @@ async def console_relay(
     try:
         mint = await connector.vncproxy(node=node, vmid=vmid, is_lxc=is_lxc)
     except Exception as exc:  # noqa: BLE001 — a mint failure surfaces as a close
-        logger.warning("console relay vncproxy mint failed: %s", exc)
+        logger.warning(
+            "console relay vncproxy mint failed (cluster=%s vmid=%s): %r",
+            cluster_id, vmid, exc,
+        )
         await websocket.close(code=_WS_POLICY_VIOLATION)
         return
 
@@ -217,9 +231,17 @@ async def console_relay(
     ssl_ctx = _upstream_ssl_context(verify_ssl=connector.verify_ssl)
 
     # 5. Open the upstream WS, accept the browser, run the bidirectional relay.
+    logger.info(
+        "console relay: connecting upstream %s:%s node=%s vmid=%s is_lxc=%s "
+        "verify_ssl=%s",
+        connector.host, connector.port, node, vmid, is_lxc, connector.verify_ssl,
+    )
     try:
         async with websockets_connect(upstream_url, ssl=ssl_ctx) as upstream:
             await websocket.accept()
+            logger.info(
+                "console relay: established (cluster=%s vmid=%s)", cluster_id, vmid
+            )
             browser_task = asyncio.create_task(
                 _pump_browser_to_upstream(websocket, upstream)
             )
@@ -234,7 +256,9 @@ async def console_relay(
                 task.cancel()
             await asyncio.gather(*pending, return_exceptions=True)
     except Exception as exc:  # noqa: BLE001 — upstream connect / relay failure
-        logger.info("console relay closed: %s", exc)
+        logger.info(
+            "console relay closed (cluster=%s vmid=%s): %r", cluster_id, vmid, exc
+        )
         # If accept() never ran (upstream connect failed) close 1008; if it
         # did, a plain close lets the frontend surface "session ended".
         from starlette.websockets import WebSocketState
@@ -250,6 +274,9 @@ async def console_relay(
 
     # Clean shutdown — close the browser side so the frontend surfaces the
     # "Console session ended." strip with the Reconnect button (§3).
+    logger.info(
+        "console relay: session ended cleanly (cluster=%s vmid=%s)", cluster_id, vmid
+    )
     try:
         await websocket.close()
     except RuntimeError:
