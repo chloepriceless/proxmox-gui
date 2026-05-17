@@ -44,8 +44,15 @@ from app.models import Base  # noqa: F401  # noqa is for the explicit re-export
 config = context.config
 
 # Interpret the config file for Python logging.
+#
+# disable_existing_loggers=False is load-bearing: run_migrations() runs
+# `alembic upgrade head` inside the FastAPI lifespan on every API start, so
+# this fileConfig() call fires mid-startup. With the fileConfig default
+# (disable_existing_loggers=True) it would disable every logger not named in
+# alembic.ini — including `uvicorn.error` and the whole `app.*` tree — so all
+# backend logger.info output (and uvicorn's "startup complete") went silent.
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # Honour PROXMOX_GUI_DATABASE_URL when present AND the current sqlalchemy.url
 # is still the alembic.ini placeholder. Keep alembic + app on the same
