@@ -436,3 +436,84 @@ def test_pump_invalidate_swallows_registry_errors() -> None:
 
     # Must not raise.
     _invalidate_caches_on_completion(app, {"type": "job.completed", "job": {"cluster_id": 1}})
+
+
+@pytest.mark.asyncio
+async def test_enqueue_job_reissue_after_completion_creates_new_job() -> None:
+    """Re-issuing an action whose prior job already finished creates a NEW job.
+
+    Regression: the idempotency key has no lifecycle component, so a finished
+    job used to permanently dedup every later submit of the same action — a
+    VM could be stopped only once, ever. A terminal job must NOT dedup.
+    """
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from app.jobs.enqueue import enqueue_job
+    from app.models.base import Base
+
+    eng = create_async_engine("sqlite+aiosqlite:///:memory:", future=True)
+    async with eng.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(eng, expire_on_commit=False)
+    pool = _FakeArqPool()
+    payload = {"action": "stop", "vmid": 117, "is_lxc": True}
+    async with factory() as session:
+        job1 = await enqueue_job(
+            session, pool, kind="vm.power", cluster_id=None, team_id=None,
+            actor_user_id=1, payload=payload,
+        )
+        # Capture ids eagerly — a later enqueue's internal rollback() expires
+        # these ORM objects, and a raw attribute read would then trigger IO.
+        job1_id = job1.id
+        # The first stop runs to completion.
+        job1.state = "succeeded"
+        await session.commit()
+        # The user stops the same VM again — a deliberate new operation.
+        job2 = await enqueue_job(
+            session, pool, kind="vm.power", cluster_id=None, team_id=None,
+            actor_user_id=1, payload=payload,
+        )
+        assert job2.id != job1_id, "a finished job must not dedup a re-issue"
+        assert job2.state == "pending"
+    assert len(pool.enqueued) == 2, "both jobs reached arq"
+    await eng.dispose()
+
+
+@pytest.mark.asyncio
+async def test_enqueue_job_dedups_double_submit_of_a_reissue() -> None:
+    """Two near-simultaneous submits of a re-issue still collapse to one job —
+    the in-flight check applies to the re-issue slot, not just the first run."""
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from app.jobs.enqueue import enqueue_job
+    from app.models.base import Base
+
+    eng = create_async_engine("sqlite+aiosqlite:///:memory:", future=True)
+    async with eng.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(eng, expire_on_commit=False)
+    pool = _FakeArqPool()
+    payload = {"action": "stop", "vmid": 117, "is_lxc": True}
+    async with factory() as session:
+        job1 = await enqueue_job(
+            session, pool, kind="vm.power", cluster_id=None, team_id=None,
+            actor_user_id=1, payload=payload,
+        )
+        # Capture ids eagerly — a later enqueue's internal rollback() expires
+        # these ORM objects, and a raw attribute read would then trigger IO.
+        job1_id = job1.id
+        job1.state = "succeeded"
+        await session.commit()
+        # Re-issue, then submit it again while the re-issue is still pending.
+        job2 = await enqueue_job(
+            session, pool, kind="vm.power", cluster_id=None, team_id=None,
+            actor_user_id=1, payload=payload,
+        )
+        job2_id = job2.id
+        job3 = await enqueue_job(
+            session, pool, kind="vm.power", cluster_id=None, team_id=None,
+            actor_user_id=1, payload=payload,
+        )
+        assert job2_id != job1_id
+        assert job3.id == job2_id, "a double-submit of the re-issue must dedup"
+    await eng.dispose()
