@@ -61,6 +61,25 @@
     return () => clearInterval(t);
   });
 
+  // Auto-refresh the list so it stays current without a manual click. 10s
+  // matches the backend resource cache — polling faster would just re-hit it.
+  // Paused while the tab is hidden; on return to the tab we refresh at once
+  // so the user never lands on stale data.
+  $effect(() => {
+    const tick = () => {
+      if (!document.hidden) void invalidateAll();
+    };
+    const interval = setInterval(tick, 10_000);
+    const onVisible = () => {
+      if (!document.hidden) void invalidateAll();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  });
+
   const updatedLabel = $derived(`Updated ${formatAgo((now - lastRefresh) / 1000)}`);
 
   async function refreshInventory() {
