@@ -102,29 +102,41 @@ describe('ConsoleTab relay-URL safety (CON-03)', () => {
 // ---------------------------------------------------------------------------
 
 describe('ConsoleTab embed-src composition (Plan 04-15)', () => {
-  it('consoleEmbedSrc composes the /console/embed?ws=<encoded> URL from a relay path', () => {
-    expect(consoleEmbedSrc('/api/v1/ws/console/clusters/1/qemu/101')).toBe(
-      '/console/embed?ws=%2Fapi%2Fv1%2Fws%2Fconsole%2Fclusters%2F1%2Fqemu%2F101'
+  it('consoleEmbedSrc composes /console/embed?ws=<encoded>#t=<ticket>&p=<port>', () => {
+    expect(consoleEmbedSrc('/api/v1/ws/console/clusters/1/qemu/101', 'PVEVNC:ABC', 5900)).toBe(
+      '/console/embed?ws=%2Fapi%2Fv1%2Fws%2Fconsole%2Fclusters%2F1%2Fqemu%2F101' +
+        '#t=PVEVNC%3AABC&p=5900'
     );
   });
 
   it('consoleEmbedSrc URL-encodes the relay path exactly once as the ws query value', () => {
-    const src = consoleEmbedSrc('/api/v1/ws/console/2/lxc/200');
+    const src = consoleEmbedSrc('/api/v1/ws/console/2/lxc/200', 'PVEVNC:T+K/=', 5901);
     expect(src.startsWith('/console/embed?ws=')).toBe(true);
-    // single-encoding — the encoded path must not contain a double-encoded %25.
+    // single-encoding — neither the relay path nor the ticket is double-encoded.
     expect(src).not.toContain('%25');
-    expect(src.slice('/console/embed?ws='.length)).toBe(
-      encodeURIComponent('/api/v1/ws/console/2/lxc/200')
-    );
+    const wsValue = src.slice('/console/embed?ws='.length, src.indexOf('#'));
+    expect(wsValue).toBe(encodeURIComponent('/api/v1/ws/console/2/lxc/200'));
+  });
+
+  it('consoleEmbedSrc carries the vncticket in the URL hash, never a query param', () => {
+    // A fragment is not sent to any HTTP server — this keeps the short-lived
+    // vncticket out of access logs. The query string holds only the relay path.
+    const src = consoleEmbedSrc('/api/v1/ws/console/1/lxcs/117', 'PVEVNC:SECRET+/=', 5900);
+    const [query, hash] = src.split('#');
+    expect(query).not.toContain('PVEVNC');
+    expect(query).not.toContain('SECRET');
+    expect(hash).toBe('t=' + encodeURIComponent('PVEVNC:SECRET+/=') + '&p=5900');
   });
 
   it('consoleEmbedSrc throws on a :8006 Proxmox-host URL (CON-03 guard preserved)', () => {
-    expect(() => consoleEmbedSrc('wss://pve-host:8006/.../vncwebsocket')).toThrow();
+    expect(() =>
+      consoleEmbedSrc('wss://pve-host:8006/.../vncwebsocket', 'PVEVNC:X', 5900)
+    ).toThrow();
   });
 
   it('consoleEmbedSrc throws on a raw vncwebsocket Proxmox URL', () => {
     expect(() =>
-      consoleEmbedSrc('wss://pve-host/api2/json/nodes/n/qemu/101/vncwebsocket')
+      consoleEmbedSrc('wss://pve-host/api2/json/nodes/n/qemu/101/vncwebsocket', 'PVEVNC:X', 5900)
     ).toThrow();
   });
 
@@ -144,7 +156,7 @@ describe('ConsoleTab embed-src composition (Plan 04-15)', () => {
   });
 
   it('the composed iframe src round-trips through consoleIframeSrc', () => {
-    const composed = consoleEmbedSrc('/api/v1/ws/console/clusters/3/lxc/300');
+    const composed = consoleEmbedSrc('/api/v1/ws/console/clusters/3/lxc/300', 'PVEVNC:ABC', 5902);
     expect(consoleIframeSrc(composed)).toBe(composed);
     expect(composed).not.toContain(':8006');
   });

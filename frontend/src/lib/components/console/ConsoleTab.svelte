@@ -66,11 +66,13 @@
       const res = await api.console.mintVncProxy({ clusterId, vmid, kind });
       // An iframe cannot load a raw WebSocket path — it needs an HTML
       // document. `consoleEmbedSrc` composes the GUI-origin `/console/embed`
-      // route (which hosts the vendored noVNC client) from the relay path;
+      // route (which hosts the vendored noVNC client) from the relay path,
+      // carrying the vncproxy `ticket` + `port` in the URL hash; the embed
+      // page hands the ticket to noVNC as its VNC-auth password.
       // `consoleIframeSrc` then gates that composed URL. CON-03 — a relay URL
       // carrying `:8006` / `vncwebsocket` throws in `consoleEmbedSrc` and
       // surfaces the error state rather than ever leaking the PVE host.
-      iframeSrc = consoleIframeSrc(consoleEmbedSrc(res.relay_url));
+      iframeSrc = consoleIframeSrc(consoleEmbedSrc(res.relay_url, res.ticket, res.port));
       iframeKey += 1;
       phase = 'live';
     } catch {

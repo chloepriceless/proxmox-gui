@@ -3,8 +3,9 @@
 The mint route returns a :class:`VncProxyResponse`. Its ``relay_url`` is the
 GUI's own reverse-proxied WebSocket path — deliberately NOT the Proxmox host
 ``wss://...:8006/.../vncwebsocket`` URL (CON-03 / T-04-08-01). The browser
-points its noVNC iframe at ``relay_url``; the GUI relay (``console/proxy.py``)
-holds the Proxmox-host leg and mints its own fresh ticket per connection.
+points its noVNC iframe at ``relay_url`` and carries ``port`` + ``ticket``
+onto the relay WebSocket; the GUI relay (``console/proxy.py``) holds the
+Proxmox-host leg. There is exactly one ``vncproxy`` mint — this route's.
 """
 
 from __future__ import annotations
@@ -15,9 +16,10 @@ from pydantic import BaseModel, Field
 class VncProxyResponse(BaseModel):
     """The response of ``POST .../console/vncproxy`` — the "Open console" click.
 
-    ``ticket`` + ``port`` are returned for completeness, but the load-bearing
-    field is ``relay_url``: the GUI-origin path the iframe's noVNC client
-    connects to. The browser never receives a Proxmox-host URL.
+    All three fields are load-bearing: ``relay_url`` is the GUI-origin path
+    the iframe's noVNC client connects to, ``port`` is the PVE VNC port that
+    relay must forward to, and ``ticket`` is the noVNC RFB client's VNC-auth
+    password. The browser never receives a Proxmox-host URL (CON-03).
     """
 
     ticket: str = Field(

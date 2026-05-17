@@ -64,18 +64,32 @@ const CONSOLE_EMBED_PREFIX = '/console/embed?ws=';
  *
  * An `<iframe>` cannot load a raw WebSocket path — it needs an HTML document.
  * `consoleEmbedSrc` turns a freshly-minted `relay_url` into the
- * `/console/embed?ws=<encoded relay path>` URL the iframe loads; the embed
- * page then hosts the vendored noVNC client against that relay path.
+ * `/console/embed?ws=<encoded relay path>#t=<ticket>&p=<port>` URL the iframe
+ * loads; the embed page then hosts the vendored noVNC client against that
+ * relay path.
  *
  * The `relay_url` is first run through `isSafeRelayUrl` (CON-03) — a `:8006`
  * or `vncwebsocket` Proxmox-host URL throws here and is never composed into a
  * src. The relay path is URL-encoded exactly once as the `ws` query value.
+ *
+ * `ticket` (the noVNC RFB VNC-auth password — PVE's VNC server requires
+ * security type 2) and `port` (the PVE VNC port) ride in the URL *hash*, not
+ * a query param: a fragment is never sent to the frontend HTTP server, so the
+ * short-lived (~30-40s) ticket stays out of any server log. The embed page
+ * reads them from `window.location.hash`.
  */
-export function consoleEmbedSrc(relayUrl: string): string {
+export function consoleEmbedSrc(relayUrl: string, ticket: string, port: number): string {
   if (!isSafeRelayUrl(relayUrl)) {
     throw new Error('Refusing to render a console iframe at a non-relay URL');
   }
-  return CONSOLE_EMBED_PREFIX + encodeURIComponent(relayUrl);
+  return (
+    CONSOLE_EMBED_PREFIX +
+    encodeURIComponent(relayUrl) +
+    '#t=' +
+    encodeURIComponent(ticket) +
+    '&p=' +
+    encodeURIComponent(String(port))
+  );
 }
 
 /**

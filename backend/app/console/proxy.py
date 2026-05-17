@@ -10,14 +10,19 @@ to/from Proxmox. Pinned by spike 04-03 (``04-SPIKE-novnc.md``):
   ``_resolve_ws_user`` verbatim.
 - **Ownership check** — the resource is resolved for the caller's team; a
   cross-tenant resource → ``close(1008)`` before ``accept()`` (T-04-08-03).
-- **Just-in-time mint** — the relay mints its OWN fresh ``vncproxy`` ticket
-  right before connecting upstream (spike §3 shape (a)) — the browser never
-  holds a Proxmox ticket, and the mint→use gap is minimised against the
-  ~30-40s expiry (CON-02).
+- **Single mint** — the ``vncproxy`` session (VNC port + ticket) is minted
+  ONCE by the console mint route on the "Open console" click and reaches this
+  relay as ``port`` / ``vncticket`` query params on the relay WebSocket URL.
+  The relay does NOT mint a second session. A noVNC RFB client must hold the
+  ticket as its VNC-auth password (the upstream VNC server offers security
+  type 2 — verified live, spike 04-03 was incomplete here), so the ticket
+  necessarily reaches the browser. The browser still never sees the Proxmox
+  host URL or the per-cluster API token (CON-03).
 - **Single encoding** — the ``vncticket`` is URL-encoded EXACTLY ONCE here,
   via ``urllib.parse.quote(ticket, safe="")``, when the upstream
-  ``vncwebsocket`` URL is built. Every other hop carries the raw ticket as a
-  JSON string (Pitfall 2 / T-04-08-04).
+  ``vncwebsocket`` URL is built. Every other hop carries the raw ticket (a
+  JSON field from the mint route, then a relay-WS query param decoded back to
+  raw by Starlette) — Pitfall 2 / T-04-08-04.
 - **Per-cluster TLS posture** — the upstream ``wss://...:8006`` leg reuses the
   cluster row's ``verify_ssl`` setting (spike §5 / T-04-08-06).
 - **Bidirectional relay loop** — two ``_pump`` tasks (browser→upstream,
@@ -157,9 +162,9 @@ async def console_relay(
 ) -> None:
     """Authenticated, ownership-checked, reverse-proxied noVNC WebSocket relay.
 
-    The full handshake — auth, ownership check, ticket mint — all runs BEFORE
-    ``accept()``; an unauthenticated or cross-tenant socket is closed 1008 and
-    never accepted (T-04-08-02 / T-04-08-03).
+    The full handshake — auth, ownership check, vncproxy-param validation —
+    all runs BEFORE ``accept()``; an unauthenticated or cross-tenant socket is
+    closed 1008 and never accepted (T-04-08-02 / T-04-08-03).
     """
     # 1. AUTH BEFORE accept() — cookie-only, no PAT (reuse jobs/ws.py verbatim).
     user = await _resolve_ws_user(websocket, db)
@@ -205,15 +210,24 @@ async def console_relay(
     node = resolved.vm_item["node"]
     is_lxc = _KIND_IS_LXC[kind]
 
-    # 3. MINT a fresh vncproxy ticket HERE, just-in-time (spike §3 shape a) —
-    #    the browser never holds a Proxmox ticket, and the mint→use gap is the
-    #    relay→PVE round-trip only (fights the ~30-40s expiry, CON-02).
+    # 3. The vncproxy session (VNC port + ticket) was minted ONCE by the
+    #    console mint route on the "Open console" click and reaches the relay
+    #    as `port` / `vncticket` query params on this WebSocket URL — the relay
+    #    does NOT mint a second session. PVE re-validates the ticket against
+    #    {node}/{vmid} when the upstream vncwebsocket opens, and the team
+    #    ownership check above already gated {cluster_id}/{vmid}: a caller can
+    #    therefore only ever relay to a VNC session it legitimately minted.
+    raw_port = websocket.query_params.get("port")
+    ticket = websocket.query_params.get("vncticket")
     try:
-        mint = await connector.vncproxy(node=node, vmid=vmid, is_lxc=is_lxc)
-    except Exception as exc:  # noqa: BLE001 — a mint failure surfaces as a close
-        logger.warning(
-            "console relay vncproxy mint failed (cluster=%s vmid=%s): %r",
-            cluster_id, vmid, exc,
+        vnc_port = int(raw_port) if raw_port is not None else -1
+    except ValueError:
+        vnc_port = -1
+    if not ticket or not (5900 <= vnc_port <= 5999):
+        logger.info(
+            "console relay rejected: missing/invalid vncproxy params "
+            "(cluster=%s vmid=%s)",
+            cluster_id, vmid,
         )
         await websocket.close(code=_WS_POLICY_VIOLATION)
         return
@@ -225,8 +239,8 @@ async def console_relay(
         node=node,
         is_lxc=is_lxc,
         vmid=vmid,
-        vnc_port=int(mint["port"]),
-        ticket=str(mint["ticket"]),
+        vnc_port=vnc_port,
+        ticket=ticket,
     )
     ssl_ctx = _upstream_ssl_context(verify_ssl=connector.verify_ssl)
 
