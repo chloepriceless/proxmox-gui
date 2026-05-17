@@ -148,8 +148,34 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await engine.dispose()
 
 
+def _configure_logging() -> None:
+    """Route the backend's own loggers to the journal at the configured level.
+
+    uvicorn configures only its ``uvicorn*`` loggers. Without this, every
+    ``logging.getLogger("app.*")`` record — the entire backend — falls
+    through to Python's last-resort handler, which drops anything below
+    WARNING. So all ``logger.info`` across the app was silently invisible
+    and the ``PROXMOX_GUI_LOG_LEVEL`` setting had no effect whatsoever.
+
+    Attach one StreamHandler to the ``app`` logger (stderr → systemd journal),
+    set the level from settings, and stop propagation so records are not also
+    re-emitted by the root last-resort handler.
+    """
+    level = getattr(logging, settings.log_level.upper(), logging.INFO)
+    app_logger = logging.getLogger("app")
+    app_logger.setLevel(level)
+    if not any(isinstance(h, logging.StreamHandler) for h in app_logger.handlers):
+        handler = logging.StreamHandler()
+        handler.setFormatter(
+            logging.Formatter("%(levelname)s [%(name)s] %(message)s")
+        )
+        app_logger.addHandler(handler)
+    app_logger.propagate = False
+
+
 def create_app() -> FastAPI:
     """Build a fresh FastAPI app. Tests use a per-test instance via the fixture."""
+    _configure_logging()
     app = FastAPI(
         title="Proxmox Self-Service GUI",
         version="0.1.0",
