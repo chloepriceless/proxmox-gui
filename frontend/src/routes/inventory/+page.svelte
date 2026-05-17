@@ -23,12 +23,14 @@
   import Power from '@lucide/svelte/icons/power';
   import Plus from '@lucide/svelte/icons/plus';
   import Boxes from '@lucide/svelte/icons/boxes';
+  import RefreshCw from '@lucide/svelte/icons/refresh-cw';
   import { toast } from 'svelte-sonner';
   import ClusterSection from '$lib/components/inventory/ClusterSection.svelte';
   import FilterChip from '$lib/components/inventory/FilterChip.svelte';
   import TagPill from '$lib/components/inventory/TagPill.svelte';
   import EmptyState from '$lib/components/shared/EmptyState.svelte';
   import { api } from '$lib/api/client';
+  import { formatAgo } from '$lib/utils/format';
   import type {
     ClusterInventory,
     PowerActionName,
@@ -37,6 +39,39 @@
   import type { PageData } from './$types';
 
   let { data }: { data: PageData } = $props();
+
+  // ---- Manual refresh + "updated … ago" indicator ----
+  // The list trails real PVE state by up to ~20s (pvestatd tick + the GUI
+  // resource cache). Re-running the page load pulls the freshest the backend
+  // has; the indicator ticks up so the user can judge how stale it is.
+  let lastRefresh = $state(Date.now());
+  let now = $state(Date.now());
+  let refreshing = $state(false);
+
+  // Reset the timer whenever the load re-runs — a manual refresh, navigation,
+  // or AppShell's job-completion auto-refresh all hand down a fresh `data`.
+  $effect(() => {
+    data.inventory; // tracked: a completed load swaps this array reference
+    lastRefresh = Date.now();
+  });
+
+  // Tick the relative-time label once a second.
+  $effect(() => {
+    const t = setInterval(() => (now = Date.now()), 1000);
+    return () => clearInterval(t);
+  });
+
+  const updatedLabel = $derived(`Updated ${formatAgo((now - lastRefresh) / 1000)}`);
+
+  async function refreshInventory() {
+    if (refreshing) return;
+    refreshing = true;
+    try {
+      await invalidateAll();
+    } finally {
+      refreshing = false;
+    }
+  }
 
   // Status sort priority: running first, then paused, stopped, error, unknown.
   const STATUS_ORDER: Record<string, number> = {
@@ -416,6 +451,22 @@
         <DropdownMenu.Item onclick={() => setParam('sort', 'last_changed')}>Last changed</DropdownMenu.Item>
       </DropdownMenu.Content>
     </DropdownMenu.Root>
+    <span
+      class="text-muted-foreground text-[13px] tabular-nums whitespace-nowrap"
+      aria-live="polite"
+    >
+      {updatedLabel}
+    </span>
+    <Button
+      variant="outline"
+      size="sm"
+      onclick={refreshInventory}
+      disabled={refreshing}
+      aria-label="Refresh inventory"
+    >
+      <RefreshCw class="size-3.5 {refreshing ? 'animate-spin' : ''}" aria-hidden="true" />
+      Refresh
+    </Button>
   </div>
 
   {#if filterActive}

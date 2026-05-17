@@ -10,6 +10,7 @@ import {
   formatBytes,
   formatRate,
   formatPercent,
+  formatAgo,
   formatClock
 } from '$lib/utils/format';
 
@@ -70,6 +71,27 @@ describe('formatPercent', () => {
 
   it('tolerates a non-finite input', () => {
     expect(formatPercent(NaN)).toBe('—');
+  });
+});
+
+describe('formatAgo', () => {
+  it('renders "just now" for the first few seconds', () => {
+    expect(formatAgo(0)).toBe('just now');
+    expect(formatAgo(4)).toBe('just now');
+    expect(formatAgo(-3)).toBe('just now'); // clamps a negative drift
+  });
+
+  it('renders whole seconds below a minute', () => {
+    expect(formatAgo(5)).toBe('5s ago');
+    expect(formatAgo(12.7)).toBe('12s ago'); // floored
+    expect(formatAgo(59)).toBe('59s ago');
+  });
+
+  it('renders minutes, then hours', () => {
+    expect(formatAgo(60)).toBe('1m ago');
+    expect(formatAgo(540)).toBe('9m ago');
+    expect(formatAgo(3600)).toBe('1h ago');
+    expect(formatAgo(7800)).toBe('2h ago');
   });
 });
 

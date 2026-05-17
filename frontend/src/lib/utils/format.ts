@@ -55,6 +55,24 @@ export function formatPercent(fraction: number, fractionDigits = 0): string {
   return `${(fraction * 100).toFixed(fractionDigits)}%`;
 }
 
+/**
+ * Format an elapsed duration (in seconds) as a compact "ago" phrase.
+ *
+ *   0..4    → "just now"
+ *   5..59   → "12s ago"
+ *   60..    → "3m ago"  (then "2h ago")
+ *
+ * Used by the inventory "Updated … ago" indicator.
+ */
+export function formatAgo(secondsAgo: number): string {
+  const s = Math.max(0, Math.floor(secondsAgo));
+  if (s < 5) return 'just now';
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  return `${Math.floor(m / 60)}h ago`;
+}
+
 /** Format a UNIX timestamp (seconds) as a local "HH:MM" clock string. */
 export function formatClock(unixSeconds: number): string {
   if (!unixSeconds) return '';
