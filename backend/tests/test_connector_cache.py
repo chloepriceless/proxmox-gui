@@ -35,8 +35,8 @@ def _make_connector(fake: FakeProxmox):
 
 
 @pytest.mark.asyncio
-async def test_list_resources_serves_from_cache_within_30s():
-    """Second list_resources() within 30s must hit the cache, not PVE."""
+async def test_list_resources_serves_from_cache_within_ttl():
+    """A second list_resources() within the TTL must hit the cache, not PVE."""
     fake = FakeProxmox(responses={})
     # PVE /cluster/resources?type=vm returns BOTH qemu + lxc items.
     fake.queue_response(
@@ -48,7 +48,7 @@ async def test_list_resources_serves_from_cache_within_30s():
     assert stale1 is False
     assert len(snapshot1) == 3  # 2 qemu + 1 lxc
 
-    # Second call within 30s — cache hit; no new PVE calls.
+    # Second call within the TTL — cache hit; no new PVE calls.
     snapshot2, stale2 = await conn.list_resources()
     assert stale2 is False
     assert snapshot2 is snapshot1

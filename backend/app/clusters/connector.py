@@ -18,7 +18,7 @@ Authorization format: ``Authorization: PVEAPIToken=USER@REALM!TOKENID=UUID``
 ``token_value=``.
 
 Phase 2 additions (Plan 02-01):
-- ``ResourceCache`` dataclass with 30s TTL and asyncio.Lock for thundering-herd
+- ``ResourceCache`` dataclass with 10s TTL and asyncio.Lock for thundering-herd
   protection.
 - ``pybreaker.CircuitBreaker`` per connector (3 failures → open, 30s reset).
   Auth errors are EXCLUDED from the breaker (config issue, not transient).
@@ -45,16 +45,20 @@ from app.clusters.errors import PVEAPIError, PVEAuthError, PVEUnreachable
 
 @dataclass
 class ResourceCache:
-    """Per-connector 30s in-memory cache for ``/cluster/resources``.
+    """Per-connector 10s in-memory cache for ``/cluster/resources``.
 
-    The ``lock`` serialises refresh so concurrent callers don't produce a
-    thundering herd of PVE calls on cache miss (T-02-01-07).
+    The TTL is deliberately short: Proxmox ``pvestatd`` itself refreshes
+    ``/cluster/resources`` on a ~10s tick, so caching it longer only adds
+    staleness on top of PVE's own. At 10s a power action surfaces in the
+    inventory list quickly — worst case ~20s end to end (pvestatd tick +
+    this cache). The ``lock`` serialises refresh so concurrent callers
+    don't produce a thundering herd of PVE calls on cache miss (T-02-01-07).
     """
 
     snapshot: list[dict] | None = None
     fetched_at: float = 0.0
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
-    ttl: float = 30.0
+    ttl: float = 10.0
 
     @property
     def is_fresh(self) -> bool:
@@ -222,7 +226,7 @@ class PVEConnector:
     async def list_resources(
         self, *, force_refresh: bool = False
     ) -> tuple[list[dict], bool]:
-        """GET /cluster/resources?type=vm — returns both qemu + lxc, 30s TTL.
+        """GET /cluster/resources?type=vm — returns both qemu + lxc, 10s TTL.
 
         PVE's `/cluster/resources` ``type`` param accepts only
         ``vm|storage|node|sdn``. ``type=vm`` returns BOTH QEMU VMs and LXCs

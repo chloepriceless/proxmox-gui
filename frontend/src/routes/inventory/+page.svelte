@@ -375,6 +375,10 @@
   <div class="flex flex-col gap-1">
     <h1 class="text-[28px] font-semibold tracking-tight">Inventory</h1>
     <p class="text-muted-foreground text-[14px]">Your VMs and LXCs across all clusters.</p>
+    <p class="text-muted-foreground text-[13px]">
+      Status changes can take up to ~20&nbsp;s to appear here (Proxmox cluster
+      cache + GUI cache).
+    </p>
   </div>
   <!-- Primary "Create" entry point (D-02 — no global topbar "+"). -->
   <Button href="/create" class="shrink-0">
