@@ -9,11 +9,14 @@
 -->
 <script lang="ts">
   import type { Snippet } from 'svelte';
+  import { invalidateAll } from '$app/navigation';
   import Sidebar from '$lib/components/layout/Sidebar.svelte';
   import Topbar from '$lib/components/layout/Topbar.svelte';
   import TasksDrawer from '$lib/components/jobs/TasksDrawer.svelte';
   import { Toaster } from '$lib/components/ui/sonner';
   import { jobsStore } from '$lib/stores/jobs.svelte';
+  import { jobsWarrantRefresh } from '$lib/stores/job-refresh';
+  import type { JobState } from '$lib/api/types';
   import type { CurrentUser } from '$lib/stores/user.svelte';
 
   type ClusterSummary = { id: number; name: string };
@@ -28,6 +31,18 @@
   $effect(() => {
     jobsStore.connect();
     return () => jobsStore.disconnect();
+  });
+
+  // Live status refresh: when a job finishes (e.g. a power action), re-run
+  // the active page's load functions so the inventory list + VM-detail card
+  // reflect the new run-state without a manual reload. `jobsWarrantRefresh`
+  // mutates `seenJobStates` and only fires on an observed transition into a
+  // terminal state — the WebSocket backfill of completed history is ignored.
+  const seenJobStates = new Map<number, JobState>();
+  $effect(() => {
+    if (jobsWarrantRefresh(jobsStore.jobs, seenJobStates)) {
+      void invalidateAll();
+    }
   });
 
   // The Quota drawer and the Tasks drawer are both right-side Sheets — they

@@ -135,6 +135,18 @@ class PVEConnector:
         self.verify_ssl: bool = verify_ssl
         self.tls_fingerprint: str | None = tls_fingerprint
 
+    def invalidate_resource_cache(self) -> None:
+        """Drop the cached ``/cluster/resources`` snapshot — the next read
+        re-fetches from PVE.
+
+        Mutating connector calls already do this inline. The public method
+        exists so the API-side job-event pump can invalidate this process's
+        cache when the *worker* process completes a mutating job (the worker
+        only invalidates its own connector caches; Redis job events are the
+        sole cross-process signal).
+        """
+        self._resource_cache.snapshot = None
+
     # ------------------------------------------------------------------
     # Private executor bridges
     # ------------------------------------------------------------------

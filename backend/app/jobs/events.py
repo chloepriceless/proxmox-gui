@@ -90,6 +90,29 @@ class ConnectionManager:
 CONNECTION_MANAGER = ConnectionManager()
 
 
+def _invalidate_caches_on_completion(app: Any, event: dict) -> None:
+    """When a job completes, drop this process's cached ``/cluster/resources``
+    snapshot for the job's cluster.
+
+    The worker process ran the mutating call and invalidated only its own
+    connector caches. Without this, the API process keeps serving up-to-30s
+    stale VM run-state to the inventory list after a power action. Best-effort
+    — a failure here must never break the event pump.
+    """
+    if event.get("type") != "job.completed":
+        return
+    registry = getattr(app.state, "registry", None)
+    if registry is None:
+        return
+    cluster_id = (event.get("job") or {}).get("cluster_id")
+    if cluster_id is None:
+        return
+    try:
+        registry.invalidate_resource_caches(int(cluster_id))
+    except Exception as exc:  # noqa: BLE001 — never break the pump
+        logger.debug("cache invalidate failed for cluster %s: %s", cluster_id, exc)
+
+
 async def jobs_event_pump(app: Any) -> None:
     """API-side subscriber coroutine — listen on ``jobs:events`` and fan out.
 
@@ -113,6 +136,7 @@ async def jobs_event_pump(app: Any) -> None:
             except (ValueError, TypeError) as exc:
                 logger.warning("jobs_event_pump: bad event payload: %s", exc)
                 continue
+            _invalidate_caches_on_completion(app, event)
             await CONNECTION_MANAGER.broadcast(event)
     finally:
         try:

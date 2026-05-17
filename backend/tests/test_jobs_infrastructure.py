@@ -380,3 +380,59 @@ class _FakeRedis:
 
     async def publish(self, channel, payload):  # noqa: ANN001
         return None
+
+
+# ----------------------------------------------------------------------------
+# Live status refresh — the API-side job-event pump invalidates this process's
+# /cluster/resources cache when a job completes (events.py).
+# ----------------------------------------------------------------------------
+
+
+def _fake_app_with_registry():
+    """A minimal stand-in for the FastAPI app carrying a mock registry."""
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+
+    registry = MagicMock()
+    return SimpleNamespace(state=SimpleNamespace(registry=registry)), registry
+
+
+def test_pump_invalidates_resource_cache_on_job_completed() -> None:
+    from app.jobs.events import _invalidate_caches_on_completion
+
+    app, registry = _fake_app_with_registry()
+    event = {"type": "job.completed", "job": {"id": 5, "cluster_id": 3}}
+
+    _invalidate_caches_on_completion(app, event)
+
+    registry.invalidate_resource_caches.assert_called_once_with(3)
+
+
+def test_pump_ignores_non_completed_events() -> None:
+    from app.jobs.events import _invalidate_caches_on_completion
+
+    app, registry = _fake_app_with_registry()
+    for ev_type in ("job.running", "job.progress", "reaper.reattached"):
+        _invalidate_caches_on_completion(app, {"type": ev_type, "job": {"cluster_id": 3}})
+
+    registry.invalidate_resource_caches.assert_not_called()
+
+
+def test_pump_skips_completed_event_without_cluster_id() -> None:
+    from app.jobs.events import _invalidate_caches_on_completion
+
+    app, registry = _fake_app_with_registry()
+    _invalidate_caches_on_completion(app, {"type": "job.completed", "job": {"id": 9}})
+
+    registry.invalidate_resource_caches.assert_not_called()
+
+
+def test_pump_invalidate_swallows_registry_errors() -> None:
+    """A failure inside cache invalidation must never break the event pump."""
+    from app.jobs.events import _invalidate_caches_on_completion
+
+    app, registry = _fake_app_with_registry()
+    registry.invalidate_resource_caches.side_effect = RuntimeError("boom")
+
+    # Must not raise.
+    _invalidate_caches_on_completion(app, {"type": "job.completed", "job": {"cluster_id": 1}})

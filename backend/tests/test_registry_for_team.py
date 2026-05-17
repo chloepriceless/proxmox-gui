@@ -183,3 +183,44 @@ async def test_invalidate_for_team_drops_entry(session_factory):
         assert mock_api.call_count == first_call_count + 1
         # They are different objects since the cache was cleared.
         assert connector_a is not connector_b
+
+
+@pytest.mark.asyncio
+async def test_invalidate_resource_caches_drops_admin_and_team_snapshots(session_factory):
+    """invalidate_resource_caches() clears the cached /cluster/resources
+    snapshot on BOTH the cluster-admin connector and every per-team connector
+    for that cluster — the API-side fix for stale post-power-action status."""
+    from app.clusters.registry import PVEConnectorRegistry
+
+    cluster_id, team_id, _, _, _ = await _seed_cluster_and_token(
+        session_factory, team_id=7
+    )
+
+    registry = PVEConnectorRegistry(cipher=None, session_factory=session_factory)
+    fake = FakeProxmox(responses={})
+
+    with patch("app.clusters.connector.ProxmoxAPI", return_value=fake):
+        async with session_factory() as session:
+            admin_conn = await registry.get(cluster_id, db=session)
+            team_conn = await registry.get_for_team(
+                cluster_id=cluster_id, team_id=team_id, db=session
+            )
+
+    # Populate both caches with a fresh snapshot.
+    admin_conn._resource_cache.snapshot = [{"vmid": 101, "status": "running"}]
+    team_conn._resource_cache.snapshot = [{"vmid": 101, "status": "running"}]
+
+    registry.invalidate_resource_caches(cluster_id)
+
+    assert admin_conn._resource_cache.snapshot is None
+    assert team_conn._resource_cache.snapshot is None
+
+
+@pytest.mark.asyncio
+async def test_invalidate_resource_caches_unknown_cluster_is_noop(session_factory):
+    """invalidate_resource_caches() on a cluster with no built connector does
+    not raise — the pump calls it for every completed job."""
+    from app.clusters.registry import PVEConnectorRegistry
+
+    registry = PVEConnectorRegistry(cipher=None, session_factory=session_factory)
+    registry.invalidate_resource_caches(4242)  # must not raise

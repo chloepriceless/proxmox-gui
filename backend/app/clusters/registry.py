@@ -114,6 +114,24 @@ class PVEConnectorRegistry:
         """Drop the cached connector for ``cluster_id`` (no-op if absent)."""
         self._connectors.pop(cluster_id, None)
 
+    def invalidate_resource_caches(self, cluster_id: int) -> None:
+        """Drop the cached ``/cluster/resources`` snapshot of every connector
+        (cluster-admin + per-team) for ``cluster_id``.
+
+        A mutating job runs in the *worker* process and invalidates only the
+        worker's connector caches. The API process never sees that write, so
+        its 30s ``/cluster/resources`` cache keeps serving pre-action status
+        to the inventory list. The API-side job-event pump calls this when a
+        job completes so the next inventory read reflects the new state.
+        No-op for any connector not yet built.
+        """
+        conn = self._connectors.get(cluster_id)
+        if conn is not None:
+            conn.invalidate_resource_cache()
+        for (_team_id, cid), team_conn in self._team_connectors.items():
+            if cid == cluster_id:
+                team_conn.invalidate_resource_cache()
+
     def clear_all(self) -> None:
         """Drop every cached connector — useful for tests.
 
