@@ -1,0 +1,54 @@
+import { k as attr_class, m as escape_html, j as attr, o as spread_props, l as stringify } from './renderer--hvGDOOw.js';
+import { I as Icon } from './button-BxOVow4s.js';
+import { X } from './x-DTS6EtQK.js';
+
+function Lock($$renderer, $$props) {
+  let { $$slots, $$events, ...props } = $$props;
+  const iconNode = [
+    [
+      "rect",
+      {
+        "width": "18",
+        "height": "11",
+        "x": "3",
+        "y": "11",
+        "rx": "2",
+        "ry": "2"
+      }
+    ],
+    ["path", { "d": "M7 11V7a5 5 0 0 1 10 0v4" }]
+  ];
+  Icon($$renderer, spread_props([{ name: "lock" }, props, { iconNode }]));
+}
+function FilterChip($$renderer, $$props) {
+  let {
+    label,
+    onRemove,
+    locked = false,
+    statusColor,
+    class: className = ""
+  } = $$props;
+  $$renderer.push(`<span${attr_class(`inline-flex items-center gap-2 h-7 px-2 rounded-md border border-border bg-muted text-foreground text-[13px] font-medium ${stringify(className)}`)}>`);
+  if (statusColor) {
+    $$renderer.push("<!--[0-->");
+    $$renderer.push(`<span${attr_class(`size-2 rounded-full ${stringify(statusColor)}`)} aria-hidden="true"></span>`);
+  } else {
+    $$renderer.push("<!--[-1-->");
+  }
+  $$renderer.push(`<!--]--> <span>${escape_html(label)}</span> `);
+  if (locked) {
+    $$renderer.push("<!--[0-->");
+    Lock($$renderer, { class: "size-3 text-muted-foreground", "aria-hidden": "true" });
+  } else if (onRemove) {
+    $$renderer.push("<!--[1-->");
+    $$renderer.push(`<button type="button" class="-mr-1 inline-flex size-4 items-center justify-center rounded hover:bg-destructive/10 hover:text-destructive"${attr("aria-label", `Remove filter ${label}`)}>`);
+    X($$renderer, { class: "size-3" });
+    $$renderer.push(`<!----></button>`);
+  } else {
+    $$renderer.push("<!--[-1-->");
+  }
+  $$renderer.push(`<!--]--></span>`);
+}
+
+export { FilterChip as F };
+//# sourceMappingURL=FilterChip-Ct676f5D.js.map
