@@ -138,6 +138,13 @@ class PVEConnector:
         self.port: int = port
         self.verify_ssl: bool = verify_ssl
         self.tls_fingerprint: str | None = tls_fingerprint
+        # Token parts kept for the console relay (console/proxy.py): PVE
+        # authenticates the upstream vncwebsocket request itself, so the relay
+        # must send `Authorization: PVEAPIToken=user!name=value` — proxmoxer
+        # consumes these in its constructor and does not re-expose them.
+        self.token_user: str = token_user
+        self.token_name: str = token_name
+        self.token_value: str = token_value
 
     def invalidate_resource_cache(self) -> None:
         """Drop the cached ``/cluster/resources`` snapshot — the next read

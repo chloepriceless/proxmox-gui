@@ -353,10 +353,19 @@ class _FakeConnectCM:
 
     last_url: str | None = None
     last_ssl: object = None
+    last_headers: dict | None = None
 
-    def __init__(self, url: str, *, ssl=None, upstream: _FakeUpstream | None = None):  # noqa: ANN001
+    def __init__(  # noqa: ANN001
+        self,
+        url: str,
+        *,
+        ssl=None,
+        additional_headers=None,
+        upstream: _FakeUpstream | None = None,
+    ):
         type(self).last_url = url
         type(self).last_ssl = ssl
+        type(self).last_headers = additional_headers
         self._upstream = upstream or _FakeUpstream()
 
     async def __aenter__(self) -> _FakeUpstream:
@@ -369,8 +378,10 @@ class _FakeConnectCM:
 def _make_connect_factory(upstream: _FakeUpstream | None = None):
     """Return a ``websockets_connect`` replacement that records its args."""
 
-    def _connect(url: str, *, ssl=None):  # noqa: ANN001
-        return _FakeConnectCM(url, ssl=ssl, upstream=upstream)
+    def _connect(url: str, *, ssl=None, additional_headers=None):  # noqa: ANN001
+        return _FakeConnectCM(
+            url, ssl=ssl, additional_headers=additional_headers, upstream=upstream
+        )
 
     return _connect
 
@@ -694,3 +705,4 @@ def test_relay_unknown_kind_closed_1008(session_factory):
             with tc.websocket_connect("/api/v1/ws/console/1/widgets/100") as ws:
                 ws.receive_bytes()
         assert exc_info.value.code == 1008
+

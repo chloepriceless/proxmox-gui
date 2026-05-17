@@ -236,8 +236,20 @@ async def console_relay(
         "verify_ssl=%s",
         connector.host, connector.port, node, vmid, is_lxc, connector.verify_ssl,
     )
+    # PVE authenticates the vncwebsocket request itself — the `vncticket`
+    # query param alone is not enough; without an Authorization header PVE
+    # answers 401 "No ticket". Send the cluster's API token, the same
+    # credential proxmoxer uses for every other call to this connector.
+    pve_auth = (
+        f"PVEAPIToken={connector.token_user}!{connector.token_name}"
+        f"={connector.token_value}"
+    )
     try:
-        async with websockets_connect(upstream_url, ssl=ssl_ctx) as upstream:
+        async with websockets_connect(
+            upstream_url,
+            ssl=ssl_ctx,
+            additional_headers={"Authorization": pve_auth},
+        ) as upstream:
             await websocket.accept()
             logger.info(
                 "console relay: established (cluster=%s vmid=%s)", cluster_id, vmid
