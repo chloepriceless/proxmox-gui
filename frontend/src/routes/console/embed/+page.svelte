@@ -84,24 +84,27 @@
   <title>Console</title>
 </svelte:head>
 
-{#if status === 'unavailable'}
+<!-- The status overlay sits ABOVE the framebuffer (z-index) — it never gates
+     whether the framebuffer div exists. -->
+{#if status === 'connecting'}
+  <div class="overlay">
+    <p>Connecting…</p>
+  </div>
+{:else if status === 'ended'}
+  <div class="overlay">
+    <p>Console session ended.</p>
+  </div>
+{:else if status === 'unavailable'}
   <div class="overlay">
     <p>Console unavailable.</p>
   </div>
-{:else}
-  {#if status === 'connecting'}
-    <div class="overlay">
-      <p>Connecting…</p>
-    </div>
-  {:else if status === 'ended'}
-    <div class="overlay">
-      <p>Console session ended.</p>
-    </div>
-  {/if}
-  <!-- The RFB framebuffer target — full-viewport, always mounted so the RFB
-       client has its target div on mount. -->
-  <div bind:this={screenEl} class="screen"></div>
 {/if}
+<!-- The RFB framebuffer target — UNCONDITIONALLY mounted so `bind:this`
+     populates `screenEl` before onMount runs. It must NOT live behind a
+     status-gated branch: status starts 'unavailable', so a conditional
+     screen div would be absent at onMount → screenEl null → status stuck
+     'unavailable' forever (the console could never connect). -->
+<div bind:this={screenEl} class="screen"></div>
 
 <style>
   :global(html),
