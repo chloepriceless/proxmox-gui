@@ -21,6 +21,17 @@
 	# Global options
 	admin off
 	auto_https disable_redirects
+
+	# Serve HTTP/1.1 only. The GUI leans on WebSockets — the Tasks-drawer
+	# job stream (/api/v1/ws/jobs) and the noVNC console relay
+	# (/api/v1/ws/console/...). WebSocket-over-HTTP/2 (RFC 8441) is not
+	# reliably proxied through to the HTTP/1.1 FastAPI upstream, so a WS
+	# handshake on a connection that negotiated h2 fails with a 404. Pinning
+	# to h1.1 keeps every WebSocket on the classic Upgrade handshake; the
+	# multiplexing the GUI gives up is irrelevant for a self-hosted admin UI.
+	servers {
+		protocols h1
+	}
 }
 
 # __SITE_ADDR__ is replaced by bootstrap.sh with `https://<LXC-IP>:443` so
