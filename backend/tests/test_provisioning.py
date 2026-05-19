@@ -163,15 +163,20 @@ def test_0006_phase4_creates_new_tables(fresh_db: str) -> None:
 
 
 def test_0006_phase4_round_trips(fresh_db: str) -> None:
-    """upgrade head → downgrade -1 → upgrade head — the migration round-trips."""
+    """upgrade head → downgrade to 0005 → upgrade head — 0006 round-trips.
+
+    Pinned to ``0005_phase3_backup_storage`` rather than ``downgrade -1``:
+    head is now ``0007_phase5``, so a bare ``-1`` would revert 0007, not the
+    0006 this test targets (same pattern as test_migrations' 0003 round-trip).
+    """
     cfg = _make_config(fresh_db)
     command.upgrade(cfg, "head")
-    command.downgrade(cfg, "-1")
+    command.downgrade(cfg, "0005_phase3_backup_storage")
     engine = sa.create_engine(fresh_db)
     after_down = set(sa.inspect(engine).get_table_names())
     engine.dispose()
     for t in ("network_scope", "catalog_pin", "notification_seen"):
-        assert t not in after_down, f"{t} still present after downgrade -1"
+        assert t not in after_down, f"{t} still present after downgrade"
     # Back up — confirms the upgrade is replayable after a downgrade.
     command.upgrade(cfg, "head")
     engine2 = sa.create_engine(fresh_db)

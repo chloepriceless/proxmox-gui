@@ -97,6 +97,26 @@ def _reset_vmid_reservations():
     clone._cluster_locks.clear()
 
 
+@pytest.fixture(autouse=True)
+def _reset_settings_cache():
+    """Clear the in-process runtime-settings cache between tests.
+
+    ``app.settings.service._cache`` is a module-level per-process cache of the
+    single ``app_setting`` row (single-process design — RESEARCH §Pattern 3).
+    Every test gets a fresh in-memory DB, so a row cached by one test would
+    otherwise leak into the next test's (different) DB — a false-positive
+    failure, never a real bug. The harness owns isolation, not the module.
+    """
+    try:
+        from app.settings import service as settings_service
+    except ImportError:
+        yield
+        return
+    settings_service._cache = None
+    yield
+    settings_service._cache = None
+
+
 @pytest_asyncio.fixture
 async def engine():
     """Per-test in-memory SQLite engine with full schema created."""

@@ -25,6 +25,7 @@ import logging
 from arq import cron, func
 from arq.connections import RedisSettings
 
+from app.clusters.probe import probe_clusters
 from app.jobs.backup_functions import run_backup, run_backup_delete, run_restore
 from app.jobs.backups_cron import fire_due_scheduled_backups
 from app.jobs.clone_migrate_functions import (
@@ -41,6 +42,8 @@ from app.jobs.provisioning_functions import (
 )
 from app.jobs.reaper import reap_orphans
 from app.jobs.resize_functions import run_resize
+from app.jobs.retention_cron import roll_audit_log
+from app.jobs.selfupdate_functions import run_self_update
 from app.jobs.snapshot_functions import (
     run_snapshot_create,
     run_snapshot_delete,
@@ -149,11 +152,20 @@ class WorkerSettings:
         # idempotent (D-16) — max_tries=1; a long install (immich/nextcloudpi)
         # can run for many minutes, so a 1h timeout.
         func(run_community_script, name='lxc.community-script', max_tries=1, timeout=3600),
+        # Plan 05-01: self-update job entry point (DEPLOY-04). Registered here
+        # so plan 05-04 lands only the function body, not a worker edit.
+        # max_tries=1 — a self-update is non-idempotent; 30-min timeout.
+        func(run_self_update, name='admin.self-update', max_tries=1, timeout=1800),
     ]
     # Plan 03-04: scheduled-backup cron — fire due schedules every 5 minutes
     # (RESEARCH §Pattern 1). The cron entry point enqueues vm.backup jobs.
+    # Plan 05-01: two new crons registered here so plans 05-03 land only the
+    # function bodies. roll_audit_log = nightly audit retention (AUDIT-06,
+    # 03:00); probe_clusters = scheduled cluster health probe every 15 minutes.
     cron_jobs: list = [
         cron(fire_due_scheduled_backups, minute=set(range(0, 60, 5))),
+        cron(roll_audit_log, hour={3}, minute={0}),
+        cron(probe_clusters, minute=set(range(0, 60, 15))),
     ]
     on_startup = on_startup
     on_shutdown = on_shutdown

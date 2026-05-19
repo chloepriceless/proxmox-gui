@@ -46,6 +46,16 @@ class ReplayDetected(InvalidRefresh):
     """
 
 
+class IdleExpired(InvalidRefresh):
+    """The session has been idle longer than the configured idle window.
+
+    A distinct :class:`InvalidRefresh` subclass (AUTH-06 / D-03) so the
+    ``/auth/refresh`` route can return a pointed "session expired — sign back
+    in" signal. The SPA shows a re-auth modal for this (D-03), as opposed to
+    the silent logout it does for a generic invalid/expired token.
+    """
+
+
 def hash_refresh(secret: str) -> str:
     """sha256 hex digest of the refresh token plaintext.
 
@@ -81,6 +91,8 @@ async def issue_refresh(
         expires_at=expires_at,
         user_agent=user_agent,
         ip_address=ip,
+        # AUTH-06: a freshly-issued session starts its idle clock now.
+        last_active_at=datetime.now(UTC),
     )
     db.add(row)
     await db.flush()  # populate row.id for the chain pointer below
@@ -141,6 +153,25 @@ async def consume_refresh(
             await db.commit()
             raise ReplayDetected("session compromised")
         raise InvalidRefresh("revoked")
+
+    # AUTH-06 (D-02): server-authoritative idle-timeout gate. This is the
+    # single chokepoint — a tampered client clock or a replayed cookie still
+    # hits this server-side check (Threat T-05-01-01). The idle window is
+    # runtime config read from the settings table.
+    # Lazy import: app.settings.service -> app.audit.writer; importing it at
+    # module scope would risk an import cycle through the auth package.
+    from app.settings.service import get_setting
+
+    idle_minutes = await get_setting(db, "idle_timeout_minutes")
+    # NULL-defensive (Pitfall 3): a row predating the 0007 backfill — or any
+    # row with a NULL last_active_at — falls back to created_at so it is NOT
+    # instantly idle-expired.
+    last_active = row.last_active_at or row.created_at
+    # SQLite strips tzinfo; normalise exactly as expires_at is normalised above.
+    if last_active.tzinfo is None:
+        last_active = last_active.replace(tzinfo=UTC)
+    if (now - last_active) > timedelta(minutes=idle_minutes):
+        raise IdleExpired("idle timeout")
 
     return row
 

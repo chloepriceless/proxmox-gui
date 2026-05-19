@@ -21,11 +21,17 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import service
 from app.auth.rate_limit import check_login_rate
-from app.auth.refresh import InvalidRefresh, ReplayDetected
+from app.auth.refresh import (
+    IdleExpired,
+    InvalidRefresh,
+    ReplayDetected,
+    hash_refresh,
+)
 from app.auth.schemas import (
     LoginRequest,
     LoginResponse,
@@ -34,6 +40,7 @@ from app.auth.schemas import (
 )
 from app.config import settings
 from app.core.db import get_db
+from app.models import RefreshToken
 
 router = APIRouter()
 
@@ -214,6 +221,17 @@ async def refresh_route(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Session compromised — log in again.",
         ) from None
+    except IdleExpired:
+        # AUTH-06 / D-03: idle timeout. IdleExpired is a subclass of
+        # InvalidRefresh, so this arm MUST precede the broader one below.
+        # The detail string is a stable machine token (not prose) so the SPA
+        # can distinguish an idle expiry — show the re-auth modal (D-03) —
+        # from a generic invalid-token silent logout.
+        _clear_session_cookies(response)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="session_idle_expired",
+        ) from None
     except InvalidRefresh:
         _clear_session_cookies(response)
         raise HTTPException(
@@ -228,6 +246,56 @@ async def refresh_route(
         csrf=result.csrf_token,
     )
     return RefreshResponse(refreshed_at=datetime.now(UTC))
+
+
+@router.post(
+    "/keepalive",
+    summary='Extend the session idle window ("Stay signed in")',
+    operation_id="auth_keepalive",
+)
+async def keepalive_route(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, bool]:
+    """D-04 — the "Stay signed in" ping behind the idle countdown warning.
+
+    Bumps the live refresh row's ``last_active_at`` so the AUTH-06 idle gate
+    in :func:`app.auth.refresh.consume_refresh` sees a fresh session. This
+    does NOT rotate the token (no :func:`issue_refresh`) — it is far cheaper
+    than burning a rotation and the cookie value stays valid.
+
+    CSRF-exempt for the same reason ``/refresh`` is: the ``refresh_token``
+    cookie is httpOnly + SameSite=Lax, so a cross-site forged request can
+    submit it but cannot read it back, and this route mints no credential.
+
+    Returns 401 if the cookie is missing or the row is unknown/revoked
+    (Threat T-05-01-02 — keepalive cannot forge a session).
+    """
+    refresh_cookie = request.cookies.get("refresh_token")
+    if not refresh_cookie:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing refresh token",
+        )
+
+    token_hash = hash_refresh(refresh_cookie)
+    row = (
+        await db.execute(
+            select(RefreshToken).where(
+                RefreshToken.token_hash == token_hash,
+                RefreshToken.revoked_at.is_(None),
+            )
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh token invalid or expired",
+        )
+
+    row.last_active_at = datetime.now(UTC)
+    await db.commit()
+    return {"ok": True}
 
 
 @router.post(

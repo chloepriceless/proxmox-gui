@@ -75,6 +75,8 @@ def test_metadata_has_exactly_all_business_tables() -> None:
         "network_scope",
         "catalog_pin",
         "notification_seen",
+        # Phase 5 (Plan 05-01 — single-row runtime settings, D-01).
+        "app_setting",
     }
     business = {
         name for name in Base.metadata.tables if not name.startswith("_test_")
@@ -83,7 +85,7 @@ def test_metadata_has_exactly_all_business_tables() -> None:
         f"business tables mismatch; missing={expected - business} "
         f"extra={business - expected}"
     )
-    assert len(business) == 15
+    assert len(business) == 16
 
 
 def test_cluster_api_token_secret_uses_encrypted_secret() -> None:

@@ -36,17 +36,8 @@ async def _seed_setting_row(session_factory) -> None:
             await session.commit()
 
 
-@pytest.fixture(autouse=True)
-def _reset_settings_cache():
-    """The settings service caches the row per-process; reset between tests."""
-    try:
-        from app.settings import service as settings_service
-    except ImportError:
-        yield
-        return
-    settings_service._cache = None
-    yield
-    settings_service._cache = None
+# The settings service caches the single app_setting row per-process; the
+# conftest `_reset_settings_cache` autouse fixture clears it between tests.
 
 
 # ---------------------------------------------------------------------------
