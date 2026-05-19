@@ -11,10 +11,10 @@ Users can self-provision and manage VMs/LXCs on Proxmox through a polished, opin
 
 ## Phases
 
-- [ ] **Phase 1: Foundation** — Project scaffold, multi-tenant SQLite schema, local auth, per-cluster encrypted token storage, OpenAPI-backed REST shell, SvelteKit UI skeleton, first-run installer + admin/cluster setup wizard.
-- [ ] **Phase 2: Multi-Cluster Inventory, Quotas & Audit** — Cluster connector with circuit breaker, multi-cluster switcher, VM/LXC list/search/detail/RRD metrics, tags + notes + per-VM activity log, per-user/team quotas with admission control, audit log writer + admin/user views with CSV export.
+- [x] **Phase 1: Foundation** — Project scaffold, multi-tenant SQLite schema, local auth, per-cluster encrypted token storage, OpenAPI-backed REST shell, SvelteKit UI skeleton, first-run installer + admin/cluster setup wizard.
+- [x] **Phase 2: Multi-Cluster Inventory, Quotas & Audit** — Cluster connector with circuit breaker, multi-cluster switcher, VM/LXC list/search/detail/RRD metrics, tags + notes + per-VM activity log, per-user/team quotas with admission control, audit log writer + admin/user views with CSV export.
 - [x] **Phase 3: Job Queue & Lifecycle** — arq + Redis queue, UPID polling worker, orphan reaper on boot, Tasks drawer with WebSocket progress, power actions (single + bulk), snapshots, backups (manual + scheduled + restore), resize, clone, migrate, retry-failed, PVE-error-to-human mapping.
-- [ ] **Phase 4: Provisioning, Networking & Console** — LXC wizard (plain + curated/community-scripts catalog with commit pinning), VM wizard (Cloud-Init / PVE template / blank+ISO / clone), Cloud-Init two-pane editor, ISO library, SDN-aware network picker (after SDN spike), node-fit hints, embedded noVNC reverse-proxy + iframe (after vncticket spike), notification bell, empty states, inline help.
+- [x] **Phase 4: Provisioning, Networking & Console** — LXC wizard (plain + curated/community-scripts catalog with commit pinning), VM wizard (Cloud-Init / PVE template / blank+ISO / clone), Cloud-Init two-pane editor, ISO library, SDN-aware network picker (after SDN spike), node-fit hints, embedded noVNC reverse-proxy + iframe (after vncticket spike), notification bell, empty states, inline help.
 - [ ] **Phase 5: Polish & Operational Hardening** — Mobile responsiveness audit, accessibility pass, idle session timeout, audit log retention/rotation, in-app self-update path, helper-script v1 polish, packaging as ready-to-deploy LXC.
 
 ## Phase Details
@@ -58,9 +58,9 @@ Users can self-provision and manage VMs/LXCs on Proxmox through a polished, opin
 - [x] 02-02-audit-schema-writer-PLAN.md — 0003_phase2 migration (per-cluster quota columns + audit_log filter indices); audit writer/reader/CSV stream; GET /api/v1/audit + GET /api/v1/audit/export.csv (UTF-8 BOM, 50000-row cap, CSV-injection escape); source_ip helper
 - [x] 02-03-inventory-backend-PLAN.md — Inventory module (routes/service/schemas/RRD/access); GET /me/inventory + /clusters/{id}/inventory + per-VM detail + RRD; PUT tags + PUT notes; per-team privsep token + pool-match RBAC; audit-on-mutation with token-scrubbing
 - [x] 02-04-quotas-backend-PLAN.md — Quota CRUD + admission (BEGIN IMMEDIATE) + /me/quotas aggregator + /quotas/preview; D-12 lower-anyway via allow_over flag; audit-on-quota-change
-- [ ] 02-05-frontend-inventory-PLAN.md — marked+DOMPurify deps + shadcn blocks; api.inventory; markdown.ts + tag_palette.ts + cluster_context.ts utils; ClusterStatusPill extended with 'stale'; ClusterContextPicker + FilterChip + TagPill + TagInput + MarkdownNotes + Sparkline + ClusterSection; /inventory list (flat or Accordion-grouped) + /inventory/{cluster}/{vmid} detail with tabs; Sidebar "Resources" nav
-- [ ] 02-06-frontend-audit-quotas-PLAN.md — api.audit + api.quotas; AuditTable + CsvExportButton; /audit page with date-range + action + type filters + show_team_actions toggle; QuotaIndicator (Topbar + Sheet drawer + sessionStorage once-per-session toast) + QuotaTab (admin form with lower-anyway dialog); VM detail Activity tab mounts AuditTable with lockedFilters; /admin/teams/{id} tabbed
-- [ ] 02-07-operator-smoke-PLAN.md — Operator end-to-end smoke against real PVE 8.x cluster; verify Assumption A2 (sync config.put) and Pitfall 8 (personal-team-token availability); 5 manual verification checkpoints
+- [x] 02-05-frontend-inventory-PLAN.md — marked+DOMPurify deps + shadcn blocks; api.inventory; markdown.ts + tag_palette.ts + cluster_context.ts utils; ClusterStatusPill extended with 'stale'; ClusterContextPicker + FilterChip + TagPill + TagInput + MarkdownNotes + Sparkline + ClusterSection; /inventory list (flat or Accordion-grouped) + /inventory/{cluster}/{vmid} detail with tabs; Sidebar "Resources" nav
+- [x] 02-06-frontend-audit-quotas-PLAN.md — api.audit + api.quotas; AuditTable + CsvExportButton; /audit page with date-range + action + type filters + show_team_actions toggle; QuotaIndicator (Topbar + Sheet drawer + sessionStorage once-per-session toast) + QuotaTab (admin form with lower-anyway dialog); VM detail Activity tab mounts AuditTable with lockedFilters; /admin/teams/{id} tabbed
+- [x] 02-07-operator-smoke-PLAN.md — Operator end-to-end smoke against real PVE 8.x cluster; verify Assumption A2 (sync config.put) and Pitfall 8 (personal-team-token availability); 5 manual verification checkpoints
 **UI hint**: yes
 **Notes**: Builds the cluster connector (proxmoxer + circuit breaker + 30s resource cache + health probe), the cluster registry, and the per-cluster ACL/visibility model that the rest of the project depends on. Quota admission uses SQLite BEGIN IMMEDIATE + busy_timeout (Pitfall 6 mitigation — SELECT FOR UPDATE does not exist in SQLite). Storage and SDN references namespaced by cluster_id from the start (Pitfall 11). Audit writer is synchronous-before-return.
 
@@ -97,10 +97,10 @@ Users can self-provision and manage VMs/LXCs on Proxmox through a polished, opin
   5. Empty list states show actionable CTAs ("You have no VMs yet — Create one"), every PVE-specific wizard field has a `?` tooltip linking to docs, and a notification bell surfaces task completions in real time.
 **Plans**: 17 plans (14 original + 3 gap-closure after verification)
 Plans:
-- [ ] 04-01-PLAN.md — Community-scripts execution spike (gates 04-06)
-- [ ] 04-02-PLAN.md — SDN read-API spike (gates 04-07)
-- [ ] 04-03-PLAN.md — noVNC reverse-proxy spike (gates 04-08)
-- [ ] 04-04-PLAN.md — Provisioning backend — connector, module, create jobs, 0006_phase4 migration
+- [x] 04-01-PLAN.md — Community-scripts execution spike (gates 04-06)
+- [x] 04-02-PLAN.md — SDN read-API spike (gates 04-07)
+- [x] 04-03-PLAN.md — noVNC reverse-proxy spike (gates 04-08)
+- [x] 04-04-PLAN.md — Provisioning backend — connector, module, create jobs, 0006_phase4 migration
 - [x] 04-05-PLAN.md — ISO library + Cloud-Init render/validation backend
 - [x] 04-06-PLAN.md — Community-scripts catalog backend + two-stage run_community_script job *(completed 2026-05-16, 12 files, 437 tests green; LXC-01/02/03/04 shipped; SUMMARY: .planning/phases/04-provisioning-networking-console/04-06-SUMMARY.md)*
 - [x] 04-07-PLAN.md — Networks backend — SDN reads, picker service, per-team scoping *(completed 2026-05-16, 8 files, 462 tests green; NET-01/02/03/04 shipped; SUMMARY: .planning/phases/04-provisioning-networking-console/04-07-SUMMARY.md)*
@@ -111,9 +111,9 @@ Plans:
 - [x] 04-12-PLAN.md — VM wizard (4 paths) + node-fit + SDN-aware network picker *(completed 2026-05-16, 11 files, 55 new tests / 306 frontend total; VM-01/02/03/04/09/10 + NET-01/02/03/04 frontend-completed; SUMMARY: .planning/phases/04-provisioning-networking-console/04-12-SUMMARY.md)*
 - [x] 04-13-PLAN.md — Cloud-Init two-pane editor + ISO library browser *(completed 2026-05-16, 9 files, 48 new tests / 354 frontend total; VM-05/06/07/08 frontend-completed; SUMMARY: .planning/phases/04-provisioning-networking-console/04-13-SUMMARY.md)*
 - [x] 04-14-PLAN.md — Console tab + notification bell + Networks admin tab + provisioning banner *(completed 2026-05-16, 21 files, 8 new backend tests / 485 total + 43 new frontend tests / 251 total; CON-01/02/03 + NET-02 + UI-04/UI-07 frontend-completed; SUMMARY: .planning/phases/04-provisioning-networking-console/04-14-SUMMARY.md)*
-- [ ] 04-15-PLAN.md — Gap closure (CON-01): vendored noVNC RFB client + /console/embed SvelteKit route + ConsoleTab iframe rewire (sandbox attr)
-- [ ] 04-16-PLAN.md — Gap closure (VM-10): GET /clusters/{id}/nodes/resources route + wizard node-fit wired to live free CPU/RAM
-- [ ] 04-17-PLAN.md — Gap closure (WR-01): commit_sha + slug supply-chain validation in run_community_script (CLAUDE.md #8)
+- [x] 04-15-PLAN.md — Gap closure (CON-01): vendored noVNC RFB client + /console/embed SvelteKit route + ConsoleTab iframe rewire (sandbox attr)
+- [x] 04-16-PLAN.md — Gap closure (VM-10): GET /clusters/{id}/nodes/resources route + wizard node-fit wired to live free CPU/RAM
+- [x] 04-17-PLAN.md — Gap closure (WR-01): commit_sha + slug supply-chain validation in run_community_script (CLAUDE.md #8)
 **UI hint**: yes
 **Notes**: Planned 2026-05-16; revised 2026-05-16 after plan-check (5 blockers + 3 warnings). 14 plans across 7 waves: W1 {01,02,03 spikes, 04 provisioning backend}, W2 {05,06,07,08 backend}, W3 {09 API+primitives}, W4 {10 wizard shell}, W5 {11 LXC wizard, 14 console/bell/networks}, W6 {12 VM wizard}, W7 {13 Cloud-Init editor}. Plan 04-04 has no real dependency on the spikes (they only touch 04-SPIKE-*.md docs) so it runs in W1. The 04-09 plan was split into 04-09 (API modules + shared primitives) and 04-10 (wizard shell) to stay under the file-count threshold; downstream plans renumbered (old 10/11/12/13 -> 11/12/13/14). The four frontend wizard-step plans (11/12/13) are sequenced into separate waves because they share `routes/create/+page.svelte`. Backend plans 05/06/07/08 share append-only edits to `connector.py`/`main.py` (distinct methods + router includes — the established Phase-1..3 pattern). **SDN integration has MEDIUM-LOW research confidence (research SUMMARY.md Open Questions)** — a dedicated SDN spike must precede implementation, covering reload/applied-state polling, version floor, and partial-node-offline behavior. **noVNC needs a dedicated spike** for vncticket exact-encoding (must be URL-encoded exactly once — Pitfall 3 + double-encoding gotcha), reverse-proxy WebSocket header forwarding (Upgrade/Connection/proxy_buffering), and self-signed-cert handling. **Community-scripts integration needs its own spike** for non-interactive invocation (whiptail bypass), `pct exec` output streaming, metadata JSON stability, attribution, and commit pinning policy. VMID race must be addressed here via app-level per-cluster lock + reserved-VMID set (Pitfall 1). Cloud-Init must validate that a `content=snippets`-enabled storage exists at cluster onboarding time (Pitfall 4) and call `qm cloudinit update` after every snippet write.
 
@@ -156,10 +156,10 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation | 9/10 | Executing | - |
-| 2. Multi-Cluster Inventory, Quotas & Audit | 0/TBD | Not started | - |
+| 1. Foundation | 10/10 | Complete | 2026-05-14 |
+| 2. Multi-Cluster Inventory, Quotas & Audit | 7/7 | Complete | 2026-05-16 |
 | 3. Job Queue & Lifecycle | 7/7 | Complete | 2026-05-16 |
-| 4. Provisioning, Networking & Console | 5/14 | Executing | - |
+| 4. Provisioning, Networking & Console | 17/17 | Complete | 2026-05-19 |
 | 5. Polish & Operational Hardening | 0/TBD | Not started | - |
 
 ## Cross-Cutting Concerns

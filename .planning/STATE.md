@@ -2,21 +2,21 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_plan: 14
-status: planned
-stopped_at: Phase 04 gap-closure planned (04-15/16/17)
-last_updated: "2026-05-16T23:30:00.000Z"
+current_plan: 17
+status: complete
+stopped_at: Phase 04 complete — ready to plan Phase 05
+last_updated: "2026-05-19T00:00:00.000Z"
 progress:
   total_phases: 5
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 41
-  completed_plans: 38
-  percent: 93
+  completed_plans: 41
+  percent: 100
 ---
 
 # STATE: Proxmox Self-Service GUI
 
-**Last updated:** 2026-05-16
+**Last updated:** 2026-05-19
 **Mode:** yolo
 **Granularity:** coarse
 
@@ -24,36 +24,36 @@ progress:
 
 **Core value:** Users can self-provision and manage VMs/LXCs on Proxmox through a polished, opinionated UI — without ever needing to open the Proxmox web interface.
 
-**Current focus:** Phase 04 — provisioning-networking-console
+**Current focus:** Phase 05 — polish-operational-hardening (not yet planned)
 
 ## Current Position
 
-Phase: 04 (provisioning-networking-console) — GAP CLOSURE PLANNED
-Plan: 14 of 17 executed
-Current Plan: 04-15 (next to execute)
+Phase: 04 (provisioning-networking-console) — COMPLETE
+Plan: 17 of 17 executed
+Current Plan: — (Phase 05 not yet planned)
 
 - **Milestone:** v1
-- **Phase:** 4
-- **Plan:** 04-15/16/17 gap-closure plans ✅ planned, ready to execute
-- **Status:** Phase 04 verified 3/5 must-haves (gaps_found). 3 gap-closure plans created — 04-15 (CON-01 noVNC console via SvelteKit /console/embed route + vendored noVNC), 04-16 (VM-10 node-resources route + wizard wiring), 04-17 (WR-01 commit-hash/slug validation). All Wave 1, parallelizable. LXC-03 SSH key trust deferred to Phase 5 (deployment gap, not code).
-- **Progress:** [█████████░] 93%
+- **Phase:** 4 complete → Phase 5 next
+- **Plan:** all 17 Phase-04 plans executed; gap-closure 04-15/16/17 done and verified (5/5 must-haves in code).
+- **Status:** Phase 04 complete. The embedded noVNC console was fixed and deployed (commit d591fe5) — PVE requires VNC auth (security type 2, confirmed by a live RFB-handshake probe), so the vncticket is now threaded to noVNC's `credentials.password` and the double vncproxy mint collapsed to one. UAT-1a (console) passed live on 192.168.20.171. Deferred: UAT-1b node-fit (visual check postponed by user — logic covered by 15 unit tests); UAT-1c community-script deploy (needs first-run SSH key trust → Phase 5). Phase 05 (Polish & Operational Hardening) not yet planned.
+- **Progress:** [██████████] 100% (41/41 plans across Phases 1–4)
 
 ## Phases at a Glance
 
 | Phase | Name | Status | Requirements |
 |-------|------|--------|--------------|
-| 1 | Foundation | Not started | 19 |
-| 2 | Multi-Cluster Inventory, Quotas & Audit | Not started | 23 |
-| 3 | Job Queue & Lifecycle | Not started | 16 |
-| 4 | Provisioning, Networking & Console | Not started | 27 |
+| 1 | Foundation | ✅ Complete | 19 |
+| 2 | Multi-Cluster Inventory, Quotas & Audit | ✅ Complete | 23 |
+| 3 | Job Queue & Lifecycle | ✅ Complete | 16 |
+| 4 | Provisioning, Networking & Console | ✅ Complete (UAT-1b deferred) | 27 |
 | 5 | Polish & Operational Hardening | Not started | 4 |
 
 **Coverage:** 89/89 v1 requirements mapped.
 
 ## Performance Metrics
 
-- **Phases complete:** 3/5
-- **Plans complete:** 24/24 (Phases 1–3 complete)
+- **Phases complete:** 4/5
+- **Plans complete:** 41/41 (Phases 1–4 complete)
 - **Requirements shipped:** 22/89 (API-01, API-03 via Plan 01-01; AUTH-01, AUTH-02, AUTH-05, AUTH-07, AUTH-08, CLUST-01, CLUST-05 schema-landed via Plan 01-02; UI-01, UI-02 frontend-shell via Plan 01-03; DEPLOY-01, DEPLOY-02, DEPLOY-03, DEPLOY-05 helper-script skeleton via Plan 01-04; AUTH-01..05 fully shipped + API-01..03 fully shipped via Plan 01-05; CLUST-01, CLUST-05, CLUST-06, AUTH-08 fully shipped via Plan 01-06; AUTH-07, AUTH-08, DEPLOY-05 fully shipped via Plan 01-07; AUTH-01, AUTH-02 (login surface), UI-01, UI-02 (auth gate + login + setup wizard frontend), DEPLOY-05 (wizard frontend) frontend-completed via Plan 01-08; AUTH-03, AUTH-04, AUTH-05 (account self-service surface), API-02 (PAT frontend mint/list/revoke + show-once dialog) frontend-completed via Plan 01-09)
 - **Out-of-scope items deferred:** see REQUIREMENTS.md v2 section
 
