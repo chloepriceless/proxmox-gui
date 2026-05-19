@@ -39,8 +39,11 @@ from typing import Any
 import pybreaker
 import requests
 from proxmoxer import AuthenticationError, ProxmoxAPI, ResourceException
+from requests.exceptions import SSLError as RequestsSSLError
+from requests.exceptions import Timeout as RequestsTimeout
 
 from app.clusters.errors import PVEAPIError, PVEAuthError, PVEUnreachable
+from app.clusters.pinning import mount_pinning_adapter
 
 
 @dataclass
@@ -89,15 +92,6 @@ class PVEConnector:
         verify_ssl: bool,
         tls_fingerprint: str | None = None,
     ) -> None:
-        # Phase 1 limitation: per-cluster TLS fingerprint pinning is deferred
-        # to Phase 5 polish. Refuse the combination explicitly so operators
-        # don't believe pinning is active when it isn't.
-        if tls_fingerprint and not verify_ssl:
-            raise NotImplementedError(
-                "Per-cluster TLS fingerprint pinning is Phase 5 polish; in "
-                "Phase 1 use verify_ssl=True with a trusted CA or accept "
-                "verify_ssl=False without fingerprint."
-            )
         self._client = ProxmoxAPI(
             host,
             port=port,
@@ -107,6 +101,19 @@ class PVEConnector:
             verify_ssl=verify_ssl,
             timeout=10,
         )
+
+        # D-20: TLS fingerprint pinning for self-signed PVE. When a cluster row
+        # carries a pinned ``tls_fingerprint`` and CA-chain validation is off,
+        # mount a FingerprintPinningAdapter on proxmoxer's persistent session
+        # so every subsequent PVE call validates the leaf cert's SHA-256
+        # against the pin. The fingerprint IS the trust anchor — cert-chain
+        # validation stays off, fingerprint validation is on. A mismatched cert
+        # raises ssl.SSLError, which surfaces as PVEUnreachable through the
+        # connector's exception translation (see _call / _call_with_breaker).
+        # When verify_ssl is True the cluster has a real CA-trusted cert and no
+        # pin is needed.
+        if tls_fingerprint and not verify_ssl:
+            mount_pinning_adapter(self._client, tls_fingerprint)
 
         # Phase 2: circuit breaker (T-02-01-05). Auth errors do NOT trip the
         # breaker — they indicate a config problem, not transient reachability.
@@ -191,7 +198,17 @@ class PVEConnector:
             raise PVEUnreachable("breaker open") from exc
         except AuthenticationError as exc:
             raise PVEAuthError(str(exc)) from exc
-        except (ConnectionError, requests.ConnectionError) as exc:
+        except (
+            # ME-04: a TCP-reachable-but-hanging PVE host raises Timeout, not
+            # ConnectionError — without this arm it bubbled as an uncaught 500.
+            # RequestsSSLError covers a D-20 TLS fingerprint mismatch (a pinned
+            # cert that no longer matches → ssl.SSLError → requests.SSLError):
+            # a refused connection is the correct semantic, not a 500.
+            ConnectionError,
+            requests.ConnectionError,
+            RequestsTimeout,
+            RequestsSSLError,
+        ) as exc:
             raise PVEUnreachable(str(exc)) from exc
         except ResourceException as exc:
             raise PVEAPIError(
@@ -209,7 +226,15 @@ class PVEConnector:
             return await self._call(self._client.version.get)
         except AuthenticationError as exc:
             raise PVEAuthError(str(exc)) from exc
-        except (ConnectionError, requests.ConnectionError) as exc:
+        except (
+            # ME-04: catch Timeout (PVE reachable on TCP but hanging) and
+            # RequestsSSLError (a D-20 TLS fingerprint mismatch) — both are
+            # "couldn't reach", not an internal error.
+            ConnectionError,
+            requests.ConnectionError,
+            RequestsTimeout,
+            RequestsSSLError,
+        ) as exc:
             raise PVEUnreachable(str(exc)) from exc
         except ResourceException as exc:
             raise PVEAPIError(

@@ -22,6 +22,7 @@ Functions:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from fastapi import HTTPException, status
@@ -29,8 +30,11 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import asyncio
+
 from app.clusters.connector import PVEConnector
 from app.clusters.errors import PVEAPIError, PVEAuthError, PVEUnreachable
+from app.clusters.pinning import capture_fingerprint
 from app.clusters.registry import PVEConnectorRegistry
 from app.clusters.schemas import (
     ClusterCreate,
@@ -141,10 +145,28 @@ async def test_cluster(payload: ClusterTestRequest) -> ClusterTestResponse:
             ok=False, error="Proxmox returned an unexpected error.",
         )
 
+    # D-20 capture-on-register (TOFU): the cluster is reachable, so fetch the
+    # PVE leaf cert's SHA-256 fingerprint and surface it. The admin confirms
+    # it; the frontend persists it to ``clusters.tls_fingerprint`` and every
+    # subsequent connection is pinned against it (FingerprintPinningAdapter).
+    # A fingerprint-capture failure must NOT fail an otherwise-successful test
+    # — the cluster is reachable; pinning is an opt-in confirm step.
+    fingerprint: str | None = None
+    try:
+        fingerprint = await asyncio.to_thread(
+            capture_fingerprint, payload.host, payload.port,
+        )
+    except Exception as exc:  # noqa: BLE001 — best-effort; reachability already passed
+        logger.warning(
+            "TLS fingerprint capture failed for %s:%s — %s",
+            payload.host, payload.port, exc,
+        )
+
     return ClusterTestResponse(
         ok=True,
         version=version_payload.get("version"),
         release=version_payload.get("release"),
+        tls_fingerprint=fingerprint,
     )
 
 

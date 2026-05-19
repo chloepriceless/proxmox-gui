@@ -12,7 +12,7 @@ import re
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 # Sentinel for the nullable-clearable PATCH field pattern (Phase 1 IN-03
 # carryover). ``backup_storage`` must be distinguishable between "absent from
@@ -108,6 +108,11 @@ class ClusterTestResponse(BaseModel):
     version: str | None = None
     release: str | None = None
     error: str | None = None
+    # D-20 capture-on-register (TOFU): on a successful reachability check the
+    # Test flow captures the PVE leaf cert's SHA-256 and surfaces it here. The
+    # admin confirms it; the frontend (05-06) persists it to
+    # ``clusters.tls_fingerprint`` and every subsequent connection is pinned.
+    tls_fingerprint: str | None = None
 
 
 class ClusterUpdate(BaseModel):
@@ -153,6 +158,22 @@ class ClusterUpdate(BaseModel):
                 "token_user must be of the form name@pam or name@pve"
             )
         return v
+
+    @model_validator(mode="after")
+    def _require_token_pair(self) -> ClusterUpdate:
+        """IN-03: changing ``token_user`` alone silently mismatches the stored
+        encrypted secret — the connector then breaks with no test-connection
+        step. Require ``token_user`` and ``api_token_secret`` to move together
+        (PVE API tokens belong to a specific user; the secret is meaningless
+        without its owning user). ``token_name`` may still change alone — it
+        only re-labels the same token-user's token.
+        """
+        if self.token_user is not None and self.api_token_secret is None:
+            raise ValueError(
+                "Changing token_user requires api_token_secret — a PVE API "
+                "token belongs to its user; supply both or neither."
+            )
+        return self
 
 
 class ClusterResponse(BaseModel):
