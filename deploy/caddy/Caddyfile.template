@@ -48,10 +48,20 @@ __SITE_ADDR__ {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		X-Content-Type-Options "nosniff"
 		# noVNC iframe in Phase 4 is same-origin; SAMEORIGIN is compatible.
-		# Phase 5 polishes to `frame-ancestors 'self'` via CSP.
+		# `frame-ancestors 'self'` in the CSP below is the modern equivalent
+		# and is kept alongside X-Frame-Options for older-browser coverage.
 		X-Frame-Options "SAMEORIGIN"
 		Referrer-Policy "strict-origin-when-cross-origin"
-		# CSP intentionally omitted in Phase 1; Phase 5 polish hardens (T-01-04-06).
+		# Content-Security-Policy (carryover from Phase 1 — T-01-04-06).
+		# A strict `script-src 'self'` breaks SvelteKit hydration: SvelteKit
+		# emits inline <script>/<style> blocks, so 'unsafe-inline' is scoped
+		# to script-src + style-src only — everything else stays 'self'.
+		# `frame-ancestors 'self'` is load-bearing: it is the modern
+		# clickjacking defence and is safe for the same-origin noVNC iframe.
+		# `img-src` allows data: URIs (inline SVG/icons) and https: (remote
+		# avatars/template art); `connect-src 'self'` keeps XHR/WebSocket
+		# (the Tasks-drawer + console relay) same-origin.
+		Content-Security-Policy "default-src 'self'; frame-ancestors 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'"
 		-Server
 	}
 

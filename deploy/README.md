@@ -72,6 +72,17 @@ CPU=4 RAM_MB=4096 STORAGE=local-zfs \
   bash -c "$(curl -fsSL https://raw.githubusercontent.com/chloepriceless/proxmox-gui/master/deploy/install.sh)"
 ```
 
+### Security configuration
+
+These environment variables harden the runtime. The production `.env`
+template shipped by `bootstrap.sh` sets the secure values; the table below
+documents them so an operator knows what *not* to weaken.
+
+| Env var                       | Production value | Notes |
+|--------------------------------|------------------|-------|
+| `PROXMOX_GUI_COOKIE_SECURE`    | `true`           | **DEV-ONLY override: `false`.** When `true`, session cookies (`access_token`, `refresh_token`, `csrf_token`) carry the `Secure` flag, so the browser only ever sends them over HTTPS. The standard install behind Caddy is always HTTPS, so production **MUST** keep this `true`. Setting it `false` is only for a localhost dev box reached over plain `http://`. The API emits a startup `UserWarning` if `cookie_secure=false` is detected with a non-local database — an operator cannot silently ship insecure cookies. |
+| `PROXMOX_GUI_TRUSTED_PROXIES`  | `["127.0.0.1","::1"]` | The set of TCP peers whose `X-Forwarded-For` header is trusted for the per-IP login rate limiter. In the single-LXC topology Caddy speaks to the API over loopback. An empty list means "never trust `X-Forwarded-For`" — the safe default. |
+
 ## Post-install
 
 1. Visit `https://<LXC-IP>/setup` in your browser. Accept the self-signed

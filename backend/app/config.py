@@ -119,6 +119,29 @@ class Settings(BaseSettings):
             )
             object.__setattr__(self, "pat_pepper", ephemeral)
 
+        # Carryover: COOKIE_SECURE=false ships httpOnly session cookies WITHOUT
+        # the Secure flag, so they travel over plain HTTP — acceptable for a
+        # localhost dev box, never for a real deployment. Emit a startup
+        # warning when cookie_secure is False and the database is not the
+        # ephemeral local dev DB, so an operator cannot silently ship insecure
+        # cookies to production. ``deploy/README.md`` documents the flag as
+        # dev-only and the production .env template sets it true.
+        if not self.cookie_secure:
+            db_url = (self.database_url or "").lower()
+            is_local_dev_db = (
+                ":memory:" in db_url
+                or "./app.db" in db_url
+                or "test" in db_url
+            )
+            if not is_local_dev_db:
+                warnings.warn(
+                    "PROXMOX_GUI_COOKIE_SECURE=false — DEV ONLY; production "
+                    "MUST set PROXMOX_GUI_COOKIE_SECURE=true so session "
+                    "cookies carry the Secure flag.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+
         return self
 
     def __repr__(self) -> str:

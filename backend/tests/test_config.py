@@ -1,6 +1,9 @@
-"""Tests for :mod:`app.config` — specifically T-01-01-07 (secret redaction)."""
+"""Tests for :mod:`app.config` — T-01-01-07 (secret redaction) + the
+COOKIE_SECURE startup warning (carryover)."""
 
 from __future__ import annotations
+
+import warnings
 
 from app.config import Settings, settings
 
@@ -42,3 +45,55 @@ def test_jwt_secret_attribute_remains_plain_str() -> None:
     """
     assert isinstance(settings.jwt_secret, str)
     assert isinstance(settings.pat_pepper, str)
+
+
+# ---------------------------------------------------------------------------
+# Carryover: COOKIE_SECURE=false production warning
+# ---------------------------------------------------------------------------
+
+
+def test_cookie_secure_false_with_prod_db_warns() -> None:
+    """COOKIE_SECURE=false against a non-local (production) DB emits a
+    UserWarning so an operator cannot silently ship insecure cookies."""
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        Settings(
+            _env_file=None,  # type: ignore[call-arg]
+            cookie_secure=False,
+            database_url="sqlite+aiosqlite:////var/lib/proxmox-gui/app.db",
+            jwt_secret="x" * 48,
+            pat_pepper="y" * 48,
+        )
+    messages = [str(w.message) for w in caught]
+    assert any("COOKIE_SECURE=false" in m for m in messages), messages
+
+
+def test_cookie_secure_false_with_local_db_does_not_warn() -> None:
+    """COOKIE_SECURE=false on a localhost dev DB is the documented dev mode —
+    no warning, so the dev box stays quiet."""
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        Settings(
+            _env_file=None,  # type: ignore[call-arg]
+            cookie_secure=False,
+            database_url="sqlite+aiosqlite:///./app.db",
+            jwt_secret="x" * 48,
+            pat_pepper="y" * 48,
+        )
+    messages = [str(w.message) for w in caught]
+    assert not any("COOKIE_SECURE=false" in m for m in messages), messages
+
+
+def test_cookie_secure_true_never_warns() -> None:
+    """The secure-by-default case never emits the COOKIE_SECURE warning."""
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        Settings(
+            _env_file=None,  # type: ignore[call-arg]
+            cookie_secure=True,
+            database_url="sqlite+aiosqlite:////var/lib/proxmox-gui/app.db",
+            jwt_secret="x" * 48,
+            pat_pepper="y" * 48,
+        )
+    messages = [str(w.message) for w in caught]
+    assert not any("COOKIE_SECURE=false" in m for m in messages), messages

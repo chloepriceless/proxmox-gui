@@ -27,6 +27,11 @@ export const handle: Handle = async ({ event, resolve }) => {
     };
     if (event.request.method !== 'GET' && event.request.method !== 'HEAD') {
       init.body = await event.request.arrayBuffer();
+      // LO-04: Node 18+'s undici fetch requires `duplex: 'half'` whenever a
+      // body is supplied — without it a request with a body can silently
+      // fail (notably for streaming/upload payloads). It is not in the DOM
+      // `RequestInit` type, hence the cast.
+      (init as RequestInit & { duplex?: 'half' }).duplex = 'half';
     }
     return fetch(upstream, init);
   }
