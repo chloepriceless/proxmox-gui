@@ -14,14 +14,17 @@ Wants=network-online.target
 Type=simple
 User=proxmox-gui
 Group=proxmox-gui
-WorkingDirectory=/opt/proxmox-gui/backend
+# DEPLOY-04: WorkingDirectory + ExecStart resolve through /opt/proxmox-gui/current,
+# a symlink swapped atomically by deploy/lxc/update.sh. The per-release venv
+# lives inside the release dir so rollback = repoint the symlink (no pip undo).
+WorkingDirectory=/opt/proxmox-gui/current/backend
 Environment=PROXMOX_GUI_MASTER_KEY_PATH=/etc/proxmox-gui/master.key
 Environment=PROXMOX_GUI_DATABASE_URL=sqlite+aiosqlite:////var/lib/proxmox-gui/app.db
 Environment=PROXMOX_GUI_JWT_SECRET_FILE=/etc/proxmox-gui/jwt.secret
 Environment=PROXMOX_GUI_PAT_PEPPER_FILE=/etc/proxmox-gui/pat.pepper
 Environment=PROXMOX_GUI_COOKIE_SECURE=true
 Environment=PROXMOX_GUI_LOG_LEVEL=INFO
-ExecStart=/opt/proxmox-gui/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --no-access-log
+ExecStart=/opt/proxmox-gui/current/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --no-access-log
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal

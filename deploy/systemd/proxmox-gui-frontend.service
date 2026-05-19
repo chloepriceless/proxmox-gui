@@ -14,11 +14,13 @@ Wants=network-online.target
 Type=simple
 User=proxmox-gui
 Group=proxmox-gui
-WorkingDirectory=/opt/proxmox-gui/frontend/build
+# DEPLOY-04: WorkingDirectory + ExecStart resolve through /opt/proxmox-gui/current,
+# a symlink swapped atomically by deploy/lxc/update.sh.
+WorkingDirectory=/opt/proxmox-gui/current/frontend/build
 Environment=HOST=127.0.0.1
 Environment=PORT=3000
 Environment=NODE_ENV=production
-ExecStart=/usr/bin/node /opt/proxmox-gui/frontend/build/index.js
+ExecStart=/usr/bin/node /opt/proxmox-gui/current/frontend/build/index.js
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal

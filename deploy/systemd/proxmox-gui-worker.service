@@ -13,10 +13,15 @@ Requires=redis-server.service
 Type=simple
 User=proxmox-gui
 Group=proxmox-gui
-WorkingDirectory=/opt/proxmox-gui/backend
+# DEPLOY-04: WorkingDirectory + ExecStart resolve through /opt/proxmox-gui/current,
+# a symlink swapped atomically by deploy/lxc/update.sh. The per-release venv
+# lives inside the release dir so the worker rebases onto the new release
+# only when it is restarted LAST by run_self_update (after the health check
+# of the api on the new release passes).
+WorkingDirectory=/opt/proxmox-gui/current/backend
 Environment=PROXMOX_GUI_MASTER_KEY_PATH=/etc/proxmox-gui/master.key
 Environment=PROXMOX_GUI_DATABASE_URL=sqlite+aiosqlite:////var/lib/proxmox-gui/app.db
-ExecStart=/opt/proxmox-gui/.venv/bin/arq app.jobs.worker.WorkerSettings
+ExecStart=/opt/proxmox-gui/current/.venv/bin/arq app.jobs.worker.WorkerSettings
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal

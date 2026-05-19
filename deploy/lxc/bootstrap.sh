@@ -36,6 +36,16 @@ ETC_DIR="/etc/proxmox-gui"
 DATA_DIR="/var/lib/proxmox-gui"
 LOG_DIR="/var/log/proxmox-gui"
 INSTALLED_MARKER="${ETC_DIR}/.installed"
+# DEPLOY-04: releases/current layout — each install/update unpacks into
+# /opt/proxmox-gui/releases/<tag>/ and atomically symlinks `current` to it,
+# so deploy/lxc/update.sh can swap codepaths without a window where
+# `current` is missing.
+RELEASES_DIR="${APP_HOME}/releases"
+CURRENT_LINK="${APP_HOME}/current"
+# Phase 1 layouts wrote backend/, frontend/, deploy/ directly into APP_HOME.
+# Bootstrap now stamps an initial release tag so the very first install also
+# uses the releases/current layout (D-12 idempotent re-run = update).
+INITIAL_TAG="${RELEASE:-master}"
 
 # ----------------------------------------------------------------------------
 # Idempotent short-circuit: if marker exists, just run migrations and exit.
@@ -66,9 +76,20 @@ if [[ -f "$INSTALLED_MARKER" ]]; then
 
     # 2. Re-install the backend so new dependencies (arq, redis) land in the
     #    venv — same invocation as the first-install path in Step 6.
+    #
+    # The idempotent-exit path predates the DEPLOY-04 releases/current layout:
+    # on a Phase-1..4 install the venv + code live at $APP_HOME/{.venv,backend}.
+    # If `current` already exists (a Phase-5+ install), prefer it.
+    if [[ -L "$CURRENT_LINK" && -d "$CURRENT_LINK/.venv" ]]; then
+        IDEMPOTENT_VENV="${CURRENT_LINK}/.venv"
+        IDEMPOTENT_BACKEND="${CURRENT_LINK}/backend"
+    else
+        IDEMPOTENT_VENV="${APP_HOME}/.venv"
+        IDEMPOTENT_BACKEND="${APP_HOME}/backend"
+    fi
     echo "==> [idempotent] pip install -e backend (picks up arq/redis)..."
-    "${RUNAS[@]}" "${APP_HOME}/.venv/bin/pip" install \
-        --quiet -e "${APP_HOME}/backend"
+    "${RUNAS[@]}" "${IDEMPOTENT_VENV}/bin/pip" install \
+        --quiet -e "${IDEMPOTENT_BACKEND}"
 
     # 3. Migrations. cd into backend/: alembic 1.18+ probes cwd for
     #    pyproject.toml, and /root (default cwd for root) is mode 0700 →
@@ -77,14 +98,26 @@ if [[ -f "$INSTALLED_MARKER" ]]; then
     echo "==> [idempotent] alembic upgrade head..."
     "${RUNAS[@]}" bash -c "
         export PROXMOX_GUI_DATABASE_URL='sqlite+aiosqlite:////var/lib/proxmox-gui/app.db'
-        cd '${APP_HOME}/backend' && \
-        exec '${APP_HOME}/.venv/bin/alembic' -c '${APP_HOME}/backend/alembic.ini' upgrade head
+        cd '${IDEMPOTENT_BACKEND}' && \
+        exec '${IDEMPOTENT_VENV}/bin/alembic' -c '${IDEMPOTENT_BACKEND}/alembic.ini' upgrade head
     "
 
     # 4. Re-install the systemd units (the worker unit's ExecStart changed in
-    #    Phase 3) and (re-)enable redis + worker.
+    #    Phase 3, and the WorkingDirectory/ExecStart paths moved to
+    #    /opt/proxmox-gui/current/* in Phase 5 / DEPLOY-04) and (re-)enable
+    #    redis + worker. Source the unit files from whichever layout the
+    #    on-disk install uses (pre-Phase-5: $APP_HOME; Phase-5+: $CURRENT_LINK).
     echo "==> [idempotent] refreshing systemd units + enabling redis/worker..."
-    install -m 0644 "${APP_HOME}/deploy/systemd/proxmox-gui-worker.service" \
+    if [[ -L "$CURRENT_LINK" ]]; then
+        UNIT_SRC="${CURRENT_LINK}/deploy/systemd"
+    else
+        UNIT_SRC="${APP_HOME}/deploy/systemd"
+    fi
+    install -m 0644 "${UNIT_SRC}/proxmox-gui-api.service" \
+        /etc/systemd/system/proxmox-gui-api.service
+    install -m 0644 "${UNIT_SRC}/proxmox-gui-frontend.service" \
+        /etc/systemd/system/proxmox-gui-frontend.service
+    install -m 0644 "${UNIT_SRC}/proxmox-gui-worker.service" \
         /etc/systemd/system/proxmox-gui-worker.service
     systemctl daemon-reload
     systemctl enable --now redis-server proxmox-gui-worker.service
@@ -183,55 +216,134 @@ fi
 # /etc/proxmox-gui is mode 0700 (Pitfall A6 — only the service user reads).
 # /opt, /var/lib, /var/log are 0750 (drwxr-x---) so a debugging operator
 # can `sudo -u proxmox-gui ls` without becoming root.
+#
+# DEPLOY-04: also create the releases/ subdir; the symlink `current` is
+# created at the end of Step 4 once the initial release is in place.
 # ----------------------------------------------------------------------------
 echo "==> Creating /etc, /opt, /var/lib, /var/log layout..."
-mkdir -p "$ETC_DIR" "$APP_HOME" "$DATA_DIR" "$LOG_DIR"
-chown "$APP_USER:$APP_GROUP" "$ETC_DIR" "$APP_HOME" "$DATA_DIR" "$LOG_DIR"
+mkdir -p "$ETC_DIR" "$APP_HOME" "$RELEASES_DIR" "$DATA_DIR" "$LOG_DIR"
+chown "$APP_USER:$APP_GROUP" "$ETC_DIR" "$APP_HOME" "$RELEASES_DIR" "$DATA_DIR" "$LOG_DIR"
 chmod 0700 "$ETC_DIR"
-chmod 0750 "$APP_HOME" "$DATA_DIR" "$LOG_DIR"
+chmod 0750 "$APP_HOME" "$RELEASES_DIR" "$DATA_DIR" "$LOG_DIR"
 
 # ----------------------------------------------------------------------------
 # Step 4: Pull source. We clone to a side directory then copy backend/,
-# frontend/, deploy/ into $APP_HOME so the install path doesn't include
-# .git/ or .planning/. The scripts directory (deploy/scripts) is also
-# needed before we can generate keys — so we copy it now.
+# frontend/, deploy/ into the first releases/<initial-tag>/ slot. The
+# `current` symlink is established once the initial release is in place
+# so subsequent steps can address /opt/proxmox-gui/current/* uniformly with
+# the runtime systemd units.
 # ----------------------------------------------------------------------------
 echo "==> Fetching source from $REPO_URL @ $RELEASE..."
 rm -rf "$APP_SRC"
 git clone --depth 1 --branch "$RELEASE" "$REPO_URL" "$APP_SRC"
 
+INITIAL_RELEASE_DIR="${RELEASES_DIR}/${INITIAL_TAG}"
+echo "==> Staging initial release into ${INITIAL_RELEASE_DIR}..."
+rm -rf "$INITIAL_RELEASE_DIR"
+mkdir -p "$INITIAL_RELEASE_DIR"
 for sub in backend frontend deploy; do
-    rm -rf "${APP_HOME:?}/${sub}"
-    cp -r "${APP_SRC}/${sub}" "${APP_HOME}/"
+    cp -r "${APP_SRC}/${sub}" "${INITIAL_RELEASE_DIR}/"
 done
+chown -R "$APP_USER:$APP_GROUP" "$INITIAL_RELEASE_DIR"
+
+# DEPLOY-04: establish the `current` symlink. `ln -sfn` is atomic on Linux.
+echo "==> Pointing ${CURRENT_LINK} → releases/${INITIAL_TAG}..."
+ln -sfn "$INITIAL_RELEASE_DIR" "$CURRENT_LINK"
+chown -h "$APP_USER:$APP_GROUP" "$CURRENT_LINK"
+
+# APP_HOME is also chown'd so /opt/proxmox-gui/{releases,current} are owned
+# correctly even when symlinks are followed by tools that stat their target.
 chown -R "$APP_USER:$APP_GROUP" "$APP_HOME"
 
 # ----------------------------------------------------------------------------
 # Step 5: Secret material (D-14)
 # gen-master-key.sh + gen-jwt-secret.sh are idempotent: they preserve any
-# pre-existing files. Run as root because they chown to proxmox-gui.
+# pre-existing files. Run as root because they chown to proxmox-gui. Scripts
+# now resolve through /opt/proxmox-gui/current → releases/<tag> (DEPLOY-04).
 # ----------------------------------------------------------------------------
 echo "==> Generating master.key, jwt.secret, pat.pepper (idempotent)..."
-bash "${APP_HOME}/deploy/scripts/gen-master-key.sh"
-bash "${APP_HOME}/deploy/scripts/gen-jwt-secret.sh"
+bash "${CURRENT_LINK}/deploy/scripts/gen-master-key.sh"
+bash "${CURRENT_LINK}/deploy/scripts/gen-jwt-secret.sh"
+
+# ----------------------------------------------------------------------------
+# Step 5b: GUI SSH key (D-21, UAT-1c)
+# A dedicated Ed25519 keypair the GUI uses to `ssh root@<node>` for the
+# `pct exec` transport that runs community-scripts. Lives alongside the master
+# key in /etc/proxmox-gui — same persistent-state class (Pitfall 22).
+# install.sh appends the public key to the hosting node's authorized_keys.
+# Idempotent: only generated if absent (Pitfall 6 — never overwrite the key).
+# ----------------------------------------------------------------------------
+GUI_SSH_KEY="${ETC_DIR}/gui_ed25519"
+if [[ ! -f "$GUI_SSH_KEY" ]]; then
+    echo "==> Generating GUI Ed25519 SSH key at ${GUI_SSH_KEY}..."
+    ssh-keygen -t ed25519 -f "$GUI_SSH_KEY" -N "" -C "proxmox-gui@$(hostname)" \
+        -q < /dev/null
+    chown "$APP_USER:$APP_GROUP" "$GUI_SSH_KEY" "${GUI_SSH_KEY}.pub"
+    # 0400 mirrors gen-master-key.sh — strictly tighter than 0600.
+    chmod 0400 "$GUI_SSH_KEY"
+    chmod 0444 "${GUI_SSH_KEY}.pub"
+else
+    echo "==> GUI SSH key already present at ${GUI_SSH_KEY} (preserving)."
+fi
+
+# ----------------------------------------------------------------------------
+# Step 5c: Scoped sudoers for `systemctl restart` (DEPLOY-04, Open Q2 / A5)
+#
+# The `run_self_update` worker job runs as the unprivileged `proxmox-gui`
+# user, but step 5 + 7 of the update sequence (RESEARCH §Pattern 5) need
+# `systemctl restart` of the three units. A spike confirmed the unprivileged
+# user CANNOT `systemctl restart` system units without explicit polkit/sudo —
+# the manager rejects with "access denied" (verified by the systemctl PolicyKit
+# rules in /usr/share/polkit-1/actions/org.freedesktop.systemd1.policy, which
+# require auth-self-keep for manage-units).
+#
+# Mitigation (Threat T-05-04-05): a SCOPED sudoers entry permits exactly
+# `systemctl restart` of the three named units — nothing more. Not a wildcard,
+# not NOPASSWD on /usr/bin/systemctl, not on any other action verb. Narrowly
+# scoped: a compromise of the proxmox-gui user can restart the GUI, which it
+# could already do via the API anyway.
+# ----------------------------------------------------------------------------
+echo "==> Installing scoped sudoers entry for systemctl restart..."
+SUDOERS_FILE="/etc/sudoers.d/proxmox-gui-systemctl"
+cat > "${SUDOERS_FILE}.new" <<SUDOERS
+# Generated by deploy/lxc/bootstrap.sh — DEPLOY-04 (DO NOT EDIT BY HAND).
+# Scoped sudoers entry: permits the GUI's worker job (DEPLOY-04 self-update,
+# RESEARCH Open Question Q2) to restart EXACTLY the three GUI units.
+# No wildcards, no NOPASSWD on the systemctl binary as a whole — explicit
+# verb + explicit unit name only (Threat T-05-04-05 mitigation).
+${APP_USER} ALL=(root) NOPASSWD: /usr/bin/systemctl restart proxmox-gui-api.service, /usr/bin/systemctl restart proxmox-gui-worker.service, /usr/bin/systemctl restart proxmox-gui-frontend.service
+SUDOERS
+# visudo -cf validates before install — refuse to atomically swap a broken
+# sudoers fragment that would lock the system out.
+if visudo -cf "${SUDOERS_FILE}.new" >/dev/null; then
+    install -m 0440 -o root -g root "${SUDOERS_FILE}.new" "$SUDOERS_FILE"
+    rm -f "${SUDOERS_FILE}.new"
+else
+    echo "ERROR: generated sudoers fragment failed visudo -cf validation." >&2
+    rm -f "${SUDOERS_FILE}.new"
+    exit 1
+fi
 
 # ----------------------------------------------------------------------------
 # Step 6: Python venv + backend install + Alembic migrations
+# Each release owns its own .venv so a failed update never half-mutates the
+# prior release's site-packages (DEPLOY-04 rollback = symlink repoint).
 # ----------------------------------------------------------------------------
-echo "==> Creating Python venv and installing backend..."
-"${RUNAS[@]}" "$PYTHON_BIN" -m venv "${APP_HOME}/.venv"
-"${RUNAS[@]}" "${APP_HOME}/.venv/bin/pip" install \
+RELEASE_VENV="${INITIAL_RELEASE_DIR}/.venv"
+echo "==> Creating Python venv at ${RELEASE_VENV} and installing backend..."
+"${RUNAS[@]}" "$PYTHON_BIN" -m venv "$RELEASE_VENV"
+"${RUNAS[@]}" "${RELEASE_VENV}/bin/pip" install \
     --quiet --upgrade pip setuptools wheel
-"${RUNAS[@]}" "${APP_HOME}/.venv/bin/pip" install \
-    --quiet -e "${APP_HOME}/backend"
+"${RUNAS[@]}" "${RELEASE_VENV}/bin/pip" install \
+    --quiet -e "${INITIAL_RELEASE_DIR}/backend"
 
 echo "==> Running alembic upgrade head..."
 # Same cwd-readability requirement as the idempotent-exit branch above.
 # PROXMOX_GUI_DATABASE_URL: keep alembic + app on the same DB file.
 "${RUNAS[@]}" bash -c "
     export PROXMOX_GUI_DATABASE_URL='sqlite+aiosqlite:////var/lib/proxmox-gui/app.db'
-    cd '${APP_HOME}/backend' && \
-    exec '${APP_HOME}/.venv/bin/alembic' -c '${APP_HOME}/backend/alembic.ini' upgrade head
+    cd '${INITIAL_RELEASE_DIR}/backend' && \
+    exec '${RELEASE_VENV}/bin/alembic' -c '${INITIAL_RELEASE_DIR}/backend/alembic.ini' upgrade head
 "
 
 # ----------------------------------------------------------------------------
@@ -247,13 +359,13 @@ echo "==> Running alembic upgrade head..."
 # committed via `git add -f frontend/build/`. The bootstrap copies it
 # verbatim (already done in Step 4).
 # ----------------------------------------------------------------------------
-if [[ ! -f "${APP_HOME}/frontend/build/index.js" ]]; then
+if [[ ! -f "${INITIAL_RELEASE_DIR}/frontend/build/index.js" ]]; then
     echo "ERROR: frontend/build/index.js missing. The pre-built frontend artefact" >&2
     echo "       must be committed to the repo (see CONTRIBUTING.md)." >&2
     exit 1
 fi
-chown -R "$APP_USER:$APP_GROUP" "${APP_HOME}/frontend/build"
-echo "==> Frontend pre-built artefact in place: ${APP_HOME}/frontend/build/"
+chown -R "$APP_USER:$APP_GROUP" "${INITIAL_RELEASE_DIR}/frontend/build"
+echo "==> Frontend pre-built artefact in place: ${INITIAL_RELEASE_DIR}/frontend/build/"
 
 # ----------------------------------------------------------------------------
 # Step 8: systemd units + Caddyfile
@@ -262,11 +374,11 @@ echo "==> Frontend pre-built artefact in place: ${APP_HOME}/frontend/build/"
 # (self-signed) so first-run works on a fresh LXC with no DNS (Pitfall A9).
 # ----------------------------------------------------------------------------
 echo "==> Installing systemd units..."
-install -m 0644 "${APP_HOME}/deploy/systemd/proxmox-gui-api.service" \
+install -m 0644 "${INITIAL_RELEASE_DIR}/deploy/systemd/proxmox-gui-api.service" \
     /etc/systemd/system/proxmox-gui-api.service
-install -m 0644 "${APP_HOME}/deploy/systemd/proxmox-gui-frontend.service" \
+install -m 0644 "${INITIAL_RELEASE_DIR}/deploy/systemd/proxmox-gui-frontend.service" \
     /etc/systemd/system/proxmox-gui-frontend.service
-install -m 0644 "${APP_HOME}/deploy/systemd/proxmox-gui-worker.service" \
+install -m 0644 "${INITIAL_RELEASE_DIR}/deploy/systemd/proxmox-gui-worker.service" \
     /etc/systemd/system/proxmox-gui-worker.service
 
 echo "==> Installing Caddyfile..."
@@ -281,7 +393,7 @@ if [ -z "$LXC_IP" ]; then
 fi
 echo "    primary IP detected: ${LXC_IP}"
 sed "s|__SITE_ADDR__|https://${LXC_IP}:443|" \
-    "${APP_HOME}/deploy/caddy/Caddyfile.template" \
+    "${INITIAL_RELEASE_DIR}/deploy/caddy/Caddyfile.template" \
     > /etc/caddy/Caddyfile
 chmod 0644 /etc/caddy/Caddyfile
 
