@@ -253,6 +253,7 @@ def create_app() -> FastAPI:
     from app.pats.routes import router as pats_router
     from app.provisioning.routes import router as provisioning_router
     from app.quotas.routes import router as quotas_router
+    from app.settings.routes import router as settings_router
     from app.setup.routes import router as setup_router
     from app.ssh_keys.routes import router as ssh_keys_router
     from app.teams.routes import router as teams_router
@@ -325,6 +326,11 @@ def create_app() -> FastAPI:
     # jobs table + a per-user last-seen cursor (UI-07, D-22/D-23).
     app.include_router(
         notifications_router, prefix="/api/v1", tags=["notifications"]
+    )
+    # Plan 05-01: DB-backed runtime settings — admin GET/PATCH for the
+    # idle-timeout and audit-retention values (D-01, AUTH-06/AUDIT-06).
+    app.include_router(
+        settings_router, prefix="/api/v1/admin/settings", tags=["settings"]
     )
 
     return app
