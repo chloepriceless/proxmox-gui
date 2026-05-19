@@ -18,13 +18,14 @@ from datetime import date, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.audit.archive import list_archives, resolve_archive_path
 from app.audit.csv import audit_csv_stream
 from app.audit.reader import HARD_EXPORT_LIMIT, count_export, list_audit
 from app.audit.schemas import AuditFilter, AuditPage
-from app.auth.dependencies import Principal, get_current_principal
+from app.auth.dependencies import Principal, get_current_principal, require_admin
 from app.core.db import get_db
 
 router = APIRouter()
@@ -124,4 +125,53 @@ async def export_audit_csv(
         audit_csv_stream(db, principal=principal, filters=filters),
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Audit-archive list + download (plan 05-03, D-08)
+#
+# Both routes are require_admin: the .csv.gz archives are the UNSCOPED
+# compliance dump produced by the nightly retention cron, so they must NEVER
+# be reachable by a regular user (T-05-03-02). The download route additionally
+# delegates path validation to ``resolve_archive_path`` which rejects any
+# traversal attempt with a 400 (T-05-03-01 / Pitfall 5).
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/archives",
+    summary="List audit archive files (admin only)",
+    operation_id="audit_archives_list",
+    dependencies=[Depends(require_admin)],
+)
+async def audit_archives_list() -> list[dict]:
+    """Return ``{name, size_bytes, ctime}`` for every ``.csv.gz`` archive."""
+    return list_archives()
+
+
+@router.get(
+    "/archives/{name}",
+    summary="Download an audit archive file (admin only)",
+    operation_id="audit_archive_download",
+    dependencies=[Depends(require_admin)],
+)
+async def audit_archive_download(name: str) -> FileResponse:
+    """Stream the archive file as a gzip download.
+
+    ``resolve_archive_path`` raises 400 on any path-traversal attempt
+    (T-05-03-01). The route does not need to re-check the path — the guard
+    is centralised so the test surface stays one function.
+    """
+    path = resolve_archive_path(name)
+    if not path.is_file():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="archive not found",
+        )
+    return FileResponse(
+        path,
+        media_type="application/gzip",
+        filename=name,
+        headers={"Content-Disposition": f'attachment; filename="{name}"'},
     )

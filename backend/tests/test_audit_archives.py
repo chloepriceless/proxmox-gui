@@ -149,10 +149,20 @@ async def test_download_archive_path_traversal_rejected(
         client, username="traversaladmin", password="traversalpass12345"
     )
 
-    # URL-encoded "../../etc/passwd" — the path-traversal guard rejects on
-    # the presence of "..".
+    # A name containing ".." is rejected by the path-traversal guard before
+    # any filesystem read. We use a single-segment name (no slashes) so the
+    # FastAPI route matches and our guard runs — the literal "../etc/passwd"
+    # with slashes would be split into multiple path segments by Starlette
+    # and fail to match the route at all (a 404, not a 400 from our guard).
     response = await client.get(
-        "/api/v1/audit/archives/..%2F..%2Fetc%2Fpasswd", cookies=cookies
+        "/api/v1/audit/archives/..etc-passwd", cookies=cookies
+    )
+    assert response.status_code == 400
+
+    # And the same protection holds for a name containing a backslash, which
+    # is the Windows-style traversal vector.
+    response = await client.get(
+        "/api/v1/audit/archives/foo%5Cbar.csv.gz", cookies=cookies
     )
     assert response.status_code == 400
 
