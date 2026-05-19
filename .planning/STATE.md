@@ -4,7 +4,7 @@ milestone: v1.0
 milestone_name: milestone
 current_plan: 17
 status: complete
-stopped_at: Phase 04 complete — ready to plan Phase 05
+stopped_at: Phase 05 context gathered — ready to plan Phase 05
 last_updated: "2026-05-19T00:00:00.000Z"
 progress:
   total_phases: 5
@@ -24,19 +24,19 @@ progress:
 
 **Core value:** Users can self-provision and manage VMs/LXCs on Proxmox through a polished, opinionated UI — without ever needing to open the Proxmox web interface.
 
-**Current focus:** Phase 05 — polish-operational-hardening (not yet planned)
+**Current focus:** Phase 05 — polish-operational-hardening (context gathered, not yet planned)
 
 ## Current Position
 
-Phase: 04 (provisioning-networking-console) — COMPLETE
-Plan: 17 of 17 executed
-Current Plan: — (Phase 05 not yet planned)
+Phase: 05 (polish-operational-hardening) — context gathered
+Plan: — (Phase 05 not yet planned)
+Resume file: .planning/phases/05-polish-operational-hardening/05-CONTEXT.md
 
 - **Milestone:** v1
-- **Phase:** 4 complete → Phase 5 next
-- **Plan:** all 17 Phase-04 plans executed; gap-closure 04-15/16/17 done and verified (5/5 must-haves in code).
-- **Status:** Phase 04 complete. The embedded noVNC console was fixed and deployed (commit d591fe5) — PVE requires VNC auth (security type 2, confirmed by a live RFB-handshake probe), so the vncticket is now threaded to noVNC's `credentials.password` and the double vncproxy mint collapsed to one. UAT-1a (console) passed live on 192.168.20.171. Deferred: UAT-1b node-fit (visual check postponed by user — logic covered by 15 unit tests); UAT-1c community-script deploy (needs first-run SSH key trust → Phase 5). Phase 05 (Polish & Operational Hardening) not yet planned.
-- **Progress:** [██████████] 100% (41/41 plans across Phases 1–4)
+- **Phase:** 4 complete → Phase 5 context captured, ready to plan.
+- **Plan:** Phase 05 discuss-phase complete (commit ef9bf1b). 23 decisions across 5 areas — see 05-CONTEXT.md.
+- **Status:** Phase 05 context gathered. Decisions: new DB-backed admin Settings page hosts the AUTH-06 idle timeout (30-min default, modal re-auth + 2-min countdown) and AUDIT-06 retention (1yr, nightly arq-cron roll to downloadable CSV.gz); DEPLOY-04 self-update from in-app button + install.sh --update flag, tagged checksum-verified releases, pre-update DB backup with auto-rollback, re-run-updates-in-place idempotency; UI-03 hamburger drawer + inventory card stack + console scales + wizards gated + deep a11y audit; all ~17 Phase-1 carryover items fixed in one consolidated plan (TLS pinning via capture-on-register TOFU); UAT-1c resolved — installer auto-trusts the hosting PVE node via an Ed25519 keypair, additional clusters trusted via a pubkey + Verify-SSH step, community-script path preflight-gated. Next: /gsd-plan-phase 05.
+- **Progress:** [██████████] 100% (41/41 plans across Phases 1–4); Phase 5 not yet planned.
 
 ## Phases at a Glance
 
