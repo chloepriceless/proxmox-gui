@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_plan: 17
-status: complete
-stopped_at: Phase 05 context gathered — ready to plan Phase 05
-last_updated: "2026-05-19T00:00:00.000Z"
+current_plan: 0
+status: ready-to-execute
+stopped_at: Phase 05 planned — 7 plans across 4 waves, ready to execute
+last_updated: "2026-05-19T20:00:00.000Z"
 progress:
   total_phases: 5
   completed_phases: 4
-  total_plans: 41
+  total_plans: 48
   completed_plans: 41
-  percent: 100
+  percent: 85
 ---
 
 # STATE: Proxmox Self-Service GUI
@@ -28,15 +28,15 @@ progress:
 
 ## Current Position
 
-Phase: 05 (polish-operational-hardening) — context gathered
-Plan: — (Phase 05 not yet planned)
-Resume file: .planning/phases/05-polish-operational-hardening/05-CONTEXT.md
+Phase: 05 (polish-operational-hardening) — planned, ready to execute
+Plan: 7 plans created (05-01..05-07), none executed
+Resume file: .planning/phases/05-polish-operational-hardening/05-01-PLAN.md
 
 - **Milestone:** v1
-- **Phase:** 4 complete → Phase 5 context captured, ready to plan.
-- **Plan:** Phase 05 discuss-phase complete (commit ef9bf1b). 23 decisions across 5 areas — see 05-CONTEXT.md.
-- **Status:** Phase 05 context gathered. Decisions: new DB-backed admin Settings page hosts the AUTH-06 idle timeout (30-min default, modal re-auth + 2-min countdown) and AUDIT-06 retention (1yr, nightly arq-cron roll to downloadable CSV.gz); DEPLOY-04 self-update from in-app button + install.sh --update flag, tagged checksum-verified releases, pre-update DB backup with auto-rollback, re-run-updates-in-place idempotency; UI-03 hamburger drawer + inventory card stack + console scales + wizards gated + deep a11y audit; all ~17 Phase-1 carryover items fixed in one consolidated plan (TLS pinning via capture-on-register TOFU); UAT-1c resolved — installer auto-trusts the hosting PVE node via an Ed25519 keypair, additional clusters trusted via a pubkey + Verify-SSH step, community-script path preflight-gated. Next: /gsd-plan-phase 05.
-- **Progress:** [██████████] 100% (41/41 plans across Phases 1–4); Phase 5 not yet planned.
+- **Phase:** 4 complete → Phase 5 planned, ready to execute.
+- **Plan:** Phase 05 planned (commit 0ea490c). 7 plans across 4 waves — research (7ced6f1) + pattern map + plan-checker VERIFICATION PASSED. Wave 1: 05-01 settings+idle backend, 05-02 consolidated carryover (D-19). Wave 2: 05-03 audit retention, 05-04 self-update. Wave 3: 05-05 mobile/a11y, 05-06 idle/settings/self-update frontend. Wave 4: 05-07 operator UAT.
+- **Status:** Phase 05 ready to execute. 4 requirements (UI-03, AUTH-06, AUDIT-06, DEPLOY-04) covered + the ~17-item Phase-1 carryover block (05-02) + UAT-1c SSH-trust resolved. Next: /gsd-execute-phase 05.
+- **Progress:** [████████░░] 85% (41/48 plans; Phases 1–4 done, Phase 5 = 0/7).
 
 ## Phases at a Glance
 
@@ -46,7 +46,7 @@ Resume file: .planning/phases/05-polish-operational-hardening/05-CONTEXT.md
 | 2 | Multi-Cluster Inventory, Quotas & Audit | ✅ Complete | 23 |
 | 3 | Job Queue & Lifecycle | ✅ Complete | 16 |
 | 4 | Provisioning, Networking & Console | ✅ Complete (UAT-1b deferred) | 27 |
-| 5 | Polish & Operational Hardening | Not started | 4 |
+| 5 | Polish & Operational Hardening | ◆ Planned (7 plans) | 4 |
 
 **Coverage:** 89/89 v1 requirements mapped.
 
