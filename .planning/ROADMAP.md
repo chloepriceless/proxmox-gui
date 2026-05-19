@@ -128,8 +128,8 @@ Plans:
   4. An operator can self-update the GUI from inside the app (or via the helper-script flag) without manual file edits, and the helper-script install produces a clean, ready-to-deploy LXC on first run and every subsequent run (idempotent).
 **Plans**: 7 plans
 Plans:
-- [ ] 05-01-PLAN.md — DB-backed Settings table + server-authoritative idle-timeout backend + 0007 migration + worker job registrations (AUTH-06)
-- [ ] 05-02-PLAN.md — Consolidated Phase-1 carryover plan (D-19): ME-01..05, LO-01..04, IN-01..03, ssh-rsa bug, COOKIE_SECURE warning, Caddy CSP, TLS fingerprint pinning
+- [x] 05-01-PLAN.md — DB-backed Settings table + server-authoritative idle-timeout backend + 0007 migration + worker job registrations (AUTH-06) *(completed 2026-05-19, 14 files, 535 backend tests green; SUMMARY: .planning/phases/05-polish-operational-hardening/05-01-SUMMARY.md)*
+- [x] 05-02-PLAN.md — Consolidated Phase-1 carryover plan (D-19): ME-01..05, LO-01..04, IN-01..03, ssh-rsa bug, COOKIE_SECURE warning, Caddy CSP, TLS fingerprint pinning *(completed 2026-05-19, 568 backend tests green + svelte-check clean; SUMMARY: .planning/phases/05-polish-operational-hardening/05-02-SUMMARY.md)*
 - [ ] 05-03-PLAN.md — Audit retention cron + CSV.gz archive + download routes + scheduled cluster health probe (AUDIT-06)
 - [ ] 05-04-PLAN.md — Self-update worker job (manifest verify, WAL-safe snapshot, auto-rollback) + install.sh --update + releases/current layout (DEPLOY-04)
 - [ ] 05-05-PLAN.md — Mobile reflow (hamburger drawer, inventory card stack, console scale, wizard gate) + axe-core a11y audit (UI-03)
@@ -170,7 +170,7 @@ Plans:
 | 2. Multi-Cluster Inventory, Quotas & Audit | 7/7 | Complete | 2026-05-16 |
 | 3. Job Queue & Lifecycle | 7/7 | Complete | 2026-05-16 |
 | 4. Provisioning, Networking & Console | 17/17 | Complete | 2026-05-19 |
-| 5. Polish & Operational Hardening | 0/7 | Planned | - |
+| 5. Polish & Operational Hardening | 2/7 | Executing | - |
 
 ## Cross-Cutting Concerns
 

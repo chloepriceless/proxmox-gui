@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_plan: 0
+current_plan: 2
 status: executing
-stopped_at: Phase 05 executing — Wave 1 starting (05-01, 05-02)
+stopped_at: Phase 05 — Wave 1 complete (05-01, 05-02); Wave 2 next (05-03, 05-04)
 last_updated: "2026-05-19T20:20:58.382Z"
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 48
-  completed_plans: 41
-  percent: 85
+  completed_plans: 43
+  percent: 90
 ---
 
 # STATE: Proxmox Self-Service GUI
@@ -29,14 +29,14 @@ progress:
 ## Current Position
 
 Phase: 05 (polish-operational-hardening) — EXECUTING
-Plan: Wave 1 of 4 — 0/7 plans complete
-Resume file: .planning/phases/05-polish-operational-hardening/05-01-PLAN.md
+Plan: Wave 2 of 4 — 2/7 plans complete
+Resume file: .planning/phases/05-polish-operational-hardening/05-03-PLAN.md
 
 - **Milestone:** v1
 - **Phase:** 4 complete → Phase 5 planned, ready to execute.
 - **Plan:** Phase 05 planned (commit 0ea490c). 7 plans across 4 waves — research (7ced6f1) + pattern map + plan-checker VERIFICATION PASSED. Wave 1: 05-01 settings+idle backend, 05-02 consolidated carryover (D-19). Wave 2: 05-03 audit retention, 05-04 self-update. Wave 3: 05-05 mobile/a11y, 05-06 idle/settings/self-update frontend. Wave 4: 05-07 operator UAT.
-- **Status:** Executing Phase 05 — Wave 1 (05-01 settings+idle backend, 05-02 consolidated carryover).
-- **Progress:** [████████░░] 85% (41/48 plans; Phases 1–4 done, Phase 5 = 0/7).
+- **Status:** Executing Phase 05 — Wave 1 done (05-01 settings+idle backend, 05-02 consolidated carryover); Wave 2 next.
+- **Progress:** [█████████░] 90% (43/48 plans; Phases 1–4 done, Phase 5 = 2/7).
 
 ## Phases at a Glance
 
