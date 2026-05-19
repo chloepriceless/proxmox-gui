@@ -28,6 +28,55 @@ from app.models import AuditLog, Cluster, Team, User
 _BOM = "﻿"  # U+FEFF; written as 0xEF 0xBB 0xBF in UTF-8
 
 
+def audit_header_row() -> list[str]:
+    """Return the canonical audit-CSV header row.
+
+    Shared between the user-facing RBAC-scoped export (``audit_csv_stream``)
+    and the unscoped retention-archive writer (``app.audit.archive``) so both
+    surfaces always agree on the column set (RESEARCH §Pattern 4 — "factor the
+    csv.writer row formatting into a shared helper").
+    """
+    return [
+        "timestamp",
+        "action",
+        "target_type",
+        "target_id",
+        "result",
+        "source_ip",
+        "correlation_id",
+        "error",
+        "actor_username",
+        "team_name",
+        "cluster_name",
+    ]
+
+
+def audit_row(row: tuple) -> list[str]:
+    """Format one audit row tuple for CSV output.
+
+    Accepts the per-row tuple shape produced by the audit-export SELECT
+    (occurred_at, action, target_type, target_id, result, source_ip,
+    correlation_id, error, actor_username, team_name, cluster_name) and
+    returns the list of ``escape_cell``-sanitised string values for
+    ``csv.writer.writerow``. Shared between ``audit_csv_stream`` and the
+    retention archive so the cell-escaping rules can only drift in one place.
+    """
+    occurred_at, action, ttype, tid, res, ip, corr, err, actor, team, cluster = row
+    return [
+        escape_cell(occurred_at.isoformat() if occurred_at else ""),
+        escape_cell(action),
+        escape_cell(ttype),
+        escape_cell(tid),
+        escape_cell(res),
+        escape_cell(ip),
+        escape_cell(corr),
+        escape_cell(err),
+        escape_cell(actor),
+        escape_cell(team),
+        escape_cell(cluster),
+    ]
+
+
 async def audit_csv_stream(
     db: AsyncSession,
     *,
@@ -73,43 +122,14 @@ async def audit_csv_stream(
 
     buf = io.StringIO()
     writer = csv.writer(buf)
-    writer.writerow(
-        [
-            "timestamp",
-            "action",
-            "target_type",
-            "target_id",
-            "result",
-            "source_ip",
-            "correlation_id",
-            "error",
-            "actor_username",
-            "team_name",
-            "cluster_name",
-        ]
-    )
+    writer.writerow(audit_header_row())
     yield buf.getvalue().encode("utf-8")
     buf.seek(0)
     buf.truncate()
 
     result = await db.stream(base)
     async for row in result:
-        occurred_at, action, ttype, tid, res, ip, corr, err, actor, team, cluster = row
-        writer.writerow(
-            [
-                escape_cell(occurred_at.isoformat() if occurred_at else ""),
-                escape_cell(action),
-                escape_cell(ttype),
-                escape_cell(tid),
-                escape_cell(res),
-                escape_cell(ip),
-                escape_cell(corr),
-                escape_cell(err),
-                escape_cell(actor),
-                escape_cell(team),
-                escape_cell(cluster),
-            ]
-        )
+        writer.writerow(audit_row(row))
         yield buf.getvalue().encode("utf-8")
         buf.seek(0)
         buf.truncate()

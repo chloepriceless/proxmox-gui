@@ -189,12 +189,15 @@ def test_roll_audit_log_deletes_only_after_archive_written():
     import app.jobs.retention_cron as retention_cron
 
     src = inspect.getsource(retention_cron.roll_audit_log)
-    write_idx = src.find("write_audit_archive")
-    delete_idx = src.lower().find("delete")
-    assert write_idx != -1, "roll_audit_log must call write_audit_archive"
-    assert delete_idx != -1, "roll_audit_log must issue a DELETE"
+    # Look at the LAST occurrence of write_audit_archive (the call site, not
+    # the docstring mention) and the LAST occurrence of the SQLA delete(...)
+    # call. The delete call site MUST be after the archive call site.
+    write_idx = src.rfind("write_audit_archive(")
+    delete_idx = src.rfind("delete(AuditLog)")
+    assert write_idx != -1, "roll_audit_log must call write_audit_archive(...)"
+    assert delete_idx != -1, "roll_audit_log must issue a delete(AuditLog) call"
     assert write_idx < delete_idx, (
-        "write_audit_archive must be called BEFORE the DELETE "
+        "write_audit_archive(...) must be called BEFORE delete(AuditLog) "
         "(write-then-delete ordering)"
     )
 
@@ -221,7 +224,7 @@ async def test_roll_audit_log_survives_archive_failure(
         session_factory, occurred_at=now - timedelta(days=900), action="vm.doomed"
     )
 
-    async def _boom(*_args, **_kwargs):
+    def _boom(*_args, **_kwargs):
         raise OSError("disk full")
 
     monkeypatch.setattr(retention_cron, "write_audit_archive", _boom)
