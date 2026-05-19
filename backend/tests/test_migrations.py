@@ -80,6 +80,8 @@ def test_upgrade_head_creates_all_business_tables(fresh_db: str) -> None:
         "network_scope",
         "catalog_pin",
         "notification_seen",
+        # Phase 5 (0007_phase5) — single-row runtime settings (D-01).
+        "app_setting",
     }
     assert expected.issubset(table_names), (
         f"missing tables: {expected - table_names}"

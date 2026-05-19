@@ -51,6 +51,13 @@ class RefreshToken(Base):
         nullable=False,
         server_default=text("CURRENT_TIMESTAMP"),
     )
+    # AUTH-06: server-authoritative idle-timeout recency marker. Bumped on
+    # every rotation (issue_refresh) and on a /auth/keepalive ping; the idle
+    # check in consume_refresh refuses a refresh once
+    # ``now - last_active_at > idle_timeout``. Nullable so the 0007 migration's
+    # ADD COLUMN is SQLite-legal — the 0007 backfill sets every existing row
+    # to its created_at, and the idle check is NULL-defensive (Pitfall 3).
+    last_active_at: Mapped[datetime | None] = mapped_column(nullable=True)
 
     __table_args__ = (
         Index("ix_refresh_tokens_expires", "expires_at"),

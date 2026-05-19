@@ -52,6 +52,11 @@ from app.models._types import EncryptedSecret
 #                            user_id is the tenant boundary. Same reasoning as
 #                            refresh_tokens / ssh_keys — no team_id because
 #                            notifications are per-user, not per-team.
+# - app_setting            : global operator config (Phase 5 — D-01). The
+#                            idle-timeout and audit-retention values are one
+#                            row, shared by every team, cluster-agnostic.
+#                            Operator policy, not tenant data — same reasoning
+#                            as catalog_pin.
 # - alembic_version        : Alembic housekeeping, not application data.
 #
 ALLOWLIST: frozenset[str] = frozenset(
@@ -66,6 +71,7 @@ ALLOWLIST: frozenset[str] = frozenset(
         "refresh_tokens",
         "catalog_pin",
         "notification_seen",
+        "app_setting",
         "alembic_version",
     }
 )

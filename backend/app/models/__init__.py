@@ -15,6 +15,7 @@ alphabetised (one import block, no manual section breaks).
 
 from __future__ import annotations
 
+from app.models.app_setting import AppSetting
 from app.models.audit_log import AuditLog
 from app.models.backup_schedule import BackupSchedule
 from app.models.base import Base, TimestampMixin
@@ -50,4 +51,5 @@ __all__ = [
     "NetworkScope",
     "CatalogPin",
     "NotificationSeen",
+    "AppSetting",
 ]
