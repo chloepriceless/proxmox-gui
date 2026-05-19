@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 current_plan: 0
-status: ready-to-execute
-stopped_at: Phase 05 planned — 7 plans across 4 waves, ready to execute
-last_updated: "2026-05-19T20:00:00.000Z"
+status: executing
+stopped_at: Phase 05 executing — Wave 1 starting (05-01, 05-02)
+last_updated: "2026-05-19T20:20:58.382Z"
 progress:
   total_phases: 5
   completed_phases: 4
@@ -24,18 +24,18 @@ progress:
 
 **Core value:** Users can self-provision and manage VMs/LXCs on Proxmox through a polished, opinionated UI — without ever needing to open the Proxmox web interface.
 
-**Current focus:** Phase 05 — polish-operational-hardening (context gathered, not yet planned)
+**Current focus:** Phase 05 — polish-operational-hardening (executing)
 
 ## Current Position
 
-Phase: 05 (polish-operational-hardening) — planned, ready to execute
-Plan: 7 plans created (05-01..05-07), none executed
+Phase: 05 (polish-operational-hardening) — EXECUTING
+Plan: Wave 1 of 4 — 0/7 plans complete
 Resume file: .planning/phases/05-polish-operational-hardening/05-01-PLAN.md
 
 - **Milestone:** v1
 - **Phase:** 4 complete → Phase 5 planned, ready to execute.
 - **Plan:** Phase 05 planned (commit 0ea490c). 7 plans across 4 waves — research (7ced6f1) + pattern map + plan-checker VERIFICATION PASSED. Wave 1: 05-01 settings+idle backend, 05-02 consolidated carryover (D-19). Wave 2: 05-03 audit retention, 05-04 self-update. Wave 3: 05-05 mobile/a11y, 05-06 idle/settings/self-update frontend. Wave 4: 05-07 operator UAT.
-- **Status:** Phase 05 ready to execute. 4 requirements (UI-03, AUTH-06, AUDIT-06, DEPLOY-04) covered + the ~17-item Phase-1 carryover block (05-02) + UAT-1c SSH-trust resolved. Next: /gsd-execute-phase 05.
+- **Status:** Executing Phase 05 — Wave 1 (05-01 settings+idle backend, 05-02 consolidated carryover).
 - **Progress:** [████████░░] 85% (41/48 plans; Phases 1–4 done, Phase 5 = 0/7).
 
 ## Phases at a Glance
