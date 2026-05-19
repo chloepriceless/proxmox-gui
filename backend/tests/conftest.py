@@ -56,21 +56,24 @@ def install_test_cipher():
 
 @pytest.fixture(autouse=True)
 def _reset_rate_limit_buckets():
-    """Clear the in-memory rate-limit state between tests.
+    """Clear the rate-limit state between tests.
 
-    The limiter (``app.auth.rate_limit._buckets``) is module-level on purpose
-    (single-process design for v1). Without this reset, every login in every
-    test contributes to the same dict, which trips the 10/60s gate by the
-    time the SSH-key + PAT suites run — false-positive 429s mask real bugs.
+    The limiter (``app.security.rate_limit``, carryover ME-02) is Redis-backed
+    with a process-local in-memory fallback. ``_reset_for_tests()`` flushes
+    both — the in-memory ``_buckets`` dict and (best-effort) the Redis keys —
+    so one test's login attempts never leak into the next. Without this reset,
+    every login in every test contributes to the same window, which trips the
+    10/60s gate by the time the SSH-key + PAT suites run — false-positive 429s
+    mask real bugs.
     """
     try:
-        from app.auth import rate_limit
+        from app.security import rate_limit
     except ImportError:
         yield
         return
-    rate_limit._buckets.clear()
+    rate_limit._reset_for_tests()
     yield
-    rate_limit._buckets.clear()
+    rate_limit._reset_for_tests()
 
 
 @pytest.fixture(autouse=True)

@@ -178,11 +178,59 @@ async def resolve_pat(
         # Load the user (PersonalAccessToken has no `user` relationship in
         # the Phase-1 model — fetch by id).
         user = await db.get(User, c.user_id)
-        if user is None or not user.is_active:
+        if user is None:
+            return None
+        if not user.is_active:
+            # IN-01: a valid, non-revoked, non-expired PAT presented after its
+            # owning user was disabled is silently rejected (the auth layer
+            # raises 401). Phase 1 had no audit log, so a disabled user hitting
+            # the API with a stale PAT left no observable signal. Write an
+            # audit_log entry at the point of rejection so the event is
+            # visible. Only the still-valid-PAT path is audited — a
+            # revoked/expired PAT is normal churn and is skipped above before
+            # ever reaching here, so the log stays signal, not noise. Repeated
+            # abuse produces repeated entries by design: that IS the signal,
+            # and request volume is already bounded by the auth-layer rate
+            # limiter.
+            await _audit_pat_user_disabled(db, pat=c)
             return None
         return user
 
     return None
+
+
+async def _audit_pat_user_disabled(
+    db: AsyncSession, *, pat: PersonalAccessToken,
+) -> None:
+    """IN-01: record a ``pat.rejected_user_disabled`` audit event.
+
+    System action — no actor user (the disabled user is not a legitimate
+    actor here), no team. Best-effort: an audit-write failure must never
+    turn a PAT rejection into a 500, so it is caught and the transaction
+    rolled back to a clean state. The audit row is committed here (the
+    audit writer never commits — its caller owns the transaction; this is
+    a failure-path audit so it must be durable before ``resolve_pat``
+    returns ``None``).
+    """
+    from app.audit.writer import audit_write
+
+    try:
+        await audit_write(
+            db,
+            actor_user_id=None,
+            actor_pat_id=pat.id,
+            team_id=None,
+            cluster_id=None,
+            action="pat.rejected_user_disabled",
+            target_type="pat",
+            target_id=str(pat.id),
+            result="failure",
+            source_ip=None,
+            error="PAT presented but owning user is disabled",
+        )
+        await db.commit()
+    except Exception:  # noqa: BLE001 — audit must never break PAT resolution
+        await db.rollback()
 
 
 async def revoke_pat(

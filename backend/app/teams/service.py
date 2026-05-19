@@ -2,12 +2,17 @@
 
 The headline function is :func:`create_team`, which enforces D-02
 (auto-bootstrap on every active cluster) and D-05 (personal teams are
-auto-managed by Plan 07's ``create_user``, never via this API).
+auto-managed by the ``create_user`` flow, never via this API).
 
-WARNING-6 fix: ``create_team`` accepts ``registry: ConnectorRegistry | None
-= None`` so Plan 07's first-run admin flow can call it without a registry
-when no clusters are registered yet. If clusters exist AND auto_bootstrap
-is requested, registry MUST be supplied.
+IN-02 fix: the Phase-1 ``_internal=True`` flag (a fragile caller convention
+that bypassed the ``personal=True`` public-API guard) is gone. It is replaced
+by two distinct, intention-revealing functions:
+
+- :func:`create_team` — the public path. Rejects ``personal`` outright,
+  optionally auto-bootstraps, and commits.
+- :func:`create_team_for_admin_bootstrap` — the internal personal-team path
+  used by ``setup/service.py`` and ``users/service.py``. It does NOT commit
+  (the caller owns the transaction — ME-01) and never bootstraps.
 
 WARNING-7 fix: ``delete_team`` enforces D-04 option-a — 409 if any
 ``team_cluster_tokens`` row references the team. We never call
@@ -37,51 +42,81 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 
 
+async def create_team_for_admin_bootstrap(
+    db: AsyncSession,
+    *,
+    name: str,
+) -> Team:
+    """Create a personal team WITHOUT committing — internal bootstrap path.
+
+    IN-02 + ME-01: the no-commit, no-registry, no-bootstrap personal-team
+    creation used by :mod:`app.setup.service` (first-run admin) and
+    :mod:`app.users.service` (every ``create_user``). It replaces the old
+    ``create_team(personal=True, _internal=True)`` flag dance.
+
+    The function only ``flush()``es the row (so ``team.id`` is populated for a
+    follow-up ``TeamMembership``); **the caller owns the transaction commit**.
+    This is what lets the caller wrap user + personal-team + membership in a
+    single atomic transaction (ME-01) — no mid-flight commit can leave a
+    half-created tenant behind.
+
+    Personal teams never auto-bootstrap (D-06 personal-pool semantics are
+    deferred), so no registry is needed.
+
+    Args:
+        db: Active session — the row is flushed, NOT committed.
+        name: Team name (e.g. ``personal-<user_id>``). Must be unique.
+
+    Returns:
+        The flushed (un-committed) Team row.
+
+    Raises:
+        HTTPException(409): name uniqueness violation.
+    """
+    team = Team(name=name, personal=True, is_active=True)
+    db.add(team)
+    try:
+        await db.flush()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A team with that name already exists.",
+        ) from exc
+    return team
+
+
 async def create_team(
     db: AsyncSession,
     registry: ConnectorRegistry | None = None,
     *,
     name: str,
-    personal: bool = False,
-    _internal: bool = False,
     auto_bootstrap: bool = True,
 ) -> Team:
-    """Insert a Team row, optionally auto-bootstrapping on every active cluster.
+    """Insert a shared Team row, optionally auto-bootstrapping every cluster.
+
+    IN-02: this is the **public** team-creation path only. It can never create
+    a personal team — those go through :func:`create_team_for_admin_bootstrap`.
+    The Phase-1 ``personal`` / ``_internal`` parameters are gone.
 
     Args:
         db: Active session — caller's transaction is committed inside this
             function on success.
         registry: Per-cluster connector cache. May be ``None`` for callers
-            that don't bootstrap (Plan 07's first-run admin with zero
-            clusters). If ``None`` and ``auto_bootstrap`` is True and at
-            least one active cluster exists, raises (developer error).
+            that don't bootstrap. If ``None`` and ``auto_bootstrap`` is True
+            and at least one active cluster exists, raises (developer error).
         name: Team name. Must be unique (DB UNIQUE constraint enforces).
-        personal: D-05 — personal teams are auto-created by Plan 07's
-            ``create_user`` flow with ``_internal=True``. The public API
-            route never sets this; the schema layer rejects it via
-            ``extra="forbid"``.
-        _internal: Allow the personal=True path. Plan 07 uses
-            ``_internal=True`` to create the admin's personal team during
-            first-run setup.
         auto_bootstrap: Run :func:`bootstrap_tenant_on_clusters` after the
-            team row is flushed. Personal teams skip bootstrap regardless
-            (D-06 personal-pool semantics are deferred to Phase 2).
+            team row is flushed.
 
     Returns:
         The persisted Team row.
 
     Raises:
-        HTTPException(422): personal=True without _internal=True.
         HTTPException(409): name uniqueness violation.
         BootstrapFailed: PVE bootstrap failed; DB transaction rolled back.
     """
-    if personal and not _internal:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Personal teams are auto-created; cannot create via API",
-        )
-
-    team = Team(name=name, personal=personal, is_active=True)
+    team = Team(name=name, personal=False, is_active=True)
     db.add(team)
     try:
         await db.flush()
@@ -93,7 +128,7 @@ async def create_team(
         ) from exc
 
     # D-02: auto-bootstrap on every active cluster (shared teams only).
-    if auto_bootstrap and not personal:
+    if auto_bootstrap:
         # If registry is None we must verify there are no active clusters
         # — otherwise we'd silently skip bootstrap and create a half-tenant.
         if registry is None:

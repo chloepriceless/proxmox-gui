@@ -6,11 +6,15 @@ The two service functions are deliberately small:
   endpoint and the create-admin endpoint as its precondition gate.
 - :func:`create_initial_admin` — re-checks the predicate inside the same
   transaction that inserts the admin row (T-01-07-01 race mitigation),
-  hashes the password, inserts the User row, and creates the matching
-  personal Team via :func:`app.teams.service.create_team` with
-  ``registry=None`` and ``auto_bootstrap=False`` (Plan 06's
-  WARNING-6 signature accommodates this — there are no clusters at
-  first-run).
+  hashes the password, inserts the User row, creates the matching personal
+  Team, and binds the membership — all in ONE atomic transaction.
+
+ME-01 fix: the Phase-1 code called :func:`app.teams.service.create_team`,
+which committed mid-flight, then added the ``TeamMembership`` and committed
+again — a two-commit gap where a crash could orphan the personal team. The
+function now calls :func:`app.teams.service.create_team_for_admin_bootstrap`
+(IN-02 — the no-commit internal path) and commits exactly once at the end,
+so user + personal team + membership are atomic.
 
 The personal team naming convention is ``personal-<user_id>`` per
 01-RESEARCH.md §Anti-Patterns and matches what
@@ -67,14 +71,16 @@ async def create_initial_admin(
     the transaction (T-01-07-01) so a concurrent second request observes
     the row and gets 409.
 
-    Side effects (all in one transaction):
+    Side effects (all in ONE transaction — ME-01):
 
     1. Insert User(is_admin=True, is_active=True).
     2. Create personal Team via
-       :func:`app.teams.service.create_team` with ``registry=None`` and
-       ``auto_bootstrap=False`` (no clusters at first-run; the
-       WARNING-6 signature in Plan 06 explicitly accommodates this).
+       :func:`app.teams.service.create_team_for_admin_bootstrap` — the
+       no-commit internal path (IN-02). No PVE bootstrap (no clusters at
+       first-run; personal teams never bootstrap regardless).
     3. Insert TeamMembership row binding the admin to the personal team.
+    4. Commit once. Steps 1-3 share the transaction — a crash anywhere rolls
+       the whole thing back; no orphaned team is possible.
 
     Raises:
         HTTPException(409): an admin already exists, OR the username/email
@@ -103,16 +109,11 @@ async def create_initial_admin(
             detail="Username or email already exists",
         ) from exc
 
-    # D-05 personal team — no PVE bootstrap (no clusters; even if there
-    # were, personal teams skip bootstrap per Plan 06's create_team).
-    # Plan 06 accepts ``registry=None`` when ``auto_bootstrap=False``.
-    team = await teams_service.create_team(
+    # D-05 personal team — created via the no-commit internal bootstrap path
+    # (IN-02) so it shares this transaction; committed once below (ME-01).
+    team = await teams_service.create_team_for_admin_bootstrap(
         db,
-        registry=None,
         name=f"personal-{user.id}",
-        personal=True,
-        _internal=True,
-        auto_bootstrap=False,
     )
 
     db.add(TeamMembership(team_id=team.id, user_id=user.id))

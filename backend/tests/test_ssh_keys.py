@@ -248,3 +248,79 @@ def test_parse_malformed_raises_valueerror():
 
     with _pytest.raises(ValueError):
         parse_ssh_pubkey("ssh-ed25519 garbage-not-base64 comment")
+
+
+# ---------------------------------------------------------------------------
+# Backlog 999.1 regression: ssh-rsa keys wrongly rejected
+# ---------------------------------------------------------------------------
+
+# A real, valid ssh-rsa public key (private key discarded) for the regression
+# suite — the same key body the Phase-1 parse test uses.
+RSA_KEY = (
+    "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCggCh1FZClswMgVBwYqYt5UMjY+v/"
+    "byrQaZf+YhHSVZWzJlfi9eLkpovXJiH+KHEWGHY0qkxTKVBainm50WV44J3aI+vnPxEr"
+    "51dz6K6qrW+EBLkPz/4Utt0MBCewkIWMh8IZfcrt1jrfRAG93RTrHwZm4CEgN24v1noNX"
+    "y2lvkiPsqdyNQOQ1zpgo5q+iTeB/Hsq8lAKCFYZtVGpwljZW5S2oSwqaa7sZPAxs3sxvZ"
+    "DFLCkDLnoaWHrOayFtW0pvgr+XqrdSoONN13h7OS98Z5DW0ON2JAw7uFAhlitFNq4AdMS"
+    "RiTfzxXG4b+hYypRgHJBgryydQD2UvN+fOwHef rsauser@host"
+)
+
+
+def test_parse_plain_ssh_rsa_accepted():
+    """Backlog 999.1: a standard ``ssh-rsa AAAA… comment`` line validates."""
+    from app.ssh_keys.service import parse_ssh_pubkey
+
+    normalized, fingerprint = parse_ssh_pubkey(RSA_KEY)
+    assert normalized.startswith("ssh-rsa ")
+    assert fingerprint.startswith("SHA256:")
+
+
+def test_parse_ssh_rsa_with_options_prefix_accepted():
+    """Backlog 999.1 cause #2: a key copied out of ``authorized_keys`` carries
+    an options prefix (``from="…" ssh-rsa AAAA…``) — it must still validate."""
+    from app.ssh_keys.service import parse_ssh_pubkey
+
+    with_options = f'from="10.0.0.0/8",no-pty {RSA_KEY}'
+    normalized, fingerprint = parse_ssh_pubkey(with_options)
+    # The options prefix is stripped — normalised form is type + blob only.
+    assert normalized.startswith("ssh-rsa ")
+    assert "from=" not in normalized
+    # Same key body → same fingerprint as the plain form.
+    _, plain_fp = parse_ssh_pubkey(RSA_KEY)
+    assert fingerprint == plain_fp
+
+
+def test_parse_ssh_rsa_with_quoted_command_option_accepted():
+    """An options prefix whose quoted value contains spaces
+    (``command="do a thing"``) must not break tokenisation."""
+    from app.ssh_keys.service import parse_ssh_pubkey
+
+    with_cmd = f'command="echo hello world" {RSA_KEY}'
+    normalized, _ = parse_ssh_pubkey(with_cmd)
+    assert normalized.startswith("ssh-rsa ")
+    assert "command=" not in normalized
+
+
+def test_parse_ssh_rsa_with_crlf_accepted():
+    """Backlog 999.1 cause #3: CRLF / trailing whitespace from a Windows
+    editor must be normalised, not rejected."""
+    from app.ssh_keys.service import parse_ssh_pubkey
+
+    normalized, _ = parse_ssh_pubkey(RSA_KEY + "\r\n")
+    assert normalized.startswith("ssh-rsa ")
+
+
+@pytest.mark.asyncio
+async def test_post_ssh_rsa_key_returns_201(client, session_factory):
+    """End-to-end: posting an ssh-rsa key through the route returns 201
+    (Backlog 999.1 — the operator's reported symptom was a 422)."""
+    await make_user(session_factory, username="rsauser", password="testpass12345")
+    cookies = await login_as(client, username="rsauser", password="testpass12345")
+    resp = await client.post(
+        "/api/v1/me/ssh-keys/",
+        cookies=cookies,
+        headers={"X-CSRF-Token": cookies["csrf_token"]},
+        json={"name": "rsa-laptop", "public_key": RSA_KEY},
+    )
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["fingerprint"].startswith("SHA256:")

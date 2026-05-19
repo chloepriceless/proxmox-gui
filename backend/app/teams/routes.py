@@ -49,7 +49,7 @@ async def create_team(
 ) -> TeamResponse:
     team = await service.create_team(
         db, registry=registry,
-        name=payload.name, personal=False, auto_bootstrap=True,
+        name=payload.name, auto_bootstrap=True,
     )
     return TeamResponse.model_validate({
         "id": team.id, "name": team.name, "personal": team.personal,

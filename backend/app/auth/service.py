@@ -88,16 +88,29 @@ async def login(
             detail="Invalid credentials",
         )
 
+    # LO-01: the disabled-user check runs BEFORE verify_password, and a dummy
+    # Argon2id verify runs on the disabled path. Previously the is_active check
+    # came after verify_password, so a disabled-but-correct-password attempt
+    # skipped one argon2 hash relative to a wrong-password attempt — an
+    # attacker who already knew a valid username could distinguish a disabled
+    # account by the faster response. Running verify_password against
+    # DUMMY_HASH here collapses the disabled-user timing onto the
+    # wrong-password timing (constant-time, no Argon2id-skip leak). The 403 +
+    # distinct "Account disabled" message is retained per 01-REVIEW LO-01 —
+    # the timing channel is closed; the explicit status/message stays because
+    # it is operationally useful and the attacker must already hold a valid
+    # username for the (now-closed) leak to have mattered.
+    if not user.is_active:
+        verify_password(password, DUMMY_HASH)
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account disabled",
+        )
+
     if not verify_password(password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials",
-        )
-
-    if not user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Account disabled",
         )
 
     access = issue_access_token(user.id, is_admin=user.is_admin)

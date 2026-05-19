@@ -260,21 +260,26 @@ async def test_set_pool_acl_sends_correct_payload():
     }
 
 
-@pytest.mark.asyncio
-async def test_tls_fingerprint_without_verify_ssl_raises_not_implemented():
-    """Phase 1: tls_fingerprint enforcement is deferred. The connector accepts
-    the field on the model but refuses the combination (fingerprint AND
-    verify_ssl=False) so operators don't think pinning is active when it isn't.
+def test_tls_fingerprint_mounts_pinning_adapter():
+    """D-20 (carryover): the Phase-1 NotImplementedError guard is gone. A
+    cluster with a pinned tls_fingerprint and verify_ssl=False now mounts a
+    FingerprintPinningAdapter on proxmoxer's session instead of raising.
+
+    (Full pinning behaviour — accept correct cert, refuse wrong cert — is
+    exercised end-to-end in tests/test_tls_pinning.py.)
     """
     from app.clusters.connector import PVEConnector
+    from app.clusters.pinning import FingerprintPinningAdapter
 
-    with pytest.raises(NotImplementedError, match="fingerprint"):
-        PVEConnector(
-            host="h", port=8006,
-            token_user="r@pam", token_name="t", token_value="v",
-            verify_ssl=False,
-            tls_fingerprint="SHA256:aaaa",
-        )
+    conn = PVEConnector(
+        host="h", port=8006,
+        token_user="r@pam", token_name="t", token_value="v",
+        verify_ssl=False,
+        tls_fingerprint="ab" * 32,
+    )
+    session = conn._client._store["session"]
+    adapter = session.get_adapter("https://h:8006/")
+    assert isinstance(adapter, FingerprintPinningAdapter)
 
 
 # ---------------------------------------------------------------------------

@@ -2,13 +2,23 @@
 
 Parsing strategy (01-RESEARCH.md §SSH key parse with fingerprint):
 
-1. Strip the optional comment field (third whitespace token) when normalising.
-2. Validate via :func:`cryptography.hazmat.primitives.serialization.load_ssh_public_key`
+1. Normalise line endings + strip a leading ``authorized_keys`` options
+   prefix (``from="…"``, ``no-pty``, …) — see :func:`_strip_options_prefix`.
+2. Strip the optional comment field (third whitespace token) when normalising.
+3. Validate via :func:`cryptography.hazmat.primitives.serialization.load_ssh_public_key`
    — this proves the wire-format bytes parse as a real public key. No shell
    execution, no eval (T-01-05-09).
-3. Compute the OpenSSH-style fingerprint: ``SHA256:<base64(no-padding)>`` over
+4. Compute the OpenSSH-style fingerprint: ``SHA256:<base64(no-padding)>`` over
    the raw blob (the base64-decoded second whitespace token). This matches
    what ``ssh-keygen -lf`` prints.
+
+Backlog 999.1 fix: ``ssh-rsa`` keys were rejected because operators paste
+keys copied straight out of an ``authorized_keys`` file, which carries an
+options prefix (``from="10.0.0.0/8" ssh-rsa AAAA…``). The Phase-1 parser
+tokenised on whitespace and treated the first token as the key type, so the
+options token became a bogus "key type" and ``load_ssh_public_key`` rejected
+it with "Unsupported key type". The cause was NOT ``cryptography``'s SHA-1
+hardening — RSA itself parses fine; it was the options prefix.
 """
 
 from __future__ import annotations
@@ -23,6 +33,51 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import SshKey, User
 
+# The OpenSSH public-key type tokens this validator recognises. A pasted line
+# whose first whitespace token is NOT one of these has a leading options
+# prefix (or is junk) — :func:`_strip_options_prefix` handles the former.
+_KNOWN_KEY_TYPES = frozenset(
+    {
+        "ssh-rsa",
+        "ssh-ed25519",
+        "ssh-dss",
+        "ecdsa-sha2-nistp256",
+        "ecdsa-sha2-nistp384",
+        "ecdsa-sha2-nistp521",
+        "sk-ssh-ed25519@openssh.com",
+        "sk-ecdsa-sha2-nistp256@openssh.com",
+    }
+)
+
+
+def _strip_options_prefix(parts: list[str]) -> list[str]:
+    """Drop a leading ``authorized_keys`` options prefix, if present.
+
+    An ``authorized_keys`` line may begin with a comma-separated options field
+    — ``from="10.0.0.0/8"``, ``no-pty``, ``command="…"`` — before the key
+    type. Operators frequently paste such a line. The options field is a
+    single whitespace-delimited token UNLESS a quoted value contains a space
+    (``command="do a thing"``), so this scans tokens from the left, skipping
+    everything until the first recognised key-type token, while honouring
+    double-quote boundaries so a space inside ``"…"`` does not end the field.
+
+    Returns the token list starting at the key type. If no key-type token is
+    found the original list is returned unchanged (the caller's
+    ``load_ssh_public_key`` then produces the real error).
+    """
+    for i, token in enumerate(parts):
+        if token in _KNOWN_KEY_TYPES:
+            if i == 0:
+                return parts  # no prefix — the common case
+            # Everything before index i was the options field. But only treat
+            # it as a prefix if the joined prefix has balanced quotes — an
+            # unbalanced quote means a quoted value spanned a space and the
+            # real type token sits further right.
+            prefix = " ".join(parts[:i])
+            if prefix.count('"') % 2 == 0:
+                return parts[i:]
+    return parts
+
 
 def parse_ssh_pubkey(text: str) -> tuple[str, str]:
     """Return ``(normalized_openssh_text, "SHA256:<base64>")`` for a pubkey.
@@ -31,7 +86,9 @@ def parse_ssh_pubkey(text: str) -> tuple[str, str]:
         ValueError: malformed input — wrong field count, non-base64 blob,
             or :mod:`cryptography` refusing the parse.
     """
-    raw = text.strip()
+    # Normalise CRLF / lone-CR line endings (a key pasted from a Windows
+    # editor carries them) before tokenising — backlog 999.1 cause #3.
+    raw = text.replace("\r\n", "\n").replace("\r", "\n").strip()
     if not raw:
         raise ValueError("Invalid SSH public key: empty")
 
@@ -41,11 +98,23 @@ def parse_ssh_pubkey(text: str) -> tuple[str, str]:
             "Invalid SSH public key: expected '<type> <base64> [comment]'"
         )
 
+    # Backlog 999.1 cause #2: drop a leading authorized_keys options prefix
+    # (``from="…" ssh-rsa AAAA…``) so the key type, not the options token,
+    # is parsed. ``key_line`` is the options-free ``<type> <base64> [comment]``.
+    parts = _strip_options_prefix(parts)
+    if len(parts) < 2:
+        raise ValueError(
+            "Invalid SSH public key: expected '<type> <base64> [comment]'"
+        )
+
     key_type, b64_blob = parts[0], parts[1]
+    key_line = " ".join(parts)
 
     # Validate via cryptography — refuses garbage, wrong checksums, bad types.
+    # Pass the options-stripped line: load_ssh_public_key cannot parse a line
+    # that still carries an options prefix.
     try:
-        _key = serialization.load_ssh_public_key(raw.encode("utf-8"))
+        _key = serialization.load_ssh_public_key(key_line.encode("utf-8"))
     except Exception as exc:  # noqa: BLE001 — cryptography raises a zoo
         raise ValueError(f"Invalid SSH public key: {exc}") from exc
 

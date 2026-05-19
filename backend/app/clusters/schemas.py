@@ -14,12 +14,14 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-# Sentinel for the nullable-clearable PATCH field pattern (Phase 1 IN-03
-# carryover). ``backup_storage`` must be distinguishable between "absent from
-# the request body" (leave unchanged) and "explicitly set to null" (clear the
-# admin designation — UI-SPEC "None — backups disabled"). A plain
-# ``str | None = None`` field cannot tell those apart; ``Unset`` does.
-_UNSET = "__unset__"
+# ME-05: the project-wide nullable-clearable PATCH-field sentinel lives in
+# ``app.core.patch``. ``backup_storage`` must be distinguishable between
+# "absent from the request body" (leave unchanged) and "explicitly set to
+# null" (clear the admin designation — UI-SPEC "None — backups disabled").
+# A plain ``str | None = None`` field cannot tell those apart; the sentinel
+# can. Re-exported as the module-local ``_UNSET`` so the field default below
+# reads cleanly.
+from app.core.patch import UNSET as _UNSET
 
 # Realm-qualified user format: ``name@pam`` or ``name@pve`` (PVE basic shape).
 # Permissive on the name part — PVE accepts letters, digits, ``.-_``.

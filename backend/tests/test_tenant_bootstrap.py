@@ -105,7 +105,7 @@ async def test_create_team_with_zero_clusters_inserts_team_only(session_factory)
     async with session_factory() as session:
         team = await create_team(
             session, registry=None,
-            name="solo-team", personal=False, auto_bootstrap=True,
+            name="solo-team", auto_bootstrap=True,
         )
         assert team.id is not None
 
@@ -157,7 +157,7 @@ async def test_bootstrap_makes_5_calls_per_cluster_on_success(session_factory):
         async with session_factory() as session:
             await create_team(
                 session, registry=registry,
-                name="multi-team", personal=False, auto_bootstrap=True,
+                name="multi-team", auto_bootstrap=True,
             )
 
     # Each cluster: create_pool + create_user + create_token + set_pool_acl
@@ -195,7 +195,7 @@ async def test_bootstrap_uses_correct_pve_naming(session_factory):
         async with session_factory() as session:
             team = await create_team(
                 session, registry=registry,
-                name="naming-test", personal=False, auto_bootstrap=True,
+                name="naming-test", auto_bootstrap=True,
             )
             tid = team.id
 
@@ -260,7 +260,7 @@ async def test_bootstrap_rolls_back_on_partial_failure(session_factory):
             with pytest.raises(BootstrapFailed) as exc_info:
                 await create_team(
                     session, registry=registry,
-                    name="rollback-team", personal=False, auto_bootstrap=True,
+                    name="rollback-team", auto_bootstrap=True,
                 )
     # The exception identifies the failing cluster.
     assert "cluster-2" in str(exc_info.value) or exc_info.value.cluster_name == "cluster-2"
@@ -312,7 +312,7 @@ async def test_bootstrap_surfaces_pool_collision_with_clean_state(session_factor
             with pytest.raises(BootstrapFailed):
                 await create_team(
                     session, registry=registry,
-                    name="collide-team", personal=False, auto_bootstrap=True,
+                    name="collide-team", auto_bootstrap=True,
                 )
 
     async with session_factory() as session:
@@ -349,7 +349,7 @@ async def test_bootstrap_adopts_existing_pool_and_user(session_factory):
         async with session_factory() as session:
             await create_team(
                 session, registry=registry,
-                name="adopt-test", personal=False, auto_bootstrap=True,
+                name="adopt-test", auto_bootstrap=True,
             )
 
     # Pre-existing pool + user → NOT recreated.
@@ -384,7 +384,7 @@ async def test_bootstrap_recreates_existing_token(session_factory):
         async with session_factory() as session:
             await create_team(
                 session, registry=registry,
-                name="retoken-test", personal=False, auto_bootstrap=True,
+                name="retoken-test", auto_bootstrap=True,
             )
 
     paths = [c[0] for c in fake.calls]
@@ -420,7 +420,7 @@ async def test_bootstrap_adopted_objects_survive_rollback(session_factory):
             with pytest.raises(BootstrapFailed):
                 await create_team(
                     session, registry=registry,
-                    name="rollback-adopt", personal=False, auto_bootstrap=True,
+                    name="rollback-adopt", auto_bootstrap=True,
                 )
 
     # Adopted pool/user were never created by this run → never deleted.

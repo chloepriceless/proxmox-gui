@@ -58,10 +58,13 @@ async def create_user(
 ) -> tuple[User, Team]:
     """Insert a User + their personal Team + optional shared memberships.
 
-    Personal team naming: ``personal-<user_id>`` (D-05). No PVE bootstrap
-    on personal teams (Plan 06's ``create_team`` skips bootstrap when
-    ``personal=True`` regardless of cluster count; we explicitly pass
-    ``auto_bootstrap=False`` for clarity).
+    Personal team naming: ``personal-<user_id>`` (D-05). No PVE bootstrap on
+    personal teams. IN-02 + ME-01: the personal team is created via
+    :func:`teams_service.create_team_for_admin_bootstrap`, which flushes but
+    does NOT commit — so the User, the personal Team, the personal-team
+    membership and any shared memberships all land in ONE atomic transaction
+    committed once at the end. The Phase-1 path called ``create_team`` which
+    committed mid-flight, leaving a window where a crash could orphan a team.
 
     Shared-team memberships in ``team_ids``:
 
@@ -90,15 +93,12 @@ async def create_user(
             detail="Username or email already exists",
         ) from exc
 
-    # D-05: auto-create the personal team. Plan 06's create_team accepts
-    # registry=None when auto_bootstrap=False — see its WARNING-6 fix.
-    personal_team = await teams_service.create_team(
+    # D-05 + IN-02: auto-create the personal team via the no-commit internal
+    # bootstrap path so the whole User + Team + membership operation commits
+    # atomically below (ME-01).
+    personal_team = await teams_service.create_team_for_admin_bootstrap(
         db,
-        registry=None,
         name=f"personal-{user.id}",
-        personal=True,
-        _internal=True,
-        auto_bootstrap=False,
     )
     db.add(TeamMembership(team_id=personal_team.id, user_id=user.id))
 

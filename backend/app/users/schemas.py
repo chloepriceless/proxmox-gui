@@ -22,6 +22,15 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
+# ME-05: the project-wide nullable-clearable PATCH-field sentinel. ``UserUpdate``
+# below has no nullable-clearable field today (``email`` is non-null in the DB;
+# ``is_admin``/``is_active`` are booleans; ``team_ids`` uses absent-vs-[] REPLACE
+# semantics) — but the convention is imported here so any future user PATCH
+# field that must distinguish "absent" from "explicit null" adopts the shared
+# ``app.core.patch`` pattern rather than re-inventing a local sentinel.
+from app.core.patch import UNSET as _UNSET  # noqa: F401
+from app.core.patch import is_set as _is_set  # noqa: F401
+
 # ---------------------------------------------------------------------------
 # Embedded projections
 # ---------------------------------------------------------------------------

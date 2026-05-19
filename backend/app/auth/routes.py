@@ -25,7 +25,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import service
-from app.auth.rate_limit import check_login_rate
+from app.security.rate_limit import check_login_rate
 from app.auth.refresh import (
     IdleExpired,
     InvalidRefresh,
@@ -145,6 +145,20 @@ async def login_route(
     response: Response,
     db: AsyncSession = Depends(get_db),
 ) -> LoginResponse:
+    """Login route — intentionally NOT behind ``Depends(csrf_protect)``.
+
+    LO-03: a reader might expect a CSRF dependency here and its absence is
+    deliberate. **No CSRF on login — no session cookie exists yet to forge.**
+    The CSRF double-submit defence compares a cookie value against a header;
+    before login there is no ``csrf_token`` cookie, so there is nothing an
+    attacker could forge a request *with*. CSRF protection begins the moment
+    ``_set_session_cookies`` mints the trio below.
+
+    CSRF-cookie rotation: every successful ``/refresh`` re-mints the
+    ``csrf_token`` cookie (``_set_session_cookies`` is called there too), so
+    the token rotates in lock-step with the refresh-token rotation chain — a
+    captured CSRF token is only valid until the next refresh (CSRF Q4).
+    """
     ip = _client_ip(request)
     if not check_login_rate(ip):
         raise HTTPException(
