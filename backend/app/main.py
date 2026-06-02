@@ -332,6 +332,16 @@ def create_app() -> FastAPI:
     app.include_router(
         settings_router, prefix="/api/v1/admin/settings", tags=["settings"]
     )
+    # Plan 05-04: self-update — admin POST to enqueue an admin.self-update
+    # arq job (DEPLOY-04). Mounted under the /api/v1/admin/self-update prefix
+    # so the route handler itself is on "/" (POST /api/v1/admin/self-update/).
+    from app.selfupdate.routes import router as selfupdate_router
+
+    app.include_router(
+        selfupdate_router,
+        prefix="/api/v1/admin/self-update",
+        tags=["self-update"],
+    )
 
     return app
 
