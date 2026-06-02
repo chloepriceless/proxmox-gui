@@ -1,1 +1,0 @@
-import"./Bzak7iHL.js";import{s as t,r as p}from"./BkYbJ__8.js";import{I as a}from"./B0O0__6X.js";function d(o,r){let e=p(r,["$$slots","$$events","$$legacy"]);const s=[["path",{d:"M21 12a9 9 0 1 1-6.219-8.56"}]];a(o,t({name:"loader-circle"},()=>e,{get iconNode(){return s}}))}export{d as L};

@@ -1,0 +1,1 @@
+import{P as y,Q as u,R as _,S as o,T as t,U as g,V as i,W as l,X as d,Y as p,Z as m}from"./RR2SEOsk.js";function T(n,r){let s=null,E=t;var a;if(t){s=p;for(var e=m(document.head);e!==null&&(e.nodeType!==g||e.data!==n);)e=i(e);if(e===null)l(!1);else{var f=i(e);e.remove(),d(f)}}t||(a=document.head.appendChild(y()));try{u(()=>r(a),_|o)}finally{E&&(l(!0),d(s))}}export{T as h};

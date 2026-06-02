@@ -24,7 +24,11 @@ export default defineConfig({
     }
   },
   test: {
-    include: ['tests/**/*.{test,spec}.{js,ts}'],
+    // `tests/**` is the bulk of the suite; `src/**` lets co-located tests run
+    // too — Plan 05-05's axe-core audit lives at
+    // src/lib/components/a11y/axe.test.ts (next to the a11y concern it guards)
+    // and sets its own happy-dom environment via a per-file docblock.
+    include: ['tests/**/*.{test,spec}.{js,ts}', 'src/**/*.{test,spec}.{js,ts}'],
     environment: 'node'
   }
 });

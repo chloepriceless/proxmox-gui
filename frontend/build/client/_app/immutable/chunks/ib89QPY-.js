@@ -1,0 +1,1 @@
+import"./Bzak7iHL.js";import{s,r as n}from"./BlTd84kF.js";import{I as i}from"./BS4mR_6-.js";function m(o,r){let t=n(r,["$$slots","$$events","$$legacy"]);const e=[["rect",{width:"20",height:"14",x:"2",y:"3",rx:"2"}],["line",{x1:"8",x2:"16",y1:"21",y2:"21"}],["line",{x1:"12",x2:"12",y1:"17",y2:"21"}]];i(o,s({name:"monitor"},()=>t,{get iconNode(){return e}}))}export{m as M};
