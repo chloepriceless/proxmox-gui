@@ -1,0 +1,1 @@
+import{apiJson as e}from"./DeMueevT.js";function i(t,n){return n}async function s(t){return e("/admin/settings",i(t,{method:"GET"}))}async function o(t,n){return e("/admin/settings",i(n,{method:"PATCH",body:{...t}}))}async function u(t){await e("/auth/keepalive",i(t,{method:"POST"}))}export{s as g,u as k,o as u};

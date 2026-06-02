@@ -1,0 +1,1 @@
+import{o,m as t}from"./Dz1QOFME.js";function r(n){o(()=>t(()=>n()))}export{r as o};

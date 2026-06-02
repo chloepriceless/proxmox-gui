@@ -1,0 +1,1 @@
+import"./Bzak7iHL.js";import{s as e,r as p}from"./0vWx1Ok7.js";import{I as s}from"./BLuQ-h8b.js";function c(o,t){let r=p(t,["$$slots","$$events","$$legacy"]);const a=[["path",{d:"M15 3h6v6"}],["path",{d:"M10 14 21 3"}],["path",{d:"M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"}]];s(o,e({name:"external-link"},()=>r,{get iconNode(){return a}}))}export{c as E};
