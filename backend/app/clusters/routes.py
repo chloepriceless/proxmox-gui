@@ -15,7 +15,9 @@ request scope.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request, Response, status
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import (
@@ -24,6 +26,7 @@ from app.auth.dependencies import (
     require_admin,
 )
 from app.clusters import service
+from app.clusters.errors import PVEAPIError, PVEUnreachable
 from app.clusters.registry import PVEConnectorRegistry
 from app.clusters.schemas import (
     BackupStorageItem,
@@ -35,8 +38,29 @@ from app.clusters.schemas import (
     NodeResourceItem,
 )
 from app.core.db import get_db
+from app.networks.preflight import ssh_pct_exec_preflight
 
 router = APIRouter()
+
+#: Where install.sh (Plan 05-04) lays down the GUI's Ed25519 public key. The
+#: admin pastes this into each PVE node's authorized_keys to establish the SSH
+#: trust the community-script `pct exec` path needs (D-22).
+GUI_SSH_PUBKEY_PATH = "/etc/proxmox-gui/gui_ed25519.pub"
+
+
+def _read_gui_pubkey() -> dict:
+    """Read the GUI public key off disk (sync — a tiny local file read).
+
+    Kept synchronous so the async route does not call blocking pathlib methods
+    directly (ASYNC240). Returns ``{present, public_key}``; never raises.
+    """
+    p = Path(GUI_SSH_PUBKEY_PATH)
+    try:
+        if p.exists():
+            return {"present": True, "public_key": p.read_text().strip()}
+    except OSError:
+        pass
+    return {"present": False, "public_key": ""}
 
 
 def get_registry(request: Request) -> PVEConnectorRegistry:
@@ -119,6 +143,25 @@ async def list_clusters(
 ) -> list[ClusterResponse]:
     rows = await service.list_clusters(db)
     return [ClusterResponse.model_validate(r) for r in rows]
+
+
+# NOTE: this literal-path route MUST precede ``GET /{cluster_id}`` — otherwise
+# FastAPI's matcher coerces "ssh-pubkey" to the int ``{cluster_id}`` (422).
+@router.get(
+    "/ssh-pubkey",
+    summary="The GUI's SSH public key for community-script node trust (D-22)",
+    operation_id="clusters_ssh_pubkey",
+    dependencies=[Depends(require_admin)],
+)
+async def get_ssh_pubkey() -> dict:
+    """Return the GUI's Ed25519 public key so the registration UI can show the
+    copy-paste one-liner the admin runs on each node. Only the PUBLIC key is
+    ever exposed (T-05-06-04); the private key never leaves /etc/proxmox-gui.
+
+    Returns ``{present: False, public_key: ""}`` if the key file is absent
+    (e.g. a dev box that never ran install.sh) so the UI can guide accordingly.
+    """
+    return _read_gui_pubkey()
 
 
 @router.get(
@@ -216,6 +259,43 @@ async def test_existing_cluster(
     db: AsyncSession = Depends(get_db),
 ) -> ClusterTestResponse:
     return await service.validate_token(db, cluster_id=cluster_id)
+
+
+@router.post(
+    "/{cluster_id}/verify-ssh",
+    summary="Verify the GUI can pct-exec on the cluster's node over SSH (D-22)",
+    operation_id="clusters_verify_ssh",
+    dependencies=[Depends(require_admin), Depends(csrf_protect)],
+)
+async def verify_ssh(
+    cluster_id: int,
+    db: AsyncSession = Depends(get_db),
+    registry: PVEConnectorRegistry = Depends(get_registry),
+) -> dict:
+    """Probe SSH ``pct exec`` reachability for the cluster's first node (D-23).
+
+    Mirrors the existing Test-connection button: admin-gated, no mutation,
+    returns ``{node, ok, detail}``. The community-script wizard path is gated on
+    this; plain-LXC/VM provisioning need no SSH and are unaffected.
+    """
+    try:
+        connector = await registry.get(cluster_id, db=db)
+    except LookupError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Cluster not found",
+        ) from exc
+    try:
+        nodes = await connector.list_nodes()
+    except (PVEUnreachable, PVEAPIError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Couldn't reach the cluster to list its nodes.",
+        ) from exc
+    if not nodes:
+        return {"node": None, "ok": False, "detail": "Cluster reports no nodes."}
+    node = str(nodes[0].get("node") or "")
+    result = await ssh_pct_exec_preflight(connector, node)
+    return {"node": node, **result}
 
 
 @router.post(

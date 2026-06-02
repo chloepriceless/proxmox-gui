@@ -67,6 +67,51 @@
   let formError = $state<string | null>(null);
   let fieldErrors = $state<Record<string, string>>({});
 
+  // ---- Post-register SSH-trust step (D-22/D-23) ----
+  // After a cluster is registered we show the GUI public key + a copy-paste
+  // one-liner the admin runs on each node, plus a Verify-SSH button. This is the
+  // prerequisite for the community-script (pct exec over SSH) deploy path; plain
+  // LXC/VM provisioning need no SSH.
+  let registeredClusterId = $state<number | null>(null);
+  let guiPubkey = $state<string>('');
+  let pubkeyPresent = $state<boolean>(false);
+  let verifying = $state(false);
+  let sshResult = $state<{ ok: boolean; detail: string; node: string | null } | null>(null);
+
+  const trustOneLiner = $derived(
+    guiPubkey
+      ? `echo '${guiPubkey}' >> /root/.ssh/authorized_keys`
+      : ''
+  );
+
+  async function copyOneLiner() {
+    try {
+      await navigator.clipboard.writeText(trustOneLiner);
+      toast.success('Copied to clipboard.');
+    } catch {
+      toast.error('Copy failed — select and copy the command manually.');
+    }
+  }
+
+  async function handleVerifySsh() {
+    if (registeredClusterId == null || verifying) return;
+    verifying = true;
+    sshResult = null;
+    try {
+      const res = await api.clusters.verifySsh({ id: registeredClusterId });
+      sshResult = res;
+      if (res.ok) toast.success('SSH trust verified.');
+    } catch {
+      sshResult = {
+        ok: false,
+        node: null,
+        detail: "Couldn't verify SSH — the cluster may be unreachable."
+      };
+    } finally {
+      verifying = false;
+    }
+  }
+
   // Parse "https://pve.example.com:8006" → { host, port }. Defaults port 8006.
   function parseUrl(raw: string): { host: string; port: number } | null {
     const trimmed = raw.trim();
@@ -220,9 +265,19 @@
         api_token_secret: tokenSecret,
         tls_fingerprint: tlsFingerprint.trim() || null
       };
-      await api.clusters.create(body);
+      const created = await api.clusters.create(body);
       toast.success('Cluster registered.');
-      await goto('/admin/clusters');
+      // Show the SSH-trust step (D-22) instead of navigating away so the admin
+      // can establish + verify pct-exec trust for community scripts. A failure
+      // to fetch the pubkey is non-fatal — the admin can still finish.
+      registeredClusterId = created.id;
+      try {
+        const pk = await api.clusters.getSshPubkey();
+        guiPubkey = pk.public_key;
+        pubkeyPresent = pk.present;
+      } catch {
+        pubkeyPresent = false;
+      }
     } catch (err) {
       const mapped = mapClusterError(err);
       if (mapped.field && mapped.message) {
@@ -253,6 +308,7 @@
     <p class="text-muted-foreground text-sm">Connect to a Proxmox VE cluster using an API token.</p>
   </header>
 
+  {#if registeredClusterId === null}
   <Card.Root>
     <Card.Header>
       <Card.Title class="text-lg font-semibold tracking-tight">Cluster details</Card.Title>
@@ -446,4 +502,67 @@
       </form>
     </Card.Content>
   </Card.Root>
+  {:else}
+  <!-- Post-register SSH-trust step (D-22/D-23) — establish + verify the pct-exec
+       SSH trust the community-script deploy path needs. Optional: plain LXC/VM
+       provisioning works without it. -->
+  <Card.Root>
+    <Card.Header>
+      <Card.Title class="text-lg font-semibold tracking-tight">SSH trust (for community scripts)</Card.Title>
+      <Card.Description>
+        Community-script deploys run inside the new container via SSH from the
+        GUI to each node. Trust the GUI's key on every node of this cluster, then
+        verify. Plain VM/LXC provisioning works without this.
+      </Card.Description>
+    </Card.Header>
+    <Card.Content class="flex flex-col gap-4">
+      {#if pubkeyPresent && guiPubkey}
+        <div class="flex flex-col gap-2">
+          <Label>Run this on each Proxmox node (as root)</Label>
+          <div class="flex items-start gap-2">
+            <pre class="bg-muted flex-1 overflow-x-auto rounded-md border border-border p-3 font-mono text-[12px] leading-relaxed"><code>{trustOneLiner}</code></pre>
+            <Button type="button" variant="outline" onclick={copyOneLiner}>Copy</Button>
+          </div>
+          <p class="text-muted-foreground text-[13px]">
+            This appends the GUI's public key to the node's authorized_keys. The
+            GUI's private key never leaves this server.
+          </p>
+        </div>
+      {:else}
+        <Alert.Root variant="destructive" aria-live="polite">
+          <AlertTriangle aria-hidden="true" />
+          <Alert.Title>
+            The GUI SSH key isn't available on this server. Re-run install.sh to
+            generate it, then come back to verify SSH trust.
+          </Alert.Title>
+        </Alert.Root>
+      {/if}
+
+      {#if sshResult}
+        <Alert.Root variant={sshResult.ok ? 'default' : 'destructive'} aria-live="polite">
+          {#if !sshResult.ok}<AlertTriangle aria-hidden="true" />{/if}
+          <Alert.Title>
+            {sshResult.ok
+              ? `SSH trust verified${sshResult.node ? ` on ${sshResult.node}` : ''} — community scripts are ready.`
+              : `SSH not reachable${sshResult.node ? ` on ${sshResult.node}` : ''}: ${sshResult.detail}`}
+          </Alert.Title>
+        </Alert.Root>
+      {/if}
+
+      <div class="flex flex-row items-center justify-end gap-2">
+        <Button type="button" variant="ghost" onclick={() => goto('/admin/clusters')}>
+          Done
+        </Button>
+        <Button type="button" onclick={handleVerifySsh} disabled={verifying}>
+          {#if verifying}
+            <Loader2 class="size-4 animate-spin" aria-hidden="true" />
+            Verifying...
+          {:else}
+            Verify SSH
+          {/if}
+        </Button>
+      </div>
+    </Card.Content>
+  </Card.Root>
+  {/if}
 </div>

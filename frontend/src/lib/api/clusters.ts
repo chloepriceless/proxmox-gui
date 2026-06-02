@@ -154,6 +154,43 @@ export async function testExisting(
 }
 
 // ---------------------------------------------------------------------------
+// Plan 05-06 additions — community-script SSH trust (D-22/D-23)
+// ---------------------------------------------------------------------------
+
+/** The GUI's SSH public key for node trust (GET /clusters/ssh-pubkey). */
+export interface SshPubkey {
+  present: boolean;
+  public_key: string;
+}
+
+/** GET /api/v1/clusters/ssh-pubkey — the GUI pubkey to paste into nodes (D-22). */
+export async function getSshPubkey(opts?: MaybeFetch): Promise<SshPubkey> {
+  return apiJson<SshPubkey>('/clusters/ssh-pubkey', withFetch(opts, { method: 'GET' }));
+}
+
+/** Result of POST /clusters/{id}/verify-ssh (D-22/D-23). */
+export interface SshVerifyResult {
+  node: string | null;
+  ok: boolean;
+  detail: string;
+}
+
+/**
+ * POST /api/v1/clusters/{id}/verify-ssh — probe whether the GUI can pct-exec on
+ * the cluster's node over SSH (the community-script prerequisite). Admin-gated,
+ * no mutation — mirrors the Test-connection button.
+ */
+export async function verifySsh(
+  args: { id: number },
+  opts?: MaybeFetch
+): Promise<SshVerifyResult> {
+  return apiJson<SshVerifyResult>(
+    `/clusters/${args.id}/verify-ssh`,
+    withFetch(opts, { method: 'POST' })
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Plan 03-07 additions — backup-storage designation (D-08)
 // ---------------------------------------------------------------------------
 
