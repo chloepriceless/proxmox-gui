@@ -122,6 +122,12 @@ export async function apiJson<T = unknown>(path: string, init: ApiInit = {}): Pr
       typeof parsed === 'object' && parsed !== null && 'detail' in parsed
         ? String((parsed as { detail: unknown }).detail)
         : `Request failed: ${res.status}`;
+    // AUTH-06 (Plan 05-06): when the server reports a server-side idle expiry
+    // (401 session_idle_expired from /auth/refresh), broadcast it so the root
+    // layout surfaces the in-place re-auth modal. UX glue only — still throws.
+    if (res.status === 401 && message === 'session_idle_expired' && typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('session_idle_expired'));
+    }
     throw new ApiError(res.status, message, parsed);
   }
   return parsed as T;
