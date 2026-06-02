@@ -29,8 +29,8 @@ progress:
 ## Current Position
 
 Phase: 05 (polish-operational-hardening) — EXECUTING
-Plan: Wave 3 of 4 — 4/7 plans complete
-Resume file: .planning/phases/05-polish-operational-hardening/05-05-PLAN.md
+Plan: Wave 3 of 4 — 05-05 code-complete (manual a11y checkpoint pending); 05-06 next
+Resume file: .planning/phases/05-polish-operational-hardening/05-06-PLAN.md
 
 - **Milestone:** v1
 - **Phase:** 4 complete → Phase 5 executing.
