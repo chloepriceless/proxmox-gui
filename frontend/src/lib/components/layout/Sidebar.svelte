@@ -11,59 +11,18 @@
 -->
 <script lang="ts">
   import { page } from '$app/stores';
-  import User from '@lucide/svelte/icons/user';
-  import KeyRound from '@lucide/svelte/icons/key-round';
-  import Key from '@lucide/svelte/icons/key';
-  import ExternalLink from '@lucide/svelte/icons/external-link';
-  import Users from '@lucide/svelte/icons/users';
-  import UsersRound from '@lucide/svelte/icons/users-round';
-  import Server from '@lucide/svelte/icons/server';
-  import ListChecks from '@lucide/svelte/icons/list-checks';
-  import History from '@lucide/svelte/icons/history';
-  import CalendarClock from '@lucide/svelte/icons/calendar-clock';
-  import type { Component } from 'svelte';
   import type { CurrentUser } from '$lib/stores/user.svelte';
-
-  type NavItem = {
-    href: string;
-    label: string;
-    icon: Component;
-    external?: boolean;
-  };
+  // Shared nav definitions (Plan 05-05, D-13) — one source for both the
+  // static lg+ rail (this file) and the <lg hamburger drawer (MobileNav).
+  import {
+    resourceItems,
+    accountItems,
+    adminItems,
+    docsItem,
+    isActive
+  } from '$lib/nav';
 
   let { user }: { user: CurrentUser } = $props();
-
-  const resourceItems: NavItem[] = [
-    { href: '/inventory', label: 'Inventory', icon: ListChecks },
-    { href: '/audit', label: 'Audit log', icon: History },
-    { href: '/backups', label: 'Backups', icon: CalendarClock }
-  ];
-
-  const accountItems: NavItem[] = [
-    { href: '/profile', label: 'Profile', icon: User },
-    { href: '/profile/ssh-keys', label: 'SSH keys', icon: KeyRound },
-    { href: '/profile/tokens', label: 'API tokens', icon: Key }
-  ];
-
-  const adminItems: NavItem[] = [
-    { href: '/admin/users', label: 'Users', icon: Users },
-    { href: '/admin/teams', label: 'Teams', icon: UsersRound },
-    { href: '/admin/clusters', label: 'Clusters', icon: Server }
-  ];
-
-  const docsItem: NavItem = {
-    href: '/api/v1/docs',
-    label: 'API docs',
-    icon: ExternalLink,
-    external: true
-  };
-
-  function isActive(href: string, pathname: string): boolean {
-    // Exact match on root segment; startsWith for nested. Avoid matching
-    // '/profile/ssh-keys' as active when '/profile' is the link.
-    if (href === pathname) return true;
-    return pathname.startsWith(href + '/');
-  }
 </script>
 
 <aside

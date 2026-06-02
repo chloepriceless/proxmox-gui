@@ -424,6 +424,119 @@
   </Table.Row>
 {/snippet}
 
+<!-- One inventory CARD — the <md reflow of inventoryRow (D-14). Same fields,
+     same per-row power menu, same tap-to-open-detail behaviour.
+
+     A11y: the whole card navigates via a "stretched link" (the name <a> gets an
+     `after:absolute after:inset-0` overlay) rather than a `role="button"` div.
+     The link and the action menu are then SIBLINGS, never nested — nesting an
+     interactive button inside an interactive card is an axe `nested-interactive`
+     violation (caught by the D-17 audit). The menu sits `relative z-10` above
+     the stretched-link overlay so it stays independently clickable. -->
+{#snippet inventoryCard(item: VMInventoryItem)}
+  <div
+    class="relative rounded-md border border-border bg-card p-3 transition-colors hover:bg-muted/50"
+  >
+    <div class="flex items-start justify-between gap-2">
+      <div class="flex min-w-0 items-center gap-2">
+        {#if bulkMode}
+          <Checkbox
+            checked={isSelected(item)}
+            onCheckedChange={() => toggleRow(item)}
+            aria-label={`Select ${vmName(item)}`}
+          />
+        {/if}
+        <div class="min-w-0">
+          {#if bulkMode}
+            <div class="truncate text-[14px] font-medium">{vmName(item)}</div>
+          {:else}
+            <a
+              href={`/inventory/${item.cluster_id}/${item.vmid}`}
+              class="block truncate text-[14px] font-medium after:absolute after:inset-0 after:content-['']"
+            >
+              {vmName(item)}
+            </a>
+          {/if}
+          <div class="font-mono text-[13px] text-muted-foreground">
+            {item.vmid} · {item.node}
+          </div>
+        </div>
+      </div>
+      {#if !bulkMode}
+        <div class="relative z-10">
+          {@render rowMenu(item)}
+        </div>
+      {/if}
+    </div>
+
+    <div class="mt-3 flex items-center justify-between gap-2">
+      <span class="inline-flex items-center gap-1 text-[13px]">
+        {#if item.status === 'running'}
+          <CirclePlay class="size-4 text-success" aria-hidden="true" />
+        {:else if item.status === 'paused'}
+          <CirclePause class="size-4 text-warning" aria-hidden="true" />
+        {:else if item.status === 'stopped'}
+          <CircleStop class="size-4 text-muted-foreground" aria-hidden="true" />
+        {:else}
+          <CircleAlert class="size-4 text-destructive" aria-hidden="true" />
+        {/if}
+        <span>{item.status}</span>
+        {#if item.is_stale}
+          <Clock class="size-3.5 text-warning" aria-label="Stale data" />
+        {/if}
+      </span>
+      {#if item.tags.length > 0}
+        <div class="flex flex-wrap justify-end gap-1">
+          {#each item.tags.slice(0, 3) as t (t)}
+            <Badge variant="outline">{t}</Badge>
+          {/each}
+          {#if item.tags.length > 3}
+            <Badge variant="outline">+{item.tags.length - 3}</Badge>
+          {/if}
+        </div>
+      {/if}
+    </div>
+  </div>
+{/snippet}
+
+<!-- A filtered resource list — the table at md+ and the card stack at <md.
+     Both render sites (single-cluster + per-accordion-section) call this so the
+     reflow lives in exactly one place (D-14). -->
+{#snippet resourceBlock(filtered: VMInventoryItem[])}
+  <!-- Desktop (md+): the data table. -->
+  <div class="hidden rounded-md border border-border md:block">
+    <Table.Root class="hidden md:table">
+      {#if bulkMode}
+        <Table.Header>
+          <Table.Row>
+            <Table.Head class="w-10">
+              <Checkbox
+                checked={allChecked}
+                indeterminate={someChecked}
+                onCheckedChange={toggleSelectAll}
+                aria-label="Select all filtered"
+              />
+            </Table.Head>
+            <Table.Head colspan={5}></Table.Head>
+          </Table.Row>
+        </Table.Header>
+      {/if}
+      <Table.Body>
+        {#each filtered as item (item.vmid)}
+          {@render inventoryRow(item)}
+        {/each}
+      </Table.Body>
+    </Table.Root>
+  </div>
+
+  <!-- Mobile (<md): a stack of tappable cards (D-14). -->
+  <div class="flex flex-col gap-3 md:hidden">
+    {#each filtered as item (item.vmid)}
+      {@render inventoryCard(item)}
+    {/each}
+  </div>
+{/snippet}
+
 <!-- Page header -->
 <header class="flex flex-row items-start justify-between gap-4 mb-6">
   <div class="flex flex-col gap-1">
@@ -587,30 +700,7 @@
         : `No VMs in ${c.cluster_name}.`}
     </div>
   {:else}
-    <div class="rounded-md border border-border">
-      <Table.Root>
-        {#if bulkMode}
-          <Table.Header>
-            <Table.Row>
-              <Table.Head class="w-10">
-                <Checkbox
-                  checked={allChecked}
-                  indeterminate={someChecked}
-                  onCheckedChange={toggleSelectAll}
-                  aria-label="Select all filtered"
-                />
-              </Table.Head>
-              <Table.Head colspan={5}></Table.Head>
-            </Table.Row>
-          </Table.Header>
-        {/if}
-        <Table.Body>
-          {#each filtered as item (item.vmid)}
-            {@render inventoryRow(item)}
-          {/each}
-        </Table.Body>
-      </Table.Root>
-    </div>
+    {@render resourceBlock(filtered)}
   {/if}
 {:else}
   <!-- ≥2 clusters OR a specific cluster filter active — Accordion sections (D-01) -->
@@ -638,30 +728,7 @@
               : `No VMs in ${c.cluster_name}.`}
           </div>
         {:else}
-          <div class="rounded-md border border-border">
-            <Table.Root>
-              {#if bulkMode}
-                <Table.Header>
-                  <Table.Row>
-                    <Table.Head class="w-10">
-                      <Checkbox
-                        checked={allChecked}
-                        indeterminate={someChecked}
-                        onCheckedChange={toggleSelectAll}
-                        aria-label="Select all filtered"
-                      />
-                    </Table.Head>
-                    <Table.Head colspan={5}></Table.Head>
-                  </Table.Row>
-                </Table.Header>
-              {/if}
-              <Table.Body>
-                {#each filtered as item (item.vmid)}
-                  {@render inventoryRow(item)}
-                {/each}
-              </Table.Body>
-            </Table.Root>
-          </div>
+          {@render resourceBlock(filtered)}
         {/if}
       </ClusterSection>
     {/each}

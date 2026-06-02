@@ -16,6 +16,7 @@
 <script lang="ts">
   import { goto, invalidateAll } from '$app/navigation';
   import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
+  import MobileNav from '$lib/components/layout/MobileNav.svelte';
   import ThemeToggle from '$lib/components/layout/ThemeToggle.svelte';
   import ClusterContextPicker from '$lib/components/inventory/ClusterContextPicker.svelte';
   import QuotaIndicator from '$lib/components/quotas/QuotaIndicator.svelte';
@@ -70,6 +71,8 @@
   class="bg-background flex h-14 items-center justify-between gap-4 border-b border-border px-4 lg:px-6"
 >
   <div class="flex items-center gap-2">
+    <!-- Mobile hamburger — only visible <lg, where the Sidebar rail is hidden. -->
+    <MobileNav {user} />
     <!-- Logo: simple geometric mark. Replace with a designed SVG later. -->
     <svg
       viewBox="0 0 24 24"
