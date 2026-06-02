@@ -24,9 +24,9 @@ Three behaviours are foundational and must be tested:
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import json
+import os
 import sqlite3
 from pathlib import Path
 
@@ -274,8 +274,16 @@ async def test_run_self_update_aborts_on_manifest_mismatch(
     terminal state proves the abort happened; the absence of a release dir
     under tmp_path proves no unpack occurred.
     """
+    from app.jobs import selfupdate_functions
     from app.jobs.selfupdate_functions import run_self_update
     from app.models import Job
+    from app.selfupdate import service
+
+    # Sandbox the worker job's filesystem effects under tmp_path so the test
+    # never touches /var/lib/proxmox-gui or /opt/proxmox-gui.
+    sandbox_staging = tmp_path / "staging"
+    sandbox_staging.mkdir()
+    monkeypatch.setattr(selfupdate_functions, "STAGING_DIR", str(sandbox_staging))
 
     # Seed a pending self-update job row.
     async with session_factory() as db:
@@ -293,17 +301,13 @@ async def test_run_self_update_aborts_on_manifest_mismatch(
         await db.refresh(job)
         job_id = job.id
 
-    # Monkeypatch the manifest fetcher + the tarball downloader to return
-    # something whose SHA-256 we control. The manifest declares a digest
-    # the tarball does NOT match → verify_sha256 returns False → the job
-    # aborts.
-    from app.selfupdate import service
-
-    fake_tarball = tmp_path / "fake.tar.gz"
-    fake_tarball.write_bytes(b"genuine release body")
+    # Manifest declares a digest the tarball does NOT match → verify_sha256
+    # returns False → the job aborts BEFORE _locate_update_sh or any
+    # systemctl call.
+    fake_tarball_body = b"genuine release body"
     wrong_digest = "0" * 64
 
-    async def fake_fetch_manifest(version):
+    async def fake_fetch_manifest(version, **kwargs):
         return {
             "version": version or "v0.0.0",
             "tarball_url": "https://example.invalid/fake.tar.gz",
@@ -311,13 +315,21 @@ async def test_run_self_update_aborts_on_manifest_mismatch(
         }
 
     async def fake_download(url, dst):
-        # Write fake content unrelated to the declared digest.
-        Path(dst).write_bytes(fake_tarball.read_bytes())
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        Path(dst).write_bytes(fake_tarball_body)
 
-    monkeypatch.setattr(
-        service, "fetch_release_manifest", fake_fetch_manifest
-    )
+    # Stub the rollback systemctl path so the test does not depend on `sudo`
+    # being installed; the rollback writes whatever we return into the
+    # friendly_error and the test only asserts on terminal state + the
+    # original error message.
+    async def fake_systemctl_restart(unit):
+        return 0, ""
+
+    monkeypatch.setattr(service, "fetch_release_manifest", fake_fetch_manifest)
     monkeypatch.setattr(service, "download_tarball", fake_download)
+    monkeypatch.setattr(
+        selfupdate_functions, "_systemctl_restart", fake_systemctl_restart
+    )
 
     ctx = {"sessionmaker": session_factory, "redis": None}
     await run_self_update(ctx, job_id)
@@ -325,11 +337,41 @@ async def test_run_self_update_aborts_on_manifest_mismatch(
     async with session_factory() as db:
         final = await db.get(Job, job_id)
         assert final is not None
-        # Either failed or needs_review — never succeeded.
+        # Never succeeded.
         assert final.state in {"failed", "needs_review"}, final.state
-        assert (final.friendly_error or final.error or "").lower().find(
-            "manifest"
-        ) >= 0 or (final.error or "").lower().find("sha") >= 0
+        # The original error (the manifest mismatch) MUST be on the row,
+        # not just the rollback log.
+        original_error = (final.error or "").lower()
+        assert "manifest" in original_error or "sha" in original_error, (
+            f"expected manifest/sha error, got: {final.error!r}"
+        )
+
+
+@pytest.mark.asyncio
+async def test_run_self_update_assert_inside_releases_blocks_traversal(
+    tmp_path, monkeypatch,
+):
+    """The symlink-swap guard refuses targets outside /opt/proxmox-gui/releases.
+
+    Pitfall 7 / Threat T-05-04-03 — a traversal-laced manifest must not be
+    able to point ``current`` at /etc/proxmox-gui (where the master key lives).
+    """
+    from app.jobs import selfupdate_functions
+    from app.jobs.selfupdate_functions import _assert_inside_releases
+
+    # Point the RELEASES_DIR at a sandbox; then prove the guard rejects an
+    # absolute path outside it.
+    sandbox = tmp_path / "releases"
+    sandbox.mkdir()
+    monkeypatch.setattr(selfupdate_functions, "RELEASES_DIR", str(sandbox))
+
+    # Inside the sandbox = ok.
+    (sandbox / "v1").mkdir()
+    _assert_inside_releases(str(sandbox / "v1"))  # must not raise
+
+    # Outside the sandbox = guard fires.
+    with pytest.raises(RuntimeError, match="outside"):
+        _assert_inside_releases("/etc/proxmox-gui")
 
 
 # ---------------------------------------------------------------------------
