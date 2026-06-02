@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_plan: 5
+current_plan: 7
 status: executing
-stopped_at: Phase 05 — Wave 2 complete (05-03, 05-04); Wave 3 next (05-05 mobile/a11y, 05-06 frontend)
-last_updated: "2026-06-02T10:50:00.000Z"
+stopped_at: Phase 05 — Wave 3 done (05-05 code-complete, 05-06 done); only 05-07 operator UAT (human) + 05-05 manual a11y checkpoint remain
+last_updated: "2026-06-02T11:30:00.000Z"
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 48
-  completed_plans: 45
-  percent: 94
+  completed_plans: 46
+  percent: 96
 ---
 
 # STATE: Proxmox Self-Service GUI
@@ -28,15 +28,16 @@ progress:
 
 ## Current Position
 
-Phase: 05 (polish-operational-hardening) — EXECUTING
-Plan: Wave 3 of 4 — 05-05 code-complete (manual a11y checkpoint pending); 05-06 next
-Resume file: .planning/phases/05-polish-operational-hardening/05-06-PLAN.md
+Phase: 05 (polish-operational-hardening) — EXECUTING (code complete)
+Plan: Wave 4 — only 05-07 operator UAT (human, live LXC) remains
+Resume file: .planning/phases/05-polish-operational-hardening/05-07-PLAN.md
 
 - **Milestone:** v1
 - **Phase:** 4 complete → Phase 5 executing.
 - **Plan:** Phase 05 planned (commit 0ea490c). 7 plans across 4 waves — research (7ced6f1) + pattern map + plan-checker VERIFICATION PASSED. Wave 1: 05-01 settings+idle backend, 05-02 consolidated carryover (D-19). Wave 2: 05-03 audit retention, 05-04 self-update. Wave 3: 05-05 mobile/a11y, 05-06 idle/settings/self-update frontend. Wave 4: 05-07 operator UAT.
-- **Status:** Executing Phase 05 — Wave 1 done (05-01, 05-02), Wave 2 done (05-03 audit retention, 05-04 self-update — both backend, full suite 594 green); Wave 3 next (05-05 mobile/a11y + 05-06 frontend — both frontend).
-- **Progress:** [█████████▒] 94% (45/48 plans; Phases 1–4 done, Phase 5 = 4/7).
+- **Status:** Phase 05 CODE-COMPLETE. Waves 1–3 done: 05-01/02 (settings+idle backend, carryover), 05-03/04 (audit retention, self-update — backend), 05-05 (mobile/a11y — code, manual a11y checkpoint pending), 05-06 (idle UX + admin settings + self-update UI + audit archives + SSH-trust — frontend+backend). Full suites green: 598 backend, 382 frontend, svelte-check 0/0.
+- **Progress:** [█████████▉] 96% (46/48 plans; Phase 5 = 6/7, only 05-07 UAT left).
+- **Two human gates remain (bundle for the operator):** (1) 05-05 Task 3 manual a11y audit (keyboard / screen-reader / contrast); (2) 05-07 operator end-to-end UAT on the live LXC (closes UAT-1c). Both need a person at a browser/LXC — they are the only things between here and milestone-complete.
 - **Carryover note:** Phase-1 carryover (ME-01..05, LO-01..04, IN-01..03, ssh-rsa, COOKIE_SECURE, TLS pinning, CSP) was consolidated into 05-02 (complete); scheduled health probe into 05-03 (complete). Verify 05-02 coverage during any carryover triage — it is NOT a separate unplanned block.
 
 ## Phases at a Glance

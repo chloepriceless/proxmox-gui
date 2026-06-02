@@ -133,7 +133,7 @@ Plans:
 - [x] 05-03-PLAN.md — Audit retention cron + CSV.gz archive + download routes + scheduled cluster health probe (AUDIT-06) *(completed 2026-05-19, 580 backend tests green; SUMMARY: .planning/phases/05-polish-operational-hardening/05-03-SUMMARY.md)*
 - [x] 05-04-PLAN.md — Self-update worker job (manifest verify, WAL-safe snapshot, auto-rollback) + install.sh --update + releases/current layout (DEPLOY-04) *(completed 2026-06-02, 594 backend tests green; SUMMARY: .planning/phases/05-polish-operational-hardening/05-04-SUMMARY.md)*
 - [~] 05-05-PLAN.md — Mobile reflow (hamburger drawer, inventory card stack, console scale, wizard gate) + axe-core a11y audit (UI-03) *(code complete 2026-06-02 — svelte-check 0 err, 382 frontend tests green incl. axe audit, prod build staged; Task 3 manual a11y checkpoint pending operator, bundled with 05-07; SUMMARY: .planning/phases/05-polish-operational-hardening/05-05-SUMMARY.md)*
-- [ ] 05-06-PLAN.md — Idle re-auth UX + admin Settings page + self-update UI + audit-archive listing + community-script SSH-trust UI (AUTH-06, AUDIT-06, DEPLOY-04)
+- [x] 05-06-PLAN.md — Idle re-auth UX + admin Settings page + self-update UI + audit-archive listing + community-script SSH-trust UI (AUTH-06, AUDIT-06, DEPLOY-04) *(completed 2026-06-02 — svelte-check 0/0, 382 frontend + 598 backend tests green, prod build staged; SUMMARY: .planning/phases/05-polish-operational-hardening/05-06-SUMMARY.md)*
 - [ ] 05-07-PLAN.md — Operator end-to-end UAT against the live LXC; closes UAT-1c (all 4 requirements)
 
 **Plan waves**: W1 {05-01, 05-02}, W2 {05-03, 05-04}, W3 {05-05, 05-06}, W4 {05-07}
@@ -170,7 +170,7 @@ Plans:
 | 2. Multi-Cluster Inventory, Quotas & Audit | 7/7 | Complete | 2026-05-16 |
 | 3. Job Queue & Lifecycle | 7/7 | Complete | 2026-05-16 |
 | 4. Provisioning, Networking & Console | 17/17 | Complete | 2026-05-19 |
-| 5. Polish & Operational Hardening | 4/7 | Executing | - |
+| 5. Polish & Operational Hardening | 6/7 | Executing (05-07 UAT pending) | - |
 
 ## Cross-Cutting Concerns
 
