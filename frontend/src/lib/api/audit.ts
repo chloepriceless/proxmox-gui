@@ -33,6 +33,30 @@ export async function list(
   return apiJson<AuditPage>(`/audit/${tail}`, withFetch(opts, { method: 'GET' }));
 }
 
+// ---------------------------------------------------------------------------
+// Plan 05-06 additions — audit-archive listing + download (AUDIT-06 / D-08)
+// ---------------------------------------------------------------------------
+
+/** One rolled-off archive file from GET /api/v1/audit/archives. */
+export interface AuditArchive {
+  name: string;
+  size_bytes: number;
+  ctime: number;
+}
+
+/** GET /api/v1/audit/archives — the .csv.gz retention archives (admin-gated). */
+export async function listArchives(opts?: MaybeFetch): Promise<AuditArchive[]> {
+  return apiJson<AuditArchive[]>('/audit/archives', withFetch(opts, { method: 'GET' }));
+}
+
+/**
+ * The download URL for one archive (GET /api/v1/audit/archives/{name}, served
+ * as an attachment). Used as a plain <a href> so the browser streams the file.
+ */
+export function archiveDownloadUrl(name: string): string {
+  return `/api/v1/audit/archives/${encodeURIComponent(name)}`;
+}
+
 export async function exportCsv(
   args: { filters?: AuditFilterParams } = {},
   opts?: MaybeFetch,

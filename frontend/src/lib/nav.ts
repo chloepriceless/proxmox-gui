@@ -14,6 +14,7 @@ import ExternalLink from '@lucide/svelte/icons/external-link';
 import Users from '@lucide/svelte/icons/users';
 import UsersRound from '@lucide/svelte/icons/users-round';
 import Server from '@lucide/svelte/icons/server';
+import Settings from '@lucide/svelte/icons/settings';
 import ListChecks from '@lucide/svelte/icons/list-checks';
 import History from '@lucide/svelte/icons/history';
 import CalendarClock from '@lucide/svelte/icons/calendar-clock';
@@ -40,7 +41,8 @@ export const accountItems: NavItem[] = [
 export const adminItems: NavItem[] = [
   { href: '/admin/users', label: 'Users', icon: Users },
   { href: '/admin/teams', label: 'Teams', icon: UsersRound },
-  { href: '/admin/clusters', label: 'Clusters', icon: Server }
+  { href: '/admin/clusters', label: 'Clusters', icon: Server },
+  { href: '/admin/settings', label: 'Settings', icon: Settings }
 ];
 
 export const docsItem: NavItem = {

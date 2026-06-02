@@ -10,11 +10,50 @@
   import FilterChip from '$lib/components/inventory/FilterChip.svelte';
   import AuditTable from '$lib/components/audit/AuditTable.svelte';
   import CsvExportButton from '$lib/components/audit/CsvExportButton.svelte';
+  import { onMount } from 'svelte';
+  import { listArchives, archiveDownloadUrl, type AuditArchive } from '$lib/api/audit';
   import type { PageData } from './$types';
 
   let { data }: { data: PageData } = $props();
   const filters = $derived(data.filters);
   const isAdmin = $derived(!!data.user?.is_admin);
+
+  // ---- Audit archives (AUDIT-06 / D-08) — admin-only retention archive list ----
+  let archives = $state<AuditArchive[]>([]);
+  let archivesLoaded = $state(false);
+  let archivesError = $state(false);
+
+  const totalArchiveBytes = $derived(
+    archives.reduce((sum, a) => sum + (a.size_bytes ?? 0), 0)
+  );
+
+  function formatBytes(n: number): string {
+    if (n < 1024) return `${n} B`;
+    const units = ['KB', 'MB', 'GB', 'TB'];
+    let v = n / 1024;
+    let i = 0;
+    while (v >= 1024 && i < units.length - 1) {
+      v /= 1024;
+      i++;
+    }
+    return `${v.toFixed(1)} ${units[i]}`;
+  }
+
+  function formatArchiveDate(ctime: number): string {
+    // ctime is epoch seconds from the backend.
+    return new Date(ctime * 1000).toLocaleString();
+  }
+
+  onMount(async () => {
+    if (!isAdmin) return;
+    try {
+      archives = await listArchives();
+    } catch {
+      archivesError = true;
+    } finally {
+      archivesLoaded = true;
+    }
+  });
 
   function setParam(k: string, v: string | null) {
     const u = new URL($pageStore.url);
@@ -185,3 +224,61 @@
   onPageChange={changePage}
   error={data.loadError ? "Couldn't load audit log." : null}
 />
+
+<!-- Archives (AUDIT-06 / D-08) — admin-only list of nightly retention archives.
+     Entries older than the configured retention window are rolled into these
+     compressed .csv.gz files; each is downloadable. -->
+{#if isAdmin}
+  <section class="mt-10">
+    <div class="mb-3 flex items-center justify-between">
+      <div>
+        <h2 class="text-[18px] font-semibold tracking-tight">Audit archives</h2>
+        <p class="text-muted-foreground text-[13px]">
+          Compressed exports of entries older than the retention window.
+          {#if archives.length > 0}
+            <span class="tabular-nums">{archives.length} files · {formatBytes(totalArchiveBytes)} total.</span>
+          {/if}
+        </p>
+      </div>
+    </div>
+
+    {#if archivesError}
+      <p class="text-muted-foreground text-[14px]">Couldn't load archives.</p>
+    {:else if !archivesLoaded}
+      <p class="text-muted-foreground text-[14px]">Loading archives…</p>
+    {:else if archives.length === 0}
+      <p class="text-muted-foreground text-[14px]">No archives yet.</p>
+    {:else}
+      <div class="rounded-md border border-border">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="border-b border-border text-left text-muted-foreground">
+              <th scope="col" class="px-4 py-2 font-medium">File</th>
+              <th scope="col" class="px-4 py-2 font-medium">Size</th>
+              <th scope="col" class="px-4 py-2 font-medium">Created</th>
+              <th scope="col" class="px-4 py-2"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each archives as a (a.name)}
+              <tr class="border-b border-border last:border-0">
+                <td class="px-4 py-2 font-mono text-[13px]">{a.name}</td>
+                <td class="px-4 py-2 tabular-nums">{formatBytes(a.size_bytes)}</td>
+                <td class="px-4 py-2 text-muted-foreground">{formatArchiveDate(a.ctime)}</td>
+                <td class="px-4 py-2 text-right">
+                  <a
+                    href={archiveDownloadUrl(a.name)}
+                    class="text-primary text-[13px] underline-offset-4 hover:underline"
+                    download
+                  >
+                    Download
+                  </a>
+                </td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+    {/if}
+  </section>
+{/if}
