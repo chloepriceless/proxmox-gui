@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Proxmox Self-Service GUI — multi-tenant, multi-cluster Proxmox VE portal."
 requires-python = ">=3.12"
 authors = [
-    { name = "Proxmox Self-Service GUI Contributors" },
+    { name = "Christin von Perbandt" },
 ]
 license = { text = "MIT" }
 dependencies = [

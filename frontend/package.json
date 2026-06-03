@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "license": "MIT",
+  "author": "Christin von Perbandt",
   "type": "module",
   "scripts": {
     "dev": "vite dev",

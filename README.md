@@ -168,7 +168,7 @@ proxmox-gui/
 
 ## License
 
-[MIT](./LICENSE) — © 2026 Chrissi von Perbandt.
+[MIT](./LICENSE) — © 2026 Christin von Perbandt.
 
 ## Contributing / Roadmap
 
