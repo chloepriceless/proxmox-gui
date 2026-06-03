@@ -8,6 +8,13 @@ power, snapshot, backup, resize, clone, migrate), REST API + UI, embedded
 noVNC, SDN networking, community-scripts templates. Ships as a single
 LXC installed via a one-line helper-script.
 
+![Proxmox Self-Service GUI — sign-in](./docs/screenshot.png)
+
+> Screenshot: the sign-in screen of a live deployment (dark theme). The
+> authenticated views — cross-cluster inventory, VM/LXC detail, the Tasks
+> drawer, and the provisioning wizards — are described under
+> [What works today](#what-works-today).
+
 ## Status
 
 **Phases 1–4 complete; Phase 5 code-complete (6/7) — operator UAT pending** —
@@ -161,9 +168,7 @@ proxmox-gui/
 
 ## License
 
-License: TBD — choice between AGPL-3.0 and MIT is open until first
-public release. Until a `LICENSE` file lands, treat this code as "all
-rights reserved" by the project authors.
+[MIT](./LICENSE) — © 2026 Chrissi von Perbandt.
 
 ## Contributing / Roadmap
 
