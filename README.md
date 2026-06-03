@@ -10,34 +10,54 @@ LXC installed via a one-line helper-script.
 
 ## Status
 
-**Phase 2 of 5 complete (smoke-test pending)** — see [`.planning/STATE.md`](./.planning/STATE.md).
+**Phases 1–4 complete; Phase 5 code-complete (6/7) — operator UAT pending** —
+see [`.planning/STATE.md`](./.planning/STATE.md).
 
-| Phase | Name                                          | Status        |
-|-------|-----------------------------------------------|---------------|
-| 1     | Foundation                                    | Complete      |
-| 2     | Multi-Cluster Inventory, Quotas & Audit       | Smoke pending |
-| 3     | Job Queue & Lifecycle                         | Planned       |
-| 4     | Provisioning, Networking & Console            | Planned       |
-| 5     | Polish & Operational Hardening                | Planned       |
+| Phase | Name                                          | Status                         |
+|-------|-----------------------------------------------|--------------------------------|
+| 1     | Foundation                                    | ✅ Complete                    |
+| 2     | Multi-Cluster Inventory, Quotas & Audit       | ✅ Complete                    |
+| 3     | Job Queue & Lifecycle                         | ✅ Complete                    |
+| 4     | Provisioning, Networking & Console            | ✅ Complete (noVNC live-tested)|
+| 5     | Polish & Operational Hardening                | ◆ Code-complete (6/7; UAT pending) |
+
+Test status: **598 backend tests + 382 frontend tests green**, `svelte-check`
+clean. The remaining Phase-5 items are two human gates — an operator
+end-to-end UAT on the live LXC and a manual accessibility audit (the automated
+axe-core half passes).
 
 ### What works today
 
 - One-line installer creates an unprivileged LXC on a Proxmox VE 8.x host
 - First-run setup wizard: admin account + first cluster registration
 - Account: profile, password change, SSH keys, Personal Access Tokens
-- Admin: user CRUD, cluster CRUD with PVE-side pool/user/token bootstrap
-- Inventory **read-only**: cross-cluster list, VM/LXC detail with RRD sparklines, tags + notes
-- Per-team quotas with admin admin-side editor + admission preview
-- Audit log with CSV export (RFC 4180 + BOM + formula-injection safe)
+- Admin: user CRUD, cluster CRUD with PVE-side pool/user/token bootstrap, **Settings page**
+- Inventory: cross-cluster list, VM/LXC detail with RRD sparklines, tags + notes, filters
+- **Full lifecycle** (durable arq job queue + UPID polling): power, snapshot,
+  backup (+ scheduled retention), resize, clone, migrate — surfaced live in a
+  Tasks drawer over WebSocket
+- **Provisioning wizards**: LXC + VM (multiple source paths), Cloud-Init editor,
+  SDN network picker, node-fit hint, quota admission
+- **Community-scripts** templates run via `pct exec` inside the new container
+  (commit-pinned, attribution surfaced), gated by an SSH-trust preflight
+- **Embedded noVNC console** (GUI-origin relay, vncticket-authenticated)
+- Per-team quotas with admin-side editor + admission preview
+- Audit log with CSV export (RFC 4180 + BOM + formula-injection safe) +
+  nightly retention rotation into downloadable `.csv.gz` archives
+- **Idle session timeout**: 2-min countdown toast + in-place re-auth modal
+  (preserves route/state); server-authoritative
+- **In-app self-update** (DEPLOY-04): admin-triggered, SHA-256-verified release,
+  WAL-safe DB snapshot, atomic symlink swap, auto-rollback on a failed health
+  check — also re-runnable via `install.sh --update`
+- **Mobile reflow**: hamburger nav drawer, inventory card stack, console scaling
+- TLS fingerprint pinning for self-signed PVE; Caddy CSP; Redis-backed rate limiter
 - Multi-tenant via Proxmox pools + privilege-separated per-tenant tokens
 
-### Not yet built (next phases)
+### Remaining before v1.0 ships
 
-- VM/LXC **provisioning** (Phase 4)
-- Power actions, snapshots, backups, resize, clone, migrate (Phase 3)
-- Embedded noVNC console (Phase 4)
-- Cloud-Init editor, SDN picker, community-scripts templates (Phase 4)
-- Mobile polish, self-update, idle timeout (Phase 5)
+- Operator end-to-end UAT against the live LXC (Phase 5, plan 05-07)
+- Manual accessibility audit — keyboard / screen-reader / contrast (the
+  automated axe-core audit already passes)
 
 ## Install (one-liner)
 
@@ -80,13 +100,20 @@ pip install -e .[dev]
 uvicorn app.main:app --reload
 ```
 
-**Frontend** (SvelteKit 2 + Svelte 5 + Tailwind v4):
+**Frontend** (SvelteKit 2 + Svelte 5 + Tailwind v4, **pnpm**):
 
 ```bash
 cd frontend
-npm install
-npm run dev
+pnpm install
+pnpm dev           # dev server (proxies /api → backend on :8000)
+pnpm test -- --run # vitest suite
+pnpm exec svelte-check --threshold error
+pnpm run build     # production build (adapter-node) — commit the build/ artifact
 ```
+
+> Note: `frontend/build/` is a committed artifact. `pnpm run build` wipes the
+> git-tracked `frontend/build/node_modules`; restore it with
+> `git checkout -- frontend/build/node_modules` before `git add -fA frontend/build`.
 
 Per-subsystem READMEs (backend, frontend, deploy) drill into specifics.
 
@@ -106,8 +133,12 @@ proxmox-gui/
 │   │   ├── main.py
 │   │   ├── config.py
 │   │   ├── core/             # cipher, jwt, passwords, csrf, db
-│   │   ├── auth/             # /api/v1/auth/*
+│   │   ├── auth/             # /api/v1/auth/* (login, refresh, keepalive)
 │   │   ├── users/, teams/, clusters/, ssh_keys/, pats/, setup/
+│   │   ├── clusters/         # connector (circuit breaker), registry, probe
+│   │   ├── jobs/             # arq worker, UPID poller, lifecycle + self-update jobs
+│   │   ├── lifecycle/, provisioning/, networks/, iso/, catalog/, console/
+│   │   ├── quotas/, audit/, notifications/, selfupdate/
 │   │   ├── models/           # SQLAlchemy ORM
 │   │   └── proxmox/          # proxmoxer wrapper
 │   └── tests/
@@ -120,9 +151,10 @@ proxmox-gui/
 │       └── lib/
 │
 └── deploy/                   # helper-script + systemd + Caddy
-    ├── install.sh            # one-line entry (runs on PVE host)
-    ├── lxc/bootstrap.sh      # idempotent inner install
-    ├── systemd/              # proxmox-gui-api + proxmox-gui-worker units
+    ├── install.sh            # one-line entry (runs on PVE host); --update re-runs in place
+    ├── lxc/bootstrap.sh      # idempotent inner install (releases/<tag> + current symlink)
+    ├── lxc/update.sh         # shared in-LXC update routine (self-update + install.sh --update)
+    ├── systemd/              # proxmox-gui-api + -worker + -frontend units
     ├── caddy/Caddyfile.template
     └── scripts/              # gen-master-key, gen-jwt-secret
 ```
