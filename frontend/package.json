@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "license": "MIT",
-  "author": "Christin von Perbandt",
+  "author": "Bikini Bottom Capital GmbH",
   "type": "module",
   "scripts": {
     "dev": "vite dev",

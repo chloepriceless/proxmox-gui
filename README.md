@@ -168,7 +168,7 @@ proxmox-gui/
 
 ## License
 
-[MIT](./LICENSE) — © 2026 Christin von Perbandt.
+[MIT](./LICENSE) — © 2026 Bikini Bottom Capital GmbH.
 
 ## Contributing / Roadmap
 
