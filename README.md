@@ -8,12 +8,25 @@ power, snapshot, backup, resize, clone, migrate), REST API + UI, embedded
 noVNC, SDN networking, community-scripts templates. Ships as a single
 LXC installed via a one-line helper-script.
 
+![Cross-cluster inventory — VMs and LXCs at a glance](./docs/screenshot-inventory.png)
+
+> Cross-cluster inventory: every VM and LXC the signed-in team can reach,
+> with live status, tags, and per-node placement.
+
+![VM detail — specs, live metrics, lifecycle actions](./docs/screenshot-vm-detail.png)
+
+> VM/LXC detail: specs, network, last-hour RRD metrics, tags, notes, and the
+> full lifecycle action bar (start/stop/reboot/shutdown, snapshots, backups,
+> console).
+
 ![Proxmox Self-Service GUI — sign-in](./docs/screenshot.png)
 
-> Screenshot: the sign-in screen of a live deployment (dark theme). The
-> authenticated views — cross-cluster inventory, VM/LXC detail, the Tasks
-> drawer, and the provisioning wizards — are described under
-> [What works today](#what-works-today).
+> The sign-in screen (dark theme).
+>
+> The inventory and detail shots above are rendered from the **demo harness**
+> in [`scripts/demo-screenshots/`](./scripts/demo-screenshots/) — the real
+> backend and UI driven against a fictional, seeded inventory, so no real host,
+> VM, or address appears here. The sign-in shot is from a live deployment.
 
 ## Status
 
