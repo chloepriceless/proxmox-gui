@@ -1,6 +1,6 @@
 [project]
 name = "proxmox-gui"
-version = "0.1.0"
+version = "0.6.0"
 description = "Proxmox Self-Service GUI — multi-tenant, multi-cluster Proxmox VE portal."
 requires-python = ">=3.12"
 authors = [
@@ -34,6 +34,13 @@ dependencies = [
     # `uvicorn[standard]`; this is an explicit contractual pin (spike 04-03
     # §3), not a new install. Phase 4 introduces no new backend libraries.
     "websockets==16.0",
+]
+
+[project.optional-dependencies]
+# MCP bridge (T-0032): `python -m app.mcp`. Optional so the core API never
+# imports it. Install with `pip install -e .[mcp]`. httpx is already a core dep.
+mcp = [
+    "mcp==1.27.2",
 ]
 
 [dependency-groups]

@@ -72,6 +72,10 @@ axe-core half passes).
 - **Mobile reflow**: hamburger nav drawer, inventory card stack, console scaling
 - TLS fingerprint pinning for self-signed PVE; Caddy CSP; Redis-backed rate limiter
 - Multi-tenant via Proxmox pools + privilege-separated per-tenant tokens
+- **MCP server** (`python -m app.mcp`): a stdio Model-Context-Protocol bridge so
+  an AI agent can create / list / start / stop / delete VMs + LXCs — talks to the
+  REST API with a PAT, inheriting all RBAC, quota, audit and job-queue gates
+  ([`docs/MCP.md`](./docs/MCP.md))
 
 ### Remaining before v1.0 ships
 
@@ -198,4 +202,5 @@ checked, executed, and verified sequentially. See:
 - [`.planning/research/STACK.md`](./.planning/research/STACK.md) — stack rationale
 - [`.planning/research/ARCHITECTURE.md`](./.planning/research/ARCHITECTURE.md) — modular monolith, per-cluster connector, URL-shape decisions
 - [`.planning/research/PITFALLS.md`](./.planning/research/PITFALLS.md) — the 25 Proxmox traps that bit prior art
+- [`docs/MCP.md`](./docs/MCP.md) — the stdio MCP server (agent-driven VM/LXC lifecycle)
 - [`CLAUDE.md`](./CLAUDE.md) — AI-assistant guardrails (also useful as project orientation)
