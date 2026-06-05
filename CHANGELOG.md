@@ -4,6 +4,17 @@ All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this
 project uses [Semantic Versioning](https://semver.org/) (pre-1.0).
 
+## [0.6.2] — 2026-06-05
+
+### Fixed
+- **Production build now actually carries the D-13 fix.** `0.6.1` bumped the
+  `+page.svelte` source for the backup-storage empty-state/load-error handling
+  but committed a *stale* `frontend/build/` artifact (the frontend build was
+  last regenerated in the 05-06 build, before D-13). A deploy from the `0.6.1`
+  tree would have shipped the UI *without* the fix. `0.6.2` regenerates and
+  commits the production build so the deployed artifact matches the source.
+  (No source-behaviour change beyond `0.6.1`; build-integrity fix.)
+
 ## [0.6.1] — 2026-06-05
 
 ### Fixed
