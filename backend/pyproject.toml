@@ -1,6 +1,6 @@
 [project]
 name = "proxmox-gui"
-version = "0.6.0"
+version = "0.6.1"
 description = "Proxmox Self-Service GUI — multi-tenant, multi-cluster Proxmox VE portal."
 requires-python = ">=3.12"
 authors = [

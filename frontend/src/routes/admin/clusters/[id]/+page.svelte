@@ -59,6 +59,12 @@
     untrack(() => data.cluster.backup_storage ?? NONE_STORAGE)
   );
   let backupStorages = $state<{ storage: string; type: string | null }[]>([]);
+  // Distinguish "still loading" from "loaded, but none exist" from "load
+  // failed" — otherwise an empty Select looks identical whether the cluster
+  // has no backup-capable storage or the list call errored (D-13: a swallowed
+  // load error is exactly the opaque failure this project forbids).
+  let backupStoragesLoaded = $state(false);
+  let backupStoragesError = $state<string | null>(null);
 
   $effect(() => {
     // Enumerate the cluster's content=backup storages for the Select.
@@ -66,9 +72,16 @@
       .listBackupStorages(data.cluster.id)
       .then((rows) => {
         backupStorages = rows;
+        backupStoragesError = null;
+        backupStoragesLoaded = true;
       })
-      .catch(() => {
+      .catch((e) => {
+        // D-13 — never swallow: surface the load failure instead of showing
+        // an indistinguishable empty Select.
         backupStorages = [];
+        backupStoragesError =
+          e instanceof ApiError ? e.message : "Couldn't load this cluster's storages.";
+        backupStoragesLoaded = true;
       });
   });
 
@@ -469,6 +482,24 @@
             Choose the storage where this GUI runs backups for this cluster.
             Users select retention; they do not pick storage.
           </p>
+          {#if backupStoragesError}
+            <Alert.Root variant="destructive" aria-live="polite">
+              <AlertTriangle aria-hidden="true" />
+              <Alert.Description>
+                Couldn't load this cluster's storages: {backupStoragesError}
+              </Alert.Description>
+            </Alert.Root>
+          {:else if backupStoragesLoaded && backupStorages.length === 0}
+            <Alert.Root aria-live="polite">
+              <AlertTriangle aria-hidden="true" />
+              <Alert.Description>
+                No backup-capable storage found in this cluster. In Proxmox,
+                enable the “VZDump backup file” content type on a storage
+                (Datacenter → Storage → Edit → Content), or add a PBS / NFS /
+                Directory backup storage — then it will appear here.
+              </Alert.Description>
+            </Alert.Root>
+          {/if}
         </div>
 
         <div class="flex flex-row items-start gap-2 rounded-md border border-border p-3">

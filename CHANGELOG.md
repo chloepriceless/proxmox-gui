@@ -4,6 +4,16 @@ All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this
 project uses [Semantic Versioning](https://semver.org/) (pre-1.0).
 
+## [0.6.1] — 2026-06-05
+
+### Fixed
+- **Cluster admin → Backup storage**: the picker no longer silently swallows a
+  failed storage-list load (D-13). An empty Select now distinguishes "no
+  backup-capable storage exists in this cluster" — with an actionable hint to
+  enable the `VZDump backup file` content type (or add a PBS/NFS/Directory
+  backup storage) in Proxmox — from "couldn't load the storage list", which is
+  now surfaced verbatim instead of looking identical to an empty cluster.
+
 ## [0.6.0] — 2026-06-04
 
 First tagged release. The version is a deliberate, honest catch-up: the project
