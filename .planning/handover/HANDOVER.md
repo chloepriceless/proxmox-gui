@@ -1,35 +1,35 @@
-# HANDOVER — Proxmox-GUI Head
+# HANDOVER — Proxmox-GUI Head ("Schraubi")
 
-**Updated:** 2026-06-04 pm · **Branch:** `master` @ `420f63e` (**v0.6.0**, pushed, clean tree).
-**Operator:** Christin (von Perbandt) / company **Bikini Bottom Capital GmbH**. Hub peer = `agent-master-hub`.
+**Updated:** 2026-06-06 ~02:15 · **Branch:** `master` @ `4872119` (**v0.6.3**, pushed, clean tree, in sync with origin).
+**Operator:** Christin (von Perbandt) / company **Bikini Bottom Capital GmbH**. Hub peer = `agent-master-hub` (live key was `vdyofkr8`).
 
-## State: Phase 05 DEPLOYED LIVE + MCP server shipped. All assigned work delivered; 3 decisions await the Hub.
-`autonomous_open=0, blocked_open=3`. Durable detail in repo-memory **`project-open-tasks.md`**.
+## State: GUI v0.6.2 LIVE on .171; v0.6.3 committed (NOT deployed). One open item, blocked on the Hub.
+`autonomous_open=0, blocked_open=1`. Durable detail in repo-memory **`project-open-tasks.md`** (read it first).
 
-**This session delivered (all pushed):**
-1. **Screenshots** — authenticated README shots via safe demo harness (`scripts/demo-screenshots/`, commit `0836ab7`).
-2. **Phase 05 DEPLOYED to live .171** (`https://192.168.20.171/`) — flat→releases/current migration via `update.sh`, alembic 0006→0007, verified. Rollback: `/root/phase05-rollback-20260604-125005/` + `app.db.bak-phase05-*` on .171.
-3. **MCP server T-0032** — `backend/app/mcp/` (v0.6.0, commit `420f63e`), stdio↔REST bridge w/ PAT, 614 tests green, adversarial-reviewed, `docs/MCP.md`.
+### What is LIVE / shipped
+- **v0.6.2 is LIVE on `.171`** (`https://192.168.20.171/`): `/opt/proxmox-gui/current → releases/v0.6.2`, 4 services active, D-13 backup-storage empty-state/load-error fix live-served (chunk contains "No backup-capable storage found"). Rollback target kept: `releases/phase05-3f5d711`.
+- **v0.6.3 committed + tagged + pushed, but NOT yet deployed** (`4872119`). Fix: `/api/v1/health` + FastAPI/OpenAPI `version` now read `app.__version__` via `importlib.metadata` instead of hardcoded `0.1.0`. Rides along with the **next** prod-deploy (no standalone prod-touch for cosmetics). Until then live `.171` still reports `0.1.0` on `/api/v1/health` (old code). 623/623 backend tests green.
+- Earlier delivered (all live/handed off): Phase 05, MCP server (T-0032, `docs/MCP.md`), README+MIT relicense, authenticated screenshots, fleet-infra tasks T-0053 (decap+B1) and T-0067 (persona-cwd separation) — both confirmed DONE by the Hub.
 
-### 3 decisions awaiting the Hub (the only open items)
-1. **T-0044 Phase A** spawner rollout — scope plan at `/home/dev/Report/2026-06-04_peer-spawner-phaseA-scope.md`; needs: pilot host (rec. LXC147), host-assignment policy, registry-decoupling (repo in /spawn payload). On go → build A0+A1.
-2. **Self-update-button fix direction** — FOUND a real DEPLOY-04 bug: the unprivileged `proxmox-gui` worker runs `update.sh` without sudo, but `update.sh` writes `/etc/systemd/system` + `daemon-reload` (needs root); `sudo` isn't even installed on the LXC → the self-update button would abort. GUI/code features all work; only the self-update button is affected. Rec: split update.sh (worker does /opt part, root part via scoped sudoers/helper). Security-sensitive → flagged, not self-fixed on live.
-3. **MCP scope detail** — add read-only infra-discovery tools (nodes/storages/templates) so `create_*` is usable unaided? (read-only, additive; would add on go.)
+### THE ONE OPEN ITEM (blocked on Hub) → resume here
+**T-0061 — agent-master dashboard Linux-fixes: WIRING/BUILD awaits Hub GO + 1 scope decision.**
+- The **audit is DONE** (read-only, delivered): `/home/dev/Report/2026-06-05_T-0061-dashboard-audit.md`. Findings: UI↔endpoint 51/51 match (0 orphans); exactly **3 Linux breakages**:
+  1. 🔴 `/api/focus` ("↗ Terminal" button) **CRASHES the Hub server on Linux** — `focusAgent` (server.mjs:3161) calls osascript ungated; `runOsa` (server.mjs:1671) has no `child.on("error")` handler → ENOENT = uncaught = `node server.mjs` dies. **NEVER provoke `/api/focus` against the live Hub.**
+  2. `/api/update/apply` → `update-apply.mjs` `launchctl kickstart` ungated → self-update restart broken on Linux. Fix: Linux branch via `/home/dev/.local/bin/agent-master restart`.
+  3. minor: `server.mjs:2743` `open -a Terminal` (try/catch) → IS_DARWIN-guard.
+- **Blocked on:** (a) Hub GO to build (it's a process-critical mutation of the live Hub server — R22), and (b) 1 scope decision: `/api/focus` on Linux → **graceful no-op (my recommendation)** vs. real tmux select-window focus.
+- **On GO:** deterministic patcher (focusAgent IS_DARWIN-guard + runOsa 'error'-handler + update-apply launchctl→agent-master-restart branch) → `node --check` → Codex-refute (R22) → hand to Hub for gate + controlled restart-deploy (backup → node --check → `agent-master restart` → verify /api/health 200 + orchestrator identity stable + focus returns graceful JSON not crash). Don't touch decapitation guards.
+- **Hub restart mechanism (Linux):** `/home/dev/.local/bin/agent-master {start|stop|restart|status|logs}`.
 
-### Done (committed + pushed)
-- **Phase 05 code-complete** (Phases 1–4 already done). 05-04 self-update (DEPLOY-04), 05-05 mobile/a11y code (UI-03), 05-06 idle-UX+admin-settings+self-update-UI+audit-archives+SSH-trust (AUTH-06/AUDIT-06/DEPLOY-04). Carryover verified closed in 05-02/03/04. **598 backend + 382 frontend tests green, svelte-check 0/0.** SUMMARYs: `.planning/phases/05-polish-operational-hardening/05-0{4,5,6}-SUMMARY.md`.
-- **README** brought current + GUI sign-in screenshot (`docs/screenshot.png`, Playwright headless of live /login). 
-- **Relicensed AGPL→MIT** — holder `Bikini Bottom Capital GmbH` (verified Handelsregister/LEI). LICENSE + pyproject + package.json + README.
-- Registry self-update + activity-report backfill (4 units) done at the Hub.
-
-_(The screenshots / MCP / deploy-go items that were blocked earlier this day are now all DONE — see the State section above. The 3 remaining decisions are listed there.)_
+### Parked decision items (not mine to drive / not acute)
+- **Self-update-button direction** — real DEPLOY-04 privilege bug found; design doc `/home/dev/Report/2026-06-04_self-update-privilege-fix-DESIGN.md` (kept OUT of public repo). Operator decides direction (security-sensitive). Rec = Option A (descope in-GUI button, update from host helper which already works).
+- **MCP scope / Christin backup-error-text** — Hub confirmed NOT mine / not open.
 
 ## Resume instructions
-- After respawn: read `project-open-tasks.md` + the State section above. **No unblocked autonomous work** — all 3 remaining items need a Hub/operator decision. If an answer arrived, act on it (Phase A → build A0+A1 per the scope plan; self-update → the chosen fix direction; MCP discovery → add the read-only tools).
-- MCP tests: `cd backend && .venv/bin/python -m pytest tests/test_mcp.py -q` (23). Full suite 614. MCP run: `docs/MCP.md`.
-- Screenshot regen: `scripts/demo-screenshots/README.md`.
-- venv: `cd backend && .venv/bin/python -m pytest -q` (598). frontend: `pnpm test -- --run` (382) + `pnpm exec svelte-check --threshold error` (0/0).
-- **Frontend build trap:** `pnpm run build` wipes git-tracked `frontend/build/node_modules` → `git checkout -- frontend/build/node_modules` then `git add -fA frontend/build`.
-- Screenshot tooling: `/tmp/pwshot` (playwright 1.49 + chromium, apt deps installed). Script `/tmp/pwshot/shot.mjs <url> <out>` (NOTE: /tmp is wiped on respawn — reinstall if needed: `cd /tmp/pwshot && npm i playwright@1.49.0` + `npx playwright install chromium`).
-- Guardrail: prod-deploy to .171 ONLY after Hub check-in. Deploy procedure: memory `prod-deployment`. STATE/ROADMAP write-handlers don't parse this repo → edit directly.
-- Ledger: `POST localhost:7890/api/agent-open-tasks`. Activity reports: `POST /api/activity-reports`.
+- After respawn / "weiter": read `project-open-tasks.md` + the State above. **No unblocked autonomous work remains** — the only open item (T-0061 wiring) needs the Hub's GO + scope decision (already asked via send_message). If the GO/decision arrived → build per the "On GO" steps above. Peer messages auto-wake this session.
+- Tests: `cd backend && .venv/bin/python -m pytest -q` (**623**). frontend: `pnpm test -- --run` (382) + `pnpm exec svelte-check --threshold error` (0/0). Health test: `tests/test_health.py`.
+- **Version is now single-sourced** via `app.__version__` (`backend/app/__init__.py`, importlib.metadata). After a version bump, `pip install -e backend` to refresh the editable-install metadata (it freezes at install time; the live per-release venv reinstalls fresh so it's always correct).
+- **Frontend build trap:** `pnpm run build` wipes git-tracked `frontend/build/node_modules` → `git checkout -- frontend/build/node_modules` then `git add -fA frontend/build`. (Backend-only changes don't touch the build.)
+- **Before ANY GUI deploy:** check the last `frontend/build/` commit is AFTER the last source change (`git log -1 -- frontend/build/` vs source) — GSD frontend plans don't prod-build. Deploy verify must prove the fix in the LIVE-SERVED artifact, not just "deploy ran".
+- Guardrail: prod-deploy to `.171` ONLY after a Hub check-in. Deploy procedure: memory `prod-deployment` (SSH `-i ~/.ssh/proxmox_deploy root@192.168.20.171`, prefix remote cmds with `export PATH=/usr/sbin:/usr/bin:/sbin:/bin;`). STATE/ROADMAP write-handlers don't parse this repo → edit directly.
+- Ledger: `POST localhost:7890/api/agent-open-tasks`. Activity reports: `POST /api/activity-reports`. Hub's live receive may be flaky (T-0070) → confirm deliverables as ARTEFACTS (commit/file/tag), not just messages.
