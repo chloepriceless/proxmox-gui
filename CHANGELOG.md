@@ -4,6 +4,17 @@ All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this
 project uses [Semantic Versioning](https://semver.org/) (pre-1.0).
 
+## [0.6.3] — 2026-06-06
+
+### Fixed
+- **`/api/v1/health` now reports the real version.** The liveness probe (and
+  the FastAPI `version` / OpenAPI `info.version`) were hardcoded to `0.1.0` and
+  never tracked the version catch-up — a live `0.6.2` deploy advertised itself
+  as `0.1.0`. The version is now resolved once from the installed package
+  metadata (`app.__version__` via `importlib.metadata`), so a per-release
+  deploy reports the version it actually shipped. Added a regression test that
+  pins the probe to `app.__version__` rather than a literal.
+
 ## [0.6.2] — 2026-06-05
 
 ### Fixed

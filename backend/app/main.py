@@ -31,6 +31,7 @@ from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from app import __version__
 from app.clusters.errors import PVEAPIError, PVEAuthError, PVEUnreachable
 from app.clusters.registry import PVEConnectorRegistry
 from app.config import settings
@@ -178,7 +179,7 @@ def create_app() -> FastAPI:
     _configure_logging()
     app = FastAPI(
         title="Proxmox Self-Service GUI",
-        version="0.1.0",
+        version=__version__,
         openapi_url="/api/openapi.json",
         docs_url="/api/docs",
         redoc_url="/api/redoc",
@@ -191,7 +192,7 @@ def create_app() -> FastAPI:
     @app.get("/api/v1/health", tags=["health"], summary="Liveness probe")
     async def health() -> dict[str, str]:
         """Unauthenticated. Returns 200 if the process is up."""
-        return {"status": "ok", "version": "0.1.0"}
+        return {"status": "ok", "version": __version__}
 
     # Plan 06: PVE exception handlers — translate connector exceptions into
     # uniform HTTP responses. Service layer typically catches these locally
