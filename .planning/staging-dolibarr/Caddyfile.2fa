@@ -1,0 +1,34 @@
+{
+	# T-0183 Option A: vorgelagerte 2FA (tinyauth forward_auth) + selbstsigniertes
+	# Cert. Dolibarr 22 hat kein eingebautes 2FA (conf.php.example: braucht
+	# kostenpflichtiges Dolistore-Modul) → echte TOTP-2FA VOR der App, kostenlos.
+	admin off
+	auto_https off
+}
+
+# tinyauth forward_auth-Snippet (offizielle Caddy-Integration)
+(tinyauth) {
+	forward_auth tinyauth:3000 {
+		uri /api/auth/caddy
+		copy_headers Remote-User Remote-Name Remote-Email Remote-Groups
+	}
+}
+
+# :80 — interner Bestandspfad (LAN/WG, FW-geschützt). KEINE 2FA intern, damit
+# Christins eingespielter http://192.168.20.175-Flow unverändert bleibt.
+:80 {
+	encode zstd gzip
+	reverse_proxy dolibarr:80
+}
+
+# :443 — extern (AG via Edge-Forward 17443→443) UND intern. tinyauth-TOTP-Gate
+# VOR Dolibarr: jeder Request muss erst die 2FA-Login-Seite passieren.
+:443 {
+	tls internal
+	encode zstd gzip
+	import tinyauth
+	reverse_proxy dolibarr:80 {
+		header_up X-Forwarded-Proto https
+		header_up X-Forwarded-Host {host}
+	}
+}
