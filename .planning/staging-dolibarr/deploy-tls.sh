@@ -14,8 +14,14 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 
 # --- preflight ---
 [ -f "$APP/.env" ] || { echo "FATAL: $APP/.env fehlt (erst deploy-dolibarr.sh)"; exit 1; }
-[ -f "$APP/dns01.env" ] || { echo "FATAL: $APP/dns01.env fehlt (Netzi-Token, 600)"; exit 1; }
-grep -q '^DNS01_TOKEN=.' "$APP/dns01.env" || { echo "FATAL: DNS01_TOKEN leer in dns01.env"; exit 1; }
+[ -f "$APP/dns01.env" ] || { echo "FATAL: $APP/dns01.env fehlt (CF-Token via NetBoard, 600)"; exit 1; }
+# Kanonische Var im Caddyfile ist DNS01_TOKEN; akzeptiere auch CLOUDFLARE_API_TOKEN
+# (so legt Christin/NetBoard ihn ab) und mappe einmalig.
+if ! grep -q '^DNS01_TOKEN=.' "$APP/dns01.env"; then
+  CF=$(grep '^CLOUDFLARE_API_TOKEN=' "$APP/dns01.env" | cut -d= -f2- || true)
+  [ -n "$CF" ] || { echo "FATAL: weder DNS01_TOKEN noch CLOUDFLARE_API_TOKEN in dns01.env"; exit 1; }
+  echo "DNS01_TOKEN=$CF" >> "$APP/dns01.env"
+fi
 chmod 600 "$APP/dns01.env"
 
 # --- stage artifacts ---

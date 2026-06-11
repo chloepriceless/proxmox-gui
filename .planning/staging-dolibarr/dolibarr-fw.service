@@ -1,0 +1,20 @@
+# T-0183 — Firewall MUSS vor Docker stehen (Refute-HIGH: sonst fail-open-Fenster
+# bei jedem Backup-Reboot, in dem published Ports ungefiltert sind).
+# Install: /etc/systemd/system/dolibarr-fw.service
+# + Drop-in /etc/systemd/system/docker.service.d/10-require-fw.conf:
+#     [Unit]
+#     Wants=dolibarr-fw.service
+#     After=dolibarr-fw.service
+[Unit]
+Description=Dolibarr LXC firewall (DOCKER-USER allowlist, fail-closed)
+DefaultDependencies=no
+Before=docker.service network-pre.target
+Wants=network-pre.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/dolibarr-fw.sh
+
+[Install]
+WantedBy=multi-user.target
