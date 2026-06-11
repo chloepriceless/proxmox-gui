@@ -1,0 +1,63 @@
+# T-0183 TLS-Phase (AUTO-RENEW, Hub-Entscheid Option B 2026-06-11).
+# Env-Inputs (via /opt/dolibarr/.env + /opt/dolibarr/dns01.env):
+#   DNS_PROVIDER  — caddy-dns-Modulname (von Netzi, z.B. cloudflare)
+#   DNS01_TOKEN   — scoped DNS-01-Token (Netzi → fleet-secrets/dolibarr-dns01.env, 600)
+#   LAN_IP        — Bind-IP der LXC (192.168.20.175), fail-closed
+services:
+  mariadb:
+    image: mariadb:11
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD}
+      MARIADB_DATABASE: dolibarr
+      MARIADB_USER: dolibarr
+      MARIADB_PASSWORD: ${DOLI_DB_PASSWORD}
+    volumes: [ "mariadb_data:/var/lib/mysql" ]
+    networks: [ internal ]
+  dolibarr:
+    image: dolibarr/dolibarr:22
+    restart: unless-stopped
+    depends_on: [ mariadb ]
+    environment:
+      DOLI_DB_TYPE: mysqli
+      DOLI_DB_HOST: mariadb
+      DOLI_DB_NAME: dolibarr
+      DOLI_DB_USER: dolibarr
+      DOLI_DB_PASSWORD: ${DOLI_DB_PASSWORD}
+      DOLI_ADMIN_LOGIN: superadmin
+      DOLI_ADMIN_PASSWORD: ${DOLI_ADMIN_PASSWORD}
+      DOLI_URL_ROOT: 'https://dashboard.bikinibottom.capital'
+      DOLI_PROD: '1'
+    # KEIN ports: → Dolibarr nur intern via Caddy erreichbar (dolibarr:80)
+    volumes:
+      - "dolibarr_html:/var/www/html/custom"
+      - "dolibarr_docs:/var/www/documents"
+    networks: [ internal ]
+  caddy:
+    build:
+      context: .
+      dockerfile: Dockerfile.caddy
+      args:
+        DNS_PROVIDER: ${DNS_PROVIDER}
+    restart: unless-stopped
+    depends_on: [ dolibarr ]
+    env_file:
+      - ./dns01.env            # DNS01_TOKEN=… (Kopie von fleet-secrets, 600, NICHT committen)
+    environment:
+      DNS_PROVIDER: ${DNS_PROVIDER}
+    ports:
+      - "${LAN_IP}:80:80"      # FAIL-CLOSED: nur LAN-IP, nie 0.0.0.0
+      - "${LAN_IP}:443:443"    # FAIL-CLOSED: nur LAN-IP, nie 0.0.0.0
+    volumes:
+      - "./Caddyfile:/etc/caddy/Caddyfile:ro"
+      - "caddy_data:/data"     # persistiert Certs/ACME-Account über Restarts
+      - "caddy_config:/config"
+    networks: [ internal ]
+volumes:
+  mariadb_data: {}
+  dolibarr_html: {}
+  dolibarr_docs: {}
+  caddy_data: {}
+  caddy_config: {}
+networks:
+  internal: {}

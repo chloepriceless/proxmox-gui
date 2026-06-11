@@ -1,0 +1,26 @@
+{
+	# T-0183 AUTO-RENEW (Hub-Entscheid 2026-06-11 21:15/21:19): Caddy macht DNS-01-ACME
+	# selbst mit scoped Token — KEIN statisches Cert mehr (alte Variante: git-History).
+	admin off
+}
+
+dashboard.bikinibottom.capital, cockpit.bikinibottom.capital {
+	tls {
+		# {$VAR}-Substitution greift beim Caddyfile-Parse → ein File für alle
+		# Single-Token-Provider (cloudflare/hetzner/desec: 1 Token-Arg).
+		# Mehrfeld-Provider (netcup: customer_number/api_key/api_password,
+		# inwx: username/password) → diesen Block manuell ausschreiben.
+		dns {$DNS_PROVIDER} {$DNS01_TOKEN}
+		# Split-Horizon: interne Resolver sehen die LAN-Zone (ohne _acme-challenge)
+		# → Propagation-Check MUSS gegen externe Resolver laufen, sonst hängt ACME.
+		resolvers 1.1.1.1 9.9.9.9
+	}
+	encode zstd gzip
+	reverse_proxy dolibarr:80 {
+		header_up X-Forwarded-Proto https
+		header_up X-Forwarded-Host {host}
+	}
+}
+
+# Kein expliziter HTTP→HTTPS-Block nötig: auto_https ist aktiv (ACME-managed
+# Sites) → Caddy bedient :80 selbst mit 308-Redirect.

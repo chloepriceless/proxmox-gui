@@ -1,0 +1,9 @@
+# T-0183 — Caddy mit DNS-01-Plugin für Auto-Renew (Hub-Entscheid Option B, 2026-06-11).
+# Build-Arg DNS_PROVIDER = Modul-/Repo-Name unter github.com/caddy-dns/ (z.B. cloudflare, hetzner, desec, netcup, inwx).
+ARG CADDY_VERSION=2
+FROM caddy:${CADDY_VERSION}-builder AS builder
+ARG DNS_PROVIDER=cloudflare
+RUN xcaddy build --with github.com/caddy-dns/${DNS_PROVIDER}
+
+FROM caddy:${CADDY_VERSION}
+COPY --from=builder /usr/bin/caddy /usr/bin/caddy
