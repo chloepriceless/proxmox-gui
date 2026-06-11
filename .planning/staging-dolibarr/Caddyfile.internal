@@ -1,0 +1,28 @@
+{
+	# T-0183 Option A (Christin: „kein cloud token") — Caddy mit INTERNEM Cert
+	# (selbstsigniert via Caddy-CA). HTTPS bleibt, kein ACME/DNS/Token nötig.
+	# Upgrade-Pfad: Caddyfile (DNS-01 auto-renew) liegt daneben, falls später
+	# grünes Schloss ohne Browser-Warnung gewünscht.
+	admin off
+	auto_https off
+}
+
+# :80 — interner Bestandspfad (LAN/WG, FW-geschützt). KEIN Redirect auf :443,
+# damit Christins eingespielter http://192.168.20.175-Flow unverändert bleibt.
+:80 {
+	encode zstd gzip
+	reverse_proxy dolibarr:80
+}
+
+# :443 — HTTPS für extern (AG via Edge-Forward 7443→443) UND intern nutzbar.
+# tls internal: Caddy-eigene CA, antwortet auf beliebige SNI/IP-Zugriffe.
+:443 {
+	tls internal {
+		on_demand
+	}
+	encode zstd gzip
+	reverse_proxy dolibarr:80 {
+		header_up X-Forwarded-Proto https
+		header_up X-Forwarded-Host {host}
+	}
+}
