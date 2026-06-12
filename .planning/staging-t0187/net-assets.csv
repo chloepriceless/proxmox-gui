@@ -1,0 +1,19 @@
+# Netz-/Asset-Kontext-Tabelle (aus T-0185 Baseline-Audit) — Basis für Direction + Classification (Codex-Refute P2/P3)
+# Genutzt von der Alloy-Pipeline zur Anreicherung. „internal" = jedes hier gelistete Subnetz (NICHT nur RFC1918 generisch).
+# type: subnet | host | scanner | tor_node
+type,value,vlan,role,note
+subnet,192.168.20.0/24,native,internal_lan,Haupt-LAN (Default)
+subnet,192.168.10.0/24,3,internal_mgmt,Management
+subnet,192.168.41.0/24,4,internal_dmz,DMZ (Plex)
+subnet,192.168.30.0/24,6,internal_vpnout,VPN_Mullvad-Ausgang
+subnet,192.168.99.0/24,8,internal_noinet,No-Internet
+subnet,192.168.42.0/24,42,internal_dev,DEV-Network (Coder)
+subnet,192.168.168.0/24,20,internal_iot,SmartMeterGW
+subnet,192.168.16.0/24,wg,internal_vpn,WireGuard wgsrv2 (Remote-User)
+subnet,192.168.6.0/24,5,internal_ipv6seg,ipv6-Segment
+host,192.168.20.83,native,exposed_service,GameSrv01 (PufferPanel + Gameports — WAN-exponiert)
+host,192.168.41.86,4,exposed_service,plex (32400 WAN, DMZ)
+host,192.168.20.152,native,exposed_service,win11-remote (RDP 3389, IP-Allowlist)
+host,192.168.42.42,42,exposed_service,coder-host (7080 WAN, Address-Group-Allowlist)
+tor_node,192.168.20.101,native,tor_node,mynode Proxmox-VM — eingehender Tor-Relay-Traffic = ERWARTET, KEIN Angriff (Relay-vs-Exit ungeklaert, Christin-Frage offen)
+scanner,192.168.42.42,42,internal_scanner,coder-host loest interne SCAN-Sigs aus (z.B. PostgreSQL-Probe) — internal_scan, kein externer Angriff

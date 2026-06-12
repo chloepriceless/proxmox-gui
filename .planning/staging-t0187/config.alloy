@@ -1,0 +1,182 @@
+// =============================================================================
+// T-0187 Cyber-Defense-Pipeline — Grafana Alloy (River-Syntax)
+// Owner: Netzi (Netzwerk-HEAD) · Deploy: Schraubi (Infra-HEAD) auf LXC .153
+// Zweck: UniFi Suricata-EVE-JSON (threat.log) -> parse + GeoIP + Classification
+// STORAGE (Kuma-Schema-Konsens 2026-06-12): rohe Events + per-Event-Geopunkte -> LOKI (neu),
+//          Aggregat-Counter (low-card: classification/severity/country_code) -> VictoriaMetrics (bestehend).
+//          HARTE LEITPLANKE: per-IP/per-Event NIEMALS als VM-Serie (Kardinalitaets-Explosion) —
+//          src_ip/lat/lon bleiben ausschliesslich Loki-structured_metadata.
+// FORWARD-AGNOSTISCH: nimmt EVE-JSON per Syslog entgegen, egal ob syslog-ng-Hack
+//                     oder nativer super_fabric_system_log es schickt.
+//
+// >>> SCHRAUBI: anpassbare Werte sind mit  # SET:  markiert. <<<
+// Voraussetzungen auf .153: Loki (:3100), GeoLite2-City.mmdb (MaxMind, s. Runbook),
+//   net-assets.csv (aus diesem assets/-Ordner), TLS-Cert/Key fuer den Syslog-Listener.
+// =============================================================================
+
+// ---------------------------------------------------------------------------
+// 1) SYSLOG-EMPFANG von der UDM (TLS-gesichert — Schnueffi-Anforderung)
+//    Die UDM forwardet jede threat.log-Zeile als eine Syslog-Message;
+//    der EVE-JSON-String steht damit in __line__ nach dem Parsing.
+// ---------------------------------------------------------------------------
+loki.source.syslog "udm_threat" {
+  listener {
+    address               = "192.168.20.153:6514"          // SET: TLS-Syslog-Port (RFC5425). LAN-only binden, wenn moeglich auf die .153-LAN-IP.
+    protocol              = "tcp"
+    syslog_format         = "rfc5424"               // UDM/syslog-ng kann rfc5424; bei rfc3164-Quelle hier umstellen.
+    use_incoming_timestamp = true                    // Codex-P6: EVE/UDM-Zeit nutzen, NICHT ingest-time (Clock-Skew).
+    label_structured_data = false
+    labels                = { source = "udm_ids", job = "cyberdefense" }  // FIX Schraubi: labels ist listener-Attribut (Alloy 1.16)
+    tls_config {
+      cert_file = "/etc/alloy/tls/collector.crt"    // SET: Server-Cert von .153
+      key_file  = "/etc/alloy/tls/collector.key"    // SET
+      // Schnueffi/peer-verify: gegenseitige Validierung der UDM-Client-Cert hier aktivieren,
+      // sobald der Forward-Weg (A/B) + das UDM-Cert feststehen:
+      // client_ca_file = "/etc/alloy/tls/udm-ca.crt"
+    }
+  }
+  forward_to = [loki.process.eve.receiver]
+}
+
+// ---------------------------------------------------------------------------
+// 2) VERARBEITUNG: EVE-JSON -> Geo -> Classification -> Labels/Metadata
+// ---------------------------------------------------------------------------
+loki.process "eve" {
+  forward_to = [loki.write.local.receiver]
+
+  // 2a) EVE-JSON parsen (nur dashboard-relevante Felder; nested via json-expr).
+  stage.json {
+    expressions = {
+      event_type   = "event_type",
+      src_ip       = "src_ip",
+      src_port     = "src_port",
+      dest_ip      = "dest_ip",
+      dest_port    = "dest_port",
+      proto        = "proto",
+      ev_ts        = "timestamp",
+      signature    = "alert.signature",
+      category     = "alert.category",
+      severity     = "alert.severity",
+      action       = "alert.action",
+      signature_id = "alert.signature_id",
+      ubnt_category = "ubnt.ubnt_category",
+      cve          = "ubnt.cve_reference",
+      sig_type     = "ubnt.signature_type",
+    }
+  }
+
+  // nur echte Alerts durchlassen (defensiv gegen stats/flow-Events im selben Stream)
+  stage.match {
+    selector = "{source=\"udm_ids\"}"
+    stage.drop {
+      expression = ".*\"event_type\":\"(stats|flow|netflow)\".*"
+      drop_counter_reason = "non_alert_event"
+    }
+  }
+
+  // 2b) GeoIP-Anreicherung der ANGREIFER-IP (src_ip) — GeoLite2-City fuer Koordinaten.
+  //     Codex-P4: Geo ins Event (structured_metadata), NICHT als hochkardinales Label.
+  stage.geoip {
+    source  = "src_ip"
+    db      = "/etc/alloy/geoip/GeoLite2-Country.mmdb" // V1-INTERIM (Schraubi): Country-DB von der UDM; City-DB folgt mit MaxMind-Key -> dann db_type=city + Pfad zurueck
+    db_type = "country"
+  }
+
+  // 2c) CLASSIFICATION (Codex-P1, wichtigste Schaerfung) — semantisch ehrliche Kategorie
+  //     statt „alles ist Angriff". Reihenfolge = Prioritaet.
+  //     internal = src_ip im Heimnetz (192.168.0.0/16 deckt alle Baseline-Subnetze;
+  //     IPv6/CGNAT-Erweiterung = TODO, Heimnetz ist aktuell IPv4-NAT).
+  stage.template {
+    source   = "classification"
+    template = "{{- if and (eq .ubnt_category \"TOR\") (eq .dest_ip \"192.168.20.101\") -}}tor_relay_inbound{{- else if hasPrefix .src_ip \"192.168.\" -}}{{- if eq .ubnt_category \"SCAN\" -}}internal_scan{{- else -}}internal_outbound{{- end -}}{{- else if or (eq .ubnt_category \"CIARMY\") (eq .ubnt_category \"DSHIELD\") (eq .ubnt_category \"COMPROMISED\") (eq .ubnt_category \"MALICIOUS_HOSTS\") -}}reputation_hit{{- else if eq .ubnt_category \"SCAN\" -}}external_scan{{- else -}}external_other{{- end -}}"
+  }
+  stage.template {
+    source   = "direction"
+    template = "{{- if hasPrefix .src_ip \"192.168.\" -}}internal_src{{- else -}}external_src{{- end -}}"
+  }
+
+  // 2d) Severity-Wort aus Suricata-severity-Zahl (1=high,2=med,3=low) fuer lesbare Labels.
+  stage.template {
+    source   = "sev_label"
+    template = "{{- if eq .severity \"1\" -}}high{{- else if eq .severity \"2\" -}}medium{{- else -}}low{{- end -}}"
+  }
+
+  // 2e) LOW-CARDINALITY-LABELS (Index) — Codex-P2 + Kuma-Schema: nur bounded Werte.
+  //     country_code (ISO-3166-alpha2, ~250 Werte) = von Kuma explizit als low-card-Aggregat
+  //     freigegeben → dient als VM-Metrik-Dimension (Threat-Counter by country). NIE src_ip/lat/lon.
+  stage.labels {
+    values = {
+      ubnt_category  = "",
+      classification = "",
+      direction      = "",
+      severity       = "sev_label",
+      action         = "",
+      country_code   = "geoip_country_code", // V1-INTERIM (Schraubi): Country-DB-Feldname; mit City-DB zurueck auf geoip_country_iso_code
+    }
+  }
+
+  // 2f) HIGH-CARDINALITY -> structured_metadata (abfragbar, NICHT indexiert).
+  //     src_ip/signature/geo/cve gehoeren hierhin, nie in Labels.
+  stage.structured_metadata {
+    values = {
+      src_ip        = "",
+      dest_ip       = "",
+      dest_port     = "",
+      proto         = "",
+      signature     = "",
+      signature_id  = "",
+      cve           = "",
+      geoip_country = "geoip_country_name",
+      geoip_city    = "geoip_city_name",
+      geoip_lat     = "geoip_location_latitude",
+      geoip_lon     = "geoip_location_longitude",
+    }
+  }
+
+  // 2g) AGGREGAT-METRIKEN -> VictoriaMetrics (Kuma-Schema). Der Counter erbt die
+  //     LOW-CARD-Stream-Labels (classification, severity, country_code, ubnt_category) —
+  //     KEINE per-IP-Dimension (structured_metadata fliesst NICHT in Metrik-Labels).
+  stage.metrics {
+    metric.counter {
+      name        = "cyberdefense_events_total"
+      description = "UniFi IDS-Events (Aggregat: classification/severity/country_code) -> VictoriaMetrics"
+      source      = "classification"
+      action      = "inc"
+      match_all   = true
+    }
+  }
+
+  // 2h) Event-Zeit als Loki-Timestamp (Clock-Skew-fest, Codex-P6).
+  stage.timestamp {
+    source = "ev_ts"
+    format = "RFC3339Nano"
+    action_on_failure = "fudge"
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 3) LOKI-SINK (mit Retry/Queue gegen Loki-Ausfall — Codex-P6)
+// ---------------------------------------------------------------------------
+loki.write "local" {
+  endpoint {
+    url = "http://127.0.0.1:3100/loki/api/v1/push"   // SET: Loki-URL auf .153
+    // WAL/Queue puffert bei kurzem Loki-Ausfall:
+    retry_on_http_429 = true
+  }
+  wal {
+    enabled = true                                    // persistenter Write-Ahead-Log gegen Datenverlust
+  }
+  external_labels = { collector = "alloy_153" }
+}
+
+// ---------------------------------------------------------------------------
+// 4) SELF-MONITORING (Codex-P5/P6: Source-Contract + Pipeline-Health)
+//    Alloy exportiert eigene Metriken; das Dashboard-Health-Panel liest:
+//    - loki_source_syslog_entries_total (events/min, last-event-age)
+//    - loki_process_dropped_lines_total (parse/drop failures)
+//    - loki_write_* (push errors, retries)
+//    Scrape-Ziel fuer Prometheus auf .153:
+// ---------------------------------------------------------------------------
+// V1: prometheus.exporter.self/scrape/remote_write ENTFERNT (Schraubi 2026-06-12):
+// auf .153 laeuft KEIN VictoriaMetrics (verifiziert); Kuma um echten Endpoint gebeten.
+// Nachruesten = Bloecke aus Netzis assets/alloy-eve-pipeline.alloy (Z.180ff) + URL setzen.
