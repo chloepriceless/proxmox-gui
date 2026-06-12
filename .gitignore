@@ -62,3 +62,4 @@ build/
 # Fleet peer-comms: offline letters + archived briefs are transient, not repo artefacts
 .planning/inbox/
 .planning/archive/
+.secrets/
