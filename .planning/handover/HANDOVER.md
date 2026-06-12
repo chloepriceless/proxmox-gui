@@ -14,6 +14,7 @@ Durable Detail in repo-memory **`project-open-tasks.md`** (CLOSEOUT-Block ~15:10
 5. **Agentless-VM Foothold-Map** — `.planning/agentless-vm-foothold-map.md`. PBS sofort bootstrap-bar, Rest braucht Owner/Reboot.
 6. **`.148`-IP-Flap gelöst** — unpoller-LXC 148 (dienst-tot, 3× verifiziert) war Squatter auf loxberrys legitimer .148; **LXC 148 gestoppt** (reversibel). Netzi ARP-verifiziert sauber.
 7. **Deploytest-Fixtures 150+151 destroyed** (--purge, ~36G frei auf .240). Kuma-Netdata-GO erteilt. Netzi-v6-default-deny + Wildcard-DNS-Findings geklärt.
+8. **SSH-Topologie-Cleanup 7/7 LXCs** (Frischi-Übergabe) — ssh.socket masked, klassischer ssh.service single-mode; Codex-refuted + reboot-verifiziert (trixie+bookworm). Entblockt Frischis komplette SSH-Härtung. Doku `.planning/ssh-topology-cleanup-design.md`.
 
 ### OFFEN — alle extern-geblockt (resume hier)
 - **T-0196 Phase 2 (BAU):** wartet auf Hub. (a) Docker-Capability des Fleet-Containers: **rootless DinD empfohlen** vs privileged vs docker.sock (abgeraten); (b) **Coder-Admin-Token** (Christin/Hub mintet in Coder-UI http://192.168.42.42:7080); (c) Owner-User-Frage. Plan steht. Secret: `.secrets/coder-host.env` (600, gitignored). Recon-Kern: Fleet = Coder-Workspace `coder-chloepriceless-Coding` (172.17.0.2), Hub=coder_app :7890, Template `ai-devbox`, Host 8C/15G/123G frei. **Coder-CLI auf dem Host NICHT eingeloggt** → Recon lief read-only über `docker exec coder-db psql`.
