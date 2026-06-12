@@ -33,4 +33,7 @@
 - **Vor loxberry:** IP-Konflikt .148 lösen (Netzi).
 - **debian138 ist KEIN agentless-QEMU** → aus der agentless-Liste streichen (LXC, `pct exec`).
 
+## ✅ UPDATE: .148-Konflikt GELÖST (2026-06-12 ~15:15)
+Netzi-Live-Messung korrigiert meine Annahme: **.148 gehört LEGITIM loxberry** (UDM-DHCP-Reservierung `dhcp-host bc:24:11:5d:ac:b8→.148` + DNS-Record `loxberry.bikini.bottom.zone`). unpoller-LXC war der **Squatter** (statische .148 per IP=CT-ID-Konvention) und der Konflikt **flappte aktiv** (Netzi + Kumas Checkmk-CRIT belegt). unpoller dreifach als **dienst-tot** verifiziert (kein Prozess/systemd-Unit/Metrics-Port, nur ungenutztes Binary). → **LXC 148 GESTOPPT** (reversibel, `pct start 148` bringt zurück); `.148` löst jetzt eindeutig auf loxberry auf. **Permanenter Destroy = Go/No-Go an Christin/Hub** (irreversibel, real-benannter Host). Kuma stellt Checkmk auf einen sauberen „loxberry"-Host um. loxberrys echte Erreichbarkeit auf .148 damit wiederhergestellt → Foothold-Kanal loxberry = Appliance-Cred auf .148.
+
 **Status:** Foothold-Kanäle bestimmt. Kein Bootstrap ausgeführt (Phase-2 braucht Owner-Schritte + Reboot-Fenster + Frischi-Playbook-Lauf). Nicht-Seed-Daten — Patchi reconciliert gegen Live-Scan.
