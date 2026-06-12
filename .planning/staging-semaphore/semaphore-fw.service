@@ -1,0 +1,20 @@
+# T-0116 — Firewall MUSS vor Docker stehen (sonst fail-open-Fenster bei jedem
+# Backup-Reboot, in dem der published Port ungefiltert ist).
+# Install: /etc/systemd/system/semaphore-fw.service
+# + Drop-in /etc/systemd/system/docker.service.d/10-require-fw.conf:
+#     [Unit]
+#     Wants=semaphore-fw.service
+#     After=semaphore-fw.service
+[Unit]
+Description=Semaphore LXC firewall (DOCKER-USER allowlist, fail-closed)
+DefaultDependencies=no
+Before=docker.service network-pre.target
+Wants=network-pre.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/semaphore-fw.sh
+
+[Install]
+WantedBy=multi-user.target
