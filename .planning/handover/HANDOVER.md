@@ -3,10 +3,11 @@
 **Updated:** 2026-06-13 ~03:55 · **Branch:** `master` @ `1fb9c37` (pushed, clean tree, in sync).
 **Operator:** Christin (von Perbandt) / Bikini Bottom Capital GmbH. **Peer-IDs (Fleet-Restart 13:57):** Hub=`07lvalhu`, Schnüffi=`8hc8vpgk`, Frischi=`7kmn9ddq`, Netzi=`dr8s8wtb`, Kuma=`zysoypfg`, Patchi=`328j1uc0`.
 
-## State: Haupt-Strang T-0204 — Topologie-Gate ✅ GELÖST (Szenario R). Nächste Einheit = Hardening-Spec.
-Durable Detail in repo-memory **`project-open-tasks.md`** (Session-11-Block ~03:15 zuerst lesen).
-`autonomous_open=1` (Hardening-Spec der 4 R22-Blocker für Szenario R, s.u.) · Cutover weiter gated
-(Codex/Schnüffi/Netzi). Idle-Improvement-Loop ist Standing-Rule, wenn Queue leer.
+## State: Haupt-Strang T-0204 — alle DISKRETEN autonomen Einheiten ✅ DURCH. Cutover gated (Owner/Codex/Schnüffi/Netzi).
+Durable Detail in repo-memory **`project-open-tasks.md`** (oberster Block zuerst lesen).
+Topologie GELÖST (R) · R22-Hardening-Spec geschrieben (`build-ready/T0204-HARDENING-SPEC.md`, commit 05edd64)
++ an Hub geroutet. `autonomous_open=0` · `blocked_open=5` · Idle-Improvement-Loop ist Standing-Rule bei leerem Queue
+(Runde 1 durch: 3 Merkel-Primärquellen HA-Fencing/ZFS-Repl/Synthese).
 
 ### ⭐ AKTUELLER HAUPT-STRANG: T-0204 verteiltes Fleet-Cluster (ersetzt T-0197)
 Eine Session in der Nacht 2026-06-13 (~02:34–02:48) hat eine **tiefere Live-Recon** gefahren (alle 5
