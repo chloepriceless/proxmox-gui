@@ -1,0 +1,30 @@
+[Unit]
+# claude-peers Broker :7899 — zentraler Message-Bus aller Peers (send_message/check_messages).
+# INSTALL-READY DRAFT (Schraubi, T-0204). Kein expliziter Christin-Auftrag, ABER der Broker
+# ist die Voraussetzung dafuer, dass die verteilten Peers (Multi-Node) sich ueberhaupt sehen
+# -> gehoert zwingend in denselben Unit-Satz. Bindet im verteilten Modell auf LAN (Baustein 3),
+# nicht localhost -> host-nftables-Allowlist davor (Netzi liefert Regelset bei Build-GO).
+Description=claude-peers Broker (Message-Bus :7899)
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=dev
+Group=dev
+WorkingDirectory=/home/dev
+# bun-Runtime (Broker ist TypeScript): Pfad im Cutover verifizieren (Coder-Ist: /home/dev/.bun/bin/bun)
+ExecStart=/home/dev/.bun/bin/bun /home/dev/claude-peers-mcp/broker.ts
+# LAN-Bind (verteiltes Modell): per ENV, Default localhost beibehalten bis Bind-Change R22-approved
+EnvironmentFile=-/home/dev/orchestrator/.secrets/fleet-runtime.env
+Environment=HOME=/home/dev
+Environment=PATH=/home/dev/.bun/bin:/usr/local/bin:/usr/bin:/bin
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=claude-peers-broker
+
+[Install]
+WantedBy=multi-user.target

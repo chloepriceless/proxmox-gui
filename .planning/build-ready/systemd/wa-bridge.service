@@ -1,0 +1,30 @@
+[Unit]
+# wa-bridge — WhatsApp-Gateway (Baileys, node index.js). Liest outbox/ -> sendet WA,
+# empfaengt -> inbox/. Christins Lebensader-Kanal (T-0070). INSTALL-READY DRAFT (Schraubi, T-0204).
+# WA-Session-State liegt in codex/wa-bridge/data/ (LOKAL, muss in den LXC mitwandern; bei
+# Node-Wechsel KEIN paralleler 2. wa-bridge -> sonst Doppel-Login/Session-Bruch).
+Description=wa-bridge WhatsApp Gateway (Baileys)
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=dev
+Group=dev
+WorkingDirectory=/home/dev/codex/wa-bridge
+# WA-Bot-Token/Config: in eigene EnvironmentFile, falls vorhanden (Cutover verifiziert)
+EnvironmentFile=-/home/dev/orchestrator/.secrets/wa-bridge.env
+Environment=HOME=/home/dev
+Environment=NODE_ENV=production
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/usr/bin/node index.js
+Restart=always
+RestartSec=5
+TimeoutStopSec=15
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=wa-bridge
+
+[Install]
+WantedBy=multi-user.target

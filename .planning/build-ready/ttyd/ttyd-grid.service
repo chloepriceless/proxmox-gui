@@ -1,0 +1,32 @@
+[Unit]
+# ttyd Browser-Grid — serviert die read-only tmux-Video-Wall 'fleetgrid' im Browser.
+# Baustein 2 (T-0204, Schraubi). INSTALL-READY DRAFT. ttyd FEHLT im Ist -> nachinstallieren
+# (apt: 'ttyd' ist in Debian 12/13 paketiert; sonst static binary von tsl0922/ttyd Releases).
+# READ-ONLY: KEIN -W/--writable -> Client kann nicht tippen (moderne ttyd default read-only;
+# zusaetzlich serviert es 'tmux attach -r' = read-only-Client). LAN-Bind + host-nftables davor
+# (auth-los -> NICHT auf 0.0.0.0 ohne FW; Netzi-Allowlist 42/20/16). Optional ttyd-Basic-Auth -c.
+Description=ttyd Fleet Browser-Grid (read-only tmux video wall)
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=dev
+Group=dev
+WorkingDirectory=/home/dev
+Environment=HOME=/home/dev
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+# Grid vor dem Servieren (neu) aufbauen:
+ExecStartPre=/home/dev/vm-deployment-gui/.planning/build-ready/ttyd/fleet-grid.sh
+# LAN-Bind (-i auf die LXC-LAN-IP im Cutover setzen; Default 127.0.0.1 ist sicher aber nur lokal).
+# Port 7681 (ttyd default). READ-ONLY: bewusst KEIN -W. -t für UI-Optionen.
+ExecStart=/usr/bin/ttyd -p 7681 -i 0.0.0.0 -t fontSize=13 -t 'theme={"background":"#000000"}' tmux attach -t fleetgrid -r
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ttyd-grid
+
+[Install]
+WantedBy=multi-user.target

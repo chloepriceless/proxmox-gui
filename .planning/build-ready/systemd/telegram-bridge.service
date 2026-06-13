@@ -1,0 +1,29 @@
+[Unit]
+# telegram-bridge — Telegram-Gateway (node index.js). Bot @james_priceless_bot, Chat 6862173554.
+# INSTALL-READY DRAFT (Schraubi, T-0204). Inbound-Log -> data/inbound-log.ndjson (Hub liest direkt).
+# Token in .secrets/telegram-bot.env (laut Memory). Bei Node-Wechsel KEIN paralleler 2. Bridge
+# (Telegram getUpdates ist single-consumer -> Doppel-Poll = 409 Conflict).
+Description=telegram-bridge Telegram Gateway
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=dev
+Group=dev
+WorkingDirectory=/home/dev/codex/telegram-bridge
+EnvironmentFile=-/home/dev/orchestrator/.secrets/telegram-bot.env
+Environment=HOME=/home/dev
+Environment=NODE_ENV=production
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/usr/bin/node index.js
+Restart=always
+RestartSec=5
+TimeoutStopSec=15
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=telegram-bridge
+
+[Install]
+WantedBy=multi-user.target

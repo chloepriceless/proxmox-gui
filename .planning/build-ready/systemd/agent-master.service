@@ -1,0 +1,43 @@
+[Unit]
+# agent-master Hub — Dashboard :7890 + LLM-Gateway + Registry/Ledger + Peer-Lifecycle
+# INSTALL-READY DRAFT (Schraubi, T-0204). GO'd von Christin 2026-06-13 (systemd-Ansatz).
+# Deploy/enable = Teil des Cutovers (GATED). NICHT auf dem laufenden Coder-Workspace
+# installieren — Ziel ist die neue Fleet-LXC (echtes systemd; im Coder-Container ist PID1
+# './coder agent', systemd wirkungslos — das war der Grund zu migrieren).
+# R22-Gate vor Cutover: Diff/Plan an Codex-Refute + Schnüffi (prozesskritisch).
+Description=agent-master Hub (Dashboard :7890, LLM-Gateway, Registry, Peer-Lifecycle)
+Documentation=https://localhost:7890
+After=network-online.target
+Wants=network-online.target
+# Restart-Storm-Schutz aus: Hub muss IMMER zurueckkommen (Restart=always greift unbegrenzt)
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=dev
+Group=dev
+WorkingDirectory=/home/dev/codex/agent-master
+# --- Stabile Secrets (Christin-spezifiziert): MiniMax-Key ---
+EnvironmentFile=/home/dev/orchestrator/.secrets/minimax-m3.env
+# --- INFLUX (Brettli fuellt diese Datei; '-' = optional, Unit startet auch ohne) ---
+EnvironmentFile=-/home/dev/orchestrator/.secrets/influx.env
+# --- Workspace-Runtime (GH_TOKEN, CLAUDE_CONFIG_DIR etc.; Cutover-Skript schreibt sie;
+#     '-' optional, weil GH_TOKEN im Coder-Workspace ephemer ist -> nach Reboot ggf. stale,
+#     Server startet trotzdem, gh-Ops degradieren recoverable) ---
+EnvironmentFile=-/home/dev/orchestrator/.secrets/fleet-runtime.env
+Environment=HOME=/home/dev
+Environment=NODE_ENV=production
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+# CLAUDE_CONFIG_DIR: im Cutover auf den LXC-Pfad setzen (Coder-Ist: /mnt/claude-config)
+# -> via fleet-runtime.env, NICHT hier hartkodieren (workspace-spezifisch).
+ExecStart=/usr/bin/node server.mjs
+Restart=always
+RestartSec=3
+TimeoutStopSec=20
+# Logs nach journald (journalctl -u agent-master)
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=agent-master
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,28 @@
+[Unit]
+# spawnerd — Peer-Spawn/Lifecycle-Controller (python3 spawner/spawnerd.py).
+# INSTALL-READY DRAFT (Schraubi, T-0204). Im VERTEILTEN Modell ist genau dieser Dienst der
+# Hebel fuer Placement+Auto-Respawn (siehe 3-NODE-DISTRIBUTED-FLEET-DESIGN.md, App-Controller-
+# Empfehlung): pro Node eine Instanz, die nur die diesem Node zugewiesenen Peers haelt; der Hub
+# entscheidet die Verteilung. Erweiterung um Cross-Node-Failover = Folge-Build (nicht in diesem Draft).
+Description=spawnerd Peer Lifecycle Controller
+After=network-online.target agent-master.service
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=dev
+Group=dev
+WorkingDirectory=/home/dev/orchestrator
+EnvironmentFile=-/home/dev/orchestrator/.secrets/fleet-runtime.env
+Environment=HOME=/home/dev
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/usr/bin/python3 /home/dev/orchestrator/spawner/spawnerd.py
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=spawnerd
+
+[Install]
+WantedBy=multi-user.target
