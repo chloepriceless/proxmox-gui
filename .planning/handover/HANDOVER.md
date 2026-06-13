@@ -1,10 +1,31 @@
 # HANDOVER — Proxmox-GUI Head / Infra-LEAD ("Schraubi")
 
-**Updated:** 2026-06-12 ~15:20 · **Branch:** `master` @ `d726b0d` (pushed, clean tree, in sync).
+**Updated:** 2026-06-13 ~03:15 · **Branch:** `master` @ `42662e4` (pushed, clean tree, in sync).
 **Operator:** Christin (von Perbandt) / Bikini Bottom Capital GmbH. **Peer-IDs (Fleet-Restart 13:57):** Hub=`07lvalhu`, Schnüffi=`8hc8vpgk`, Frischi=`7kmn9ddq`, Netzi=`dr8s8wtb`, Kuma=`zysoypfg`, Patchi=`328j1uc0`.
 
-## State: `autonomous_open=0` — alles autonom Machbare ist durch. 5 Punkte extern-geblockt.
-Durable Detail in repo-memory **`project-open-tasks.md`** (CLOSEOUT-Block ~15:10 zuerst lesen).
+## State: `autonomous_open=0` — alles autonom Machbare ist durch. Haupt-Strang T-0204 GATED auf Christin.
+Durable Detail in repo-memory **`project-open-tasks.md`** (Session-11-Block ~03:15 zuerst lesen).
+
+### ⭐ AKTUELLER HAUPT-STRANG: T-0204 verteiltes Fleet-Cluster (ersetzt T-0197)
+Eine Session in der Nacht 2026-06-13 (~02:34–02:48) hat eine **tiefere Live-Recon** gefahren (alle 5
+Nodes per SSH gemessen, nicht aus Memory) und **install-ready Build-Artefakte** geschrieben. Diese
+Session (~03:15) hat sie **committed+gepusht** (`42662e4`) — vorher waren sie uncommitted und
+verlust-gefährdet. Stand:
+- **Recon+Konzept FERTIG** (read-only): `.planning/build-ready/3-NODE-DISTRIBUTED-FLEET-DESIGN.md`
+  (+ `LXC-BUILD-PLAYBOOK.md`, `systemd/`, `ttyd/`, `INFLUX-FOR-BRETTLI.md`).
+- **Kernbefunde:** pz1/pz2/pz3 identisch (N150/4c/16G); **pve (.241) Ryzen 16c/62G = einziger echter
+  RAM+CPU-Headroom** (in alter T-0197-Recon zu Unrecht aussortiert). **pz2 hat KEIN ZFS** (NVMe=LVM)
+  → git-only-Failover statt ZFS-Repl. State-Layer = git/Forgejo universell + ZFS-Repl nur pz1↔pz3.
+- **🔴 GATED auf Christin-Entscheid (MC, Design-Doc §7):** (1) Topologie **Szenario R (pve rein,
+  empfohlen — Failover-Absorber)** vs **C (pz-only, ~0 Headroom)**; (2) pz2-Failover **git-only
+  (empfohlen)** vs zpool-auf-NVMe. Build/Cutover zusätzlich gated: R22-Codex-Refute + Schnüffi
+  (LAN-Bind) + Netzi (host-nftables-Regelset). systemd-Ansatz selbst ist Christin-GO (nur Deploy
+  bleibt Cutover-gated).
+- **Autonome Prep noch offen (reversibel, vor dem Gate machbar):** R22-Codex-Refute auf den
+  topologie-unabhängigen Architektur-Kern (State-Layer/Failover/Messaging/HA-Split).
+- **INFLUX-Handoff für Brettli:** `INFLUX-FOR-BRETTLI.md` ist PLATZHALTER; **Netzi (online, 2ile9o2c)
+  beschafft die Creds gerade aktiv** (sein Summary bestätigt) → sobald da: in die Datei + per
+  peer/notify an Brettli (agent-master), NICHT committen.
 
 ### Diese Session erledigt (Session-10)
 1. **Git-Korruption repariert** — Vorgänger-Session crashte nach T-0189-Commit → 4 leere Git-Objekte (`fatal: bad object HEAD`); via origin-Fetch behoben, kein Verlust (alles war gepusht). Leere Objekte liegen in `/tmp/git-corrupt-backup/`.
