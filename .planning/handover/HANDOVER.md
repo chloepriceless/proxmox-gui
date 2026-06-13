@@ -1,10 +1,12 @@
 # HANDOVER — Proxmox-GUI Head / Infra-LEAD ("Schraubi")
 
-**Updated:** 2026-06-13 ~03:15 · **Branch:** `master` @ `42662e4` (pushed, clean tree, in sync).
+**Updated:** 2026-06-13 ~03:55 · **Branch:** `master` @ `1fb9c37` (pushed, clean tree, in sync).
 **Operator:** Christin (von Perbandt) / Bikini Bottom Capital GmbH. **Peer-IDs (Fleet-Restart 13:57):** Hub=`07lvalhu`, Schnüffi=`8hc8vpgk`, Frischi=`7kmn9ddq`, Netzi=`dr8s8wtb`, Kuma=`zysoypfg`, Patchi=`328j1uc0`.
 
-## State: `autonomous_open=0` — alles autonom Machbare ist durch. Haupt-Strang T-0204 GATED auf Christin.
+## State: Haupt-Strang T-0204 — Topologie-Gate ✅ GELÖST (Szenario R). Nächste Einheit = Hardening-Spec.
 Durable Detail in repo-memory **`project-open-tasks.md`** (Session-11-Block ~03:15 zuerst lesen).
+`autonomous_open=1` (Hardening-Spec der 4 R22-Blocker für Szenario R, s.u.) · Cutover weiter gated
+(Codex/Schnüffi/Netzi). Idle-Improvement-Loop ist Standing-Rule, wenn Queue leer.
 
 ### ⭐ AKTUELLER HAUPT-STRANG: T-0204 verteiltes Fleet-Cluster (ersetzt T-0197)
 Eine Session in der Nacht 2026-06-13 (~02:34–02:48) hat eine **tiefere Live-Recon** gefahren (alle 5
@@ -16,16 +18,28 @@ verlust-gefährdet. Stand:
 - **Kernbefunde:** pz1/pz2/pz3 identisch (N150/4c/16G); **pve (.241) Ryzen 16c/62G = einziger echter
   RAM+CPU-Headroom** (in alter T-0197-Recon zu Unrecht aussortiert). **pz2 hat KEIN ZFS** (NVMe=LVM)
   → git-only-Failover statt ZFS-Repl. State-Layer = git/Forgejo universell + ZFS-Repl nur pz1↔pz3.
-- **🔴 GATED auf Christin-Entscheid (MC, Design-Doc §7):** (1) Topologie **Szenario R (pve rein,
-  empfohlen — Failover-Absorber)** vs **C (pz-only, ~0 Headroom)**; (2) pz2-Failover **git-only
-  (empfohlen)** vs zpool-auf-NVMe. Build/Cutover zusätzlich gated: R22-Codex-Refute + Schnüffi
-  (LAN-Bind) + Netzi (host-nftables-Regelset). systemd-Ansatz selbst ist Christin-GO (nur Deploy
-  bleibt Cutover-gated).
-- **Autonome Prep noch offen (reversibel, vor dem Gate machbar):** R22-Codex-Refute auf den
-  topologie-unabhängigen Architektur-Kern (State-Layer/Failover/Messaging/HA-Split).
-- **INFLUX-Handoff für Brettli:** `INFLUX-FOR-BRETTLI.md` ist PLATZHALTER; **Netzi (online, 2ile9o2c)
-  beschafft die Creds gerade aktiv** (sein Summary bestätigt) → sobald da: in die Datei + per
-  peer/notify an Brettli (agent-master), NICHT committen.
+- **✅ TOPOLOGIE-GATE GELÖST (Christin 2026-06-13 ~03:48, via orchestrator-Session gehandet, commit
+  1fb9c37):** Topologie = **Szenario R (pve .241 rein)**; pz2-Failover = **git-only** (Owner-Call).
+  Verteilung R: pve = CPU-schwer/aktiv + Failover-Absorber (16c/21G); pz3 Workhorse 6–8 + fleet-core-LXC;
+  pz2 CPU-leicht 4–6 (NVMe, git-only); pz1 minimal 0–2.
+- **🔴 VERBLEIBENDE Cutover-Gates (NICHT durch Topologie gedeckt):** die **4 R22-Cutover-Blocker**
+  (Design-Doc §8, topologie-unabhängig + teils cross-component) + **echter cross-lab Codex-Refute** (der
+  bisherige war same-model) + **Schnüffi** (LAN-Bind) + **Netzi** (host-nftables).
+- **▶ NÄCHSTE AUTONOME EINHEIT (jetzt unblockiert) — Deliberate-Mode Hardening-Spec für Szenario R:**
+  die 4 R22-Blocker konkret ausarbeiten (Design-vor-Build) + mit Ownern koordinieren:
+  (1) **Fencing/Lease gg. Split-Brain** → Broker-Epoch/Generation + STONITH `pct stop` via Cluster-API
+  vor respawn — Owner Broker/claude-peers-mcp.
+  (2) **spawnerd-Reconcile-Loop** (deklarative Peer→Node-Soll-Map in git; Anti-Affinity fleet-core ≠
+  heavy-peer-Node) — Owner spawnerd/orchestrator.
+  (3) **App-konsistente Snapshots fürs agent-master `data/`** (PVE-Repl gibt KEINE App-Konsistenz —
+  pre-snapshot `wal_checkpoint(TRUNCATE)`/`.backup` + JSON atomic-rename) — Owner agent-master (Brettli).
+  (4) **Repl-Health-Monitoring VOR Cutover** (Kuma: FailCount==0 + Snapshot-Alter + Alert-Test; toten
+  102-0 vorher fixen) — Owner Kuma (zysoypfg).
+  Primärquellen-Belege in Merkel (3 Entries: HA-Fencing · ZFS-Repl-Konsistenz · T-0204-Synthese).
+- **INFLUX-Strang ✅ ZU** (orchestrator-Session erledigt): Netzi-Creds gitignored
+  `/home/dev/.fleet-secrets/influx-brettli.env`, Brettli verifiziert (/usage+/llm+/matrix grün);
+  `/skills`-Leere = CLAUDE_CONFIG_DIR-Pfad-Bug in Brettlis Code (Einzeiler, gated). Voller Stand:
+  `orchestrator/.planning/SCHRAUBI-STATUS.md`.
 
 ### Diese Session erledigt (Session-10)
 1. **Git-Korruption repariert** — Vorgänger-Session crashte nach T-0189-Commit → 4 leere Git-Objekte (`fatal: bad object HEAD`); via origin-Fetch behoben, kein Verlust (alles war gepusht). Leere Objekte liegen in `/tmp/git-corrupt-backup/`.
