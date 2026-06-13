@@ -79,10 +79,14 @@ ein bösartiges Playbook/Commit in `frischi/fleet-ansible` kann ihn exfiltrieren
 fahren. → **protected branches + Review-Pflicht für bootstrap/sudoers/inventory + signierte Commits + Semaphore nur
 auf approved tags/immutable refs + Trigger-Permissions + Runner-Egress-Allowlist.** „Repo-Write = Host-Root, bis das
 Gegenteil bewiesen ist."
-**E2-A3 [HIGH] from=.176-Pin UNVERIFIZIERT — PRE-STEP.** ansible läuft im semaphore-Container IN der LXC → die
-Ziel-Hosts sehen evtl. eine Docker-Bridge/SNAT-Adresse statt .176. → **VOR jedem Host-authorized_key: packet-level
-verifizieren** (sshd-Log/tcpdump auf einem Canary, was als Quell-IP ankommt) und NUR die beobachtete stabile Quelle
-pinnen. Bei Docker-NAT-Mehrdeutigkeit: Networking fixen, NICHT den Pin aufweichen.
+**E2-A3 [HIGH→teilverifiziert] from=.176-Pin — Mechanismus bestätigt, target-side-Capture bleibt PRE-STEP.**
+ansible läuft im semaphore-Container IN der LXC → Sorge: Ziel-Hosts sehen evtl. eine Docker-Bridge/SNAT-Adresse
+statt .176. **Gemessen 2026-06-13 ~08:14 (Schraubi):** semaphore-Container = 172.18.0.2 (compose-bridge); LXC-NAT
+hat `-A POSTROUTING -s 172.18.0.0/16 ! -o <bridge> -j MASQUERADE`; LXC-Route zu LAN `192.168.20.x dev eth0 src
+192.168.20.176`. ⇒ Container-Traffic wird auf **.176 maskiert, der Ziel-Host sieht .176** → der Pin ist tragfähig,
+KEIN Reschreiben auf eine Bridge-IP. **Verbleibender Gold-Standard-PRE-STEP vor Deploy:** literaler target-side-
+Capture (sshd-Log/tcpdump auf dem Canary beim echten Connect) zur finalen Bestätigung; bei Abweichung Networking
+fixen, NICHT den Pin aufweichen.
 **E2-A4 [HIGH] geteilte ansible.cfg `private_key_file = ~/.ssh/ansible_ed25519`** → `~` löst pro Caller anders auf
 (155=/root=E1-Key, semaphore=/home/semaphore=fehlt → genau der Dry-Check-Fehler). Ändern/Entfernen kann E1 brechen.
 → **caller-spezifische Key-Wahl per Semaphore-`ssh_key_id`**; den geteilten cfg-Pin NICHT so anfassen, dass 155
