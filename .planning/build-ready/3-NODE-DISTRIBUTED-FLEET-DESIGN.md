@@ -4,6 +4,10 @@
 Ersetzt das Single-HA-LXC-Modell aus T-0197. Alle Zahlen unten sind **live per SSH gemessen**
 (orchestrator_ed25519), nicht aus Memory.
 
+> ✅ **ENTSCHIEDEN 2026-06-13 ~03:48 (Christin):** Topologie = **Szenario R (pve .241 einbeziehen)**;
+> pz2-Failover = **git-only** (Owner-Call). Details §7. **Topologie-Gate gelöst** — Cutover bleibt gated
+> auf die 4 R22-Blocker (§8) + echten Codex + Schnüffi (Bind) + Netzi (nftables).
+
 ---
 
 ## 0. TL;DR (Kurzfazit)
@@ -188,11 +192,21 @@ locker in git/zentralen-Dienst, **braucht KEIN Shared-FS.** Bestätigt.
 
 ---
 
-## 7. Offene Entscheidungen (gated → Christin) + nächste Schritte
-1. **Topologie:** Szenario **R (pve rein, empfohlen)** vs **C (pz-only)**?
-2. **pz2-Failover-State:** **git-only (empfohlen)** vs zpool-auf-NVMe-anlegen?
-3. RAM-Grundsatz bleibt: pz1 ist 115 % committed → trägt ~0; das ist hardware-bedingt (kein
-   RAM-Upgrade pz1/pz3 laut Christin) → pve-Einbezug ist der einzige echte Headroom-Hebel.
+## 7. Entscheidungen (✅ GELÖST 2026-06-13 ~03:48) + nächste Schritte
+1. ✅ **Topologie = Szenario R — pve (.241) einbeziehen.** (Christin-Entscheid via Hub/orchestrator-
+   Session, an Schraubi 03:50 gehandet.) pve = CPU-schwere/aktive Peers + Failover-Absorber (16c/21G);
+   pz3 Workhorse 6–8 + fleet-core-LXC; pz2 CPU-leichte 4–6 (NVMe, git-only); pz1 minimal 0–2 (115%).
+2. ✅ **pz2-Failover = git-only.** (Owner-Entscheid Schraubi, deckt sich mit Empfehlung: pz2 trägt in R
+   die CPU-leichten/git-committeten Peers; zpool-auf-NVMe = Provisionierung + ZFS-RAM-Overhead auf dem
+   16-G-Node für marginalen Nutzen — verworfen.)
+3. RAM-Grundsatz bestätigt: pz1 ist 115 % committed → trägt ~0; hardware-bedingt (kein RAM-Upgrade
+   pz1/pz3) → pve-Einbezug (jetzt entschieden) ist der einzige echte Headroom-Hebel.
+
+**▶ Damit ist das Topologie-Gate gelöst. Verbleibende Cutover-Gates (NICHT durch Topologie gedeckt):**
+die **4 R22-Cutover-Blocker** (§8, topologie-unabhängig, teils cross-component) + **echter cross-lab
+Codex-Refute** + **Schnüffi** (LAN-Bind) + **Netzi** (host-nftables). Nächste autonome Einheit = die 4
+Blocker als konkrete Hardening-Spec für Szenario R ausarbeiten + mit den Ownern (Broker/spawnerd/
+agent-master) + Kuma (Repl-Monitoring) koordinieren.
 
 **Build/Cutover bleibt GATED** (Christins Topologie-Entscheid + R22-Refute + Schnüffi
 Bind-Change + Netzi nftables-Regelset). systemd-Units (`build-ready/systemd/`) + ttyd-Grid
