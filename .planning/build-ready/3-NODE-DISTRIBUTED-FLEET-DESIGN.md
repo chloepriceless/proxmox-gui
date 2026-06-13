@@ -194,6 +194,84 @@ locker in git/zentralen-Dienst, **braucht KEIN Shared-FS.** Bestätigt.
 3. RAM-Grundsatz bleibt: pz1 ist 115 % committed → trägt ~0; das ist hardware-bedingt (kein
    RAM-Upgrade pz1/pz3 laut Christin) → pve-Einbezug ist der einzige echte Headroom-Hebel.
 
-**Build/Cutover bleibt GATED** (Christins Topologie-Entscheid + R22-Codex-Refute + Schnüffi
+**Build/Cutover bleibt GATED** (Christins Topologie-Entscheid + R22-Refute + Schnüffi
 Bind-Change + Netzi nftables-Regelset). systemd-Units (`build-ready/systemd/`) + ttyd-Grid
 (`build-ready/ttyd/`) sind install-ready. Nichts Live-Berührendes ohne Go.
+
+---
+
+## 8. R22-Adversarial-Refute (2026-06-13, Schraubi)
+
+**Methode-Ehrlichkeit (R31):** adversarialer Refute auf den **topologie-unabhängigen Architektur-Kern**
+(State-Layer/Failover/Messaging/HA-Split) durch einen **same-model** Reviewer-Subagenten mit Refute-
+Prompt — **NICHT** der echte cross-lab `codex-worker` (in diesem Harness nicht im Agent-Registry
+verfügbar). Wert ist real (9 substantielle Findings), aber das cross-lab-4-Augen-Prinzip aus R22 ist
+**noch offen** und MUSS vor Cutover mit echtem Codex nachgeholt werden. Fazit des Reviews: **Fundament
+trägt** (Storage/Topologie-Analyse stark), aber die **Failover-Koordinationsschicht braucht Härtung** —
+additiv, kein Redesign. **4 Cutover-Blocker**, sonst ist das verteilte System fragiler als das heutige
+Single-Container-Setup (führt neue Split-Brain-/Korruptions-Pfade ein, die es heute nicht gibt).
+
+### 🔴 Cutover-BLOCKER (vor Scharfschalten lösen)
+1. **[KRITISCH] Kein Fencing/Lease → garantiertes Split-Brain.** Netz-Isolation (2,5G-Link-Flap,
+   Switch-Port-Reset — häufiger als echter Crash) ohne Node-Tod: spawnerd respawnt essential-Peers
+   auf Survivor, während der alte Peer auf der isolierten Node WEITERLÄUFT → zwei Instanzen am selben
+   Broker, beide pushen dasselbe git-Repo, **beide bedienen externe Singleton-Kanäle doppelt**
+   (wa-bridge Doppel-Login, telegram-bridge 409 — systemd/README:48-49 belegt das). **Fix:** Peer-Lease
+   mit Epoch/Generation am Broker (neue Session bumpt Epoch, Broker DROPpt stale-Epoch-Frames) +
+   STONITH-artig `pct stop` der verdächtigen Peer-Runner-LXC via Cluster-API (quorate, auch bei
+   wackeligem Daten-Link) VOR respawn. = **stärkste Einzelschwäche.**
+2. **[KRITISCH] spawnerd-Henne-Ei + RAM-Singleton.** Stirbt der fleet-core-Host, ist GLEICHZEITIG der
+   Controller weg UND die Peers dort — im HA-Restart-Fenster (1–3 Min) respawnt NIEMAND. Peer→Node-Map
+   im RAM = nach Restart weg → Discovery rät → Doppel-Spawns. **Fix:** Soll-Zustand (home+failover-Node
+   pro Peer) **deklarativ in git**; spawnerd-Start = **reconcile-Loop** (IST=Broker-Registry vs SOLL=git,
+   nur Differenz spawnen, nie blind respawn). **Anti-Affinity:** fleet-core NICHT auf eine Node mit
+   schwerer Peer-Population (Playbook platziert aktuell fleet-core+peer-runner beide auf pz3 → ändern).
+3. **[HOCH] ZFS-Repl der laufenden fleet-core-LXC = crash-, nicht app-konsistent.** agent-master `data/`
+   (JSON/SQLite, §3 als NICHT-git-getrackt gelistet!) hängt allein an der 1-Min-ZFS-Repl. SQLite-WAL /
+   nicht-atomar geschriebenes JSON im Snapshot → **korrupt** (schlimmer als „1 Min verloren" — blockiert
+   evtl. Hub-Start / fehlrouting). Pauschales „Verlust unkritisch (State in git)" (§6) ist für `data/`
+   FALSCH. **Fix:** pre-snapshot `PRAGMA wal_checkpoint(TRUNCATE)` bzw. `.backup`-Dump; JSON write-tmp+
+   atomic-rename; Spawn-Befehle idempotent (Spawn-ID); „unkritisch" pro State-Klasse begründen.
+4. **[HOCH] Reihenfolge-Inversion Repl-Monitoring.** Das Design stützt Failover auf ZFS-Repl, belegt aber
+   selbst, dass Job 102-0 seit 19.05. still tot ist (FailCount 1158, fiel niemandem auf). Monitoring steht
+   im Playbook als VERIFY-Schritt 8 = NACH Cutover. **Fix:** Repl-Health (Kuma: FailCount==0 +
+   Snapshot-Alter<N) ist **PRE-Cutover-Gate** inkl. Alert-Test (bewusster Repl-Fail → alarmiert?); toten
+   102-0 vorher fixen/löschen.
+
+### 🟠 Vor Cutover adressieren (HOCH/MITTEL)
+5. **[HOCH] Auth-loser Broker/Hub auf LAN, nur nftables.** Jede Peer-LXC liegt IM erlaubten Subnetz →
+   nftables schützt gegen Externe, NICHT gegen einen kompromittierten/prompt-injizierten Peer (lateral).
+   + **Bind-Fenster** beim HA-Restart: keine garantierte Ordnung „nftables aktiv VOR LAN-Bind". **Fix:**
+   App-Layer-Auth (Shared-Secret/Token pro Peer im Broker-Handshake, HMAC auf Hub-Mutations-Endpunkten)
+   — nftables ist Perimeter, nicht Authentisierung; nftables als `Before=`-Dependency der Dienst-Units /
+   default-deny-bind. **→ Schnüffi-Gate inhaltlich füllen.**
+6. **[HOCH] Forgejo (LXC153) = nicht-redundanter SPOF + Hot-Path-Bottleneck.** Der ganze Failover-pull
+   hängt an EINER Forgejo-Instanz; Design nennt weder Node noch HA/Repl. Failt sie (oder ihre Node), ist
+   der „universelle State-Layer" für ALLE weg = dieselbe SPOF-Eigenschaft, die §3 bei NFS korrekt als
+   Killer verwirft. + Thundering-Herd bei Failover-Sturm (8–10 gleichzeitige pulls inkl. `.git/objects`).
+   **Fix:** Forgejo unter Proxmox-HA+ZFS-Repl ODER zweiter git-Remote als push-Mirror; Anti-Affinity;
+   Lastannahme messen.
+7. **[MITTEL] Zwei Failover-Entscheider (PVE-HA + spawnerd) können divergieren** (App-Heartbeat vs
+   Watchdog/Quorum). **lrm aktiv nur pz1+pz3** = NICHT auf der quorum-tragenden pve-Seite → plausible
+   Partition kann fleet-core stranden. **Fix:** lrm auch auf einer Mehrheits-Node (Szenario R: pve);
+   spawnerd respektiert HA für HA-Resourcen, respawnt erst nach bestätigtem Fence (koppelt an #1);
+   Watchdog (softdog) explizit verifizieren — ohne ihn fenced PVE-HA nicht zuverlässig.
+8. **[MITTEL] Cutover-Quiesce = einziger Doppelbetrieb-Schutz, fehleranfälligste Stelle.** Manuelles
+   „quiescen → finaler rsync → scharf" ohne erzwungenes Interlock; unvollständig = zwei Broker/Bridges.
+   rsync gegen lebendes `/home/dev` migriert evtl. halbe Commits. **Fix:** hartes verifiziertes Quiesce-
+   Interlock (kein claude/bun/Bridge-PID mehr), finaler rsync gegen read-only-quiesctes Quell-FS,
+   Singleton-Token (Telegram/WA) erst nach bestätigtem alten Stop übergeben (409 strukturell unmöglich).
+9. **[NIEDRIG] GH_TOKEN-Degradation trifft genau den Failover-pull.** „recoverable, kein Blocker"
+   (systemd/README:32) wird im Recovery-Moment zum Blocker, falls pulls gegen GitHub statt Forgejo laufen.
+   **Fix:** Failover-pull ausschließlich gegen internen Forgejo-Remote festschreiben (kein GH_TOKEN im
+   kritischen Pfad).
+
+### Was der Review NICHT beanstandet (trägt)
+Live-NFS-Verwerfung + git-State-Konzept · stop/start-statt-teleport · RAM-Mathe/pve-Absorber-Logik ·
+ZFS-Repl-Durchsatz-Mathe. → Die Lücken sitzen ausnahmslos in der **Failover-Koordination**, nicht im
+Fundament.
+
+**Konsequenz für die Reihenfolge:** Christins Topologie-Entscheid (R/C) bleibt der erste Gate. Aber selbst
+nach „Go" ist der Build **nicht** sofort scharfschaltbar — die 4 Blocker (#1–#4) + echter Codex-Refute
+sind dem Cutover vorgelagert. Diese Härtungen sind topologie-unabhängig → können parallel zum Warten auf
+den Topologie-Entscheid spezifiziert werden.
