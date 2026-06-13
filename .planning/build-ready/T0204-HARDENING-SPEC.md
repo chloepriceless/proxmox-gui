@@ -160,11 +160,97 @@ grün ODER entfernt. Erst dann ist Gate #4 offen.
 | #3 app-konsist. Snapshots | agent-master/Brettli | PVE-Repl-Constraint-Beleg (Merkel) | Spec → Owner-Review offen |
 | #4 Repl-Monitoring | Kuma | Anforderung + 102-0-Beleg + Gate-Definition | Spec → Owner-Review offen |
 
-**Vorgehen:** (1) echter **cross-lab Codex-Refute** auf DIESE Spec (R22 — der bisherige Refute war same-model;
-in diesem Harness kein `codex-worker` verfügbar → über Hub/Owner-Session mit echtem Codex nachholen). (2) Spec
-den 4 Ownern zur Review schicken (nicht-blockierend, peer/notify). (3) Konsens je Blocker → Implementierung
-beim Owner. (4) Erst wenn #1–#4 grün + Schnüffi (LAN-Bind) + Netzi (nftables) → Cutover-Drill (Design-Doc §8).
+**Vorgehen:** (1) ✅ **echter cross-lab Codex-Refute DURCHGEFÜHRT** (2026-06-13, gpt-5-codex via
+`/usr/bin/codex exec` — der bisherige Refute war same-model; codex IST in diesem Harness verfügbar, die
+v1-Annahme „kein codex-worker" war falsch). 12 Findings → Amendments A1–A11 unten; Roh-Evidenz
+`T0204-HARDENING-SPEC-CODEX-REFUTE.md`. **R22-Gate „cross-lab Refute" damit geschlossen.** (2) Spec **+
+Amendments** den 4 Ownern zur Review schicken (nicht-blockierend; über Hub koordiniert, kein 4am-Fanout).
+(3) Konsens je Blocker → Implementierung beim Owner. (4) Erst wenn #1–#4 grün + Schnüffi (LAN-Bind) + Netzi
+(nftables) → Cutover-Drill (Design-Doc §8).
 
 **Leitplanke:** Nichts hiervon ist live ausgeführt; jeder Owner implementiert seinen Teil in seinem Repo.
 Schraubi baut die infra-/cluster-Seite (HA-Affinity, `pct`-STONITH-Caller-Verdrahtung, Repl-Job + Kuma-Probe)
 erst nach Owner-Konsens + den restlichen Gates.
+
+---
+
+## Cross-Lab Codex-Refute (gpt-5-codex, 2026-06-13) — Findings + Spec-Amendments
+**Echter cross-lab Refute** via `/usr/bin/codex exec` (codex-cli 0.139, gpt-5-codex) auf den **literalen
+Spec-Volltext** (v2-Lauf; ein v1-Lauf refutierte wegen Sandbox-Read-Fail nur gegen die Prosa-Beschreibung —
+beide Läufe konvergierten auf dieselbe schwerwiegendste Schwachstelle). **Damit ist das R22-Gate „echter
+cross-lab Codex-Refute" geschlossen** (der frühere war same-model = Claude general-purpose). Refute-Modus
+(nicht bestätigend): 12 Findings. Roh-Evidenz: `T0204-HARDENING-SPEC-CODEX-REFUTE.md`.
+
+### 🔴 Schwerwiegendste Schwachstelle (Codex-Konsens beider Läufe) — spec-defining
+`pct stop` + Broker-Epoch schützen NUR **Broker-geroutete Frames**, NICHT externe **Seiteneffekte**. Kann die
+alte Node nicht beweisbar gekillt/isoliert werden, schreibt sie weiter git + Singleton-Kanäle (WA-/Telegram-
+Provider-Session, Direkt-Egress), WÄHREND der Ersatz startet → genau der Doppel-Owner, den #1 verhindern soll.
+**Die Kern-Sicherheits-Eigenschaft ist also NICHT bewiesen** → Amendments A1+A2+A3 sind Pflicht, bevor #1
+review-fertig ist.
+
+### Amendments (ändern die Design-Positionen — Owner-Review)
+**A1 — #1: `pct stop` ist KEIN Fence (fail-CLOSED-Semantik).** Management-Aktion (kann hängen/scheitern/stale-
+View), kein Power-Fence. „bestätigter Stop" muss definiert werden (aus wessen Sicht; was bei NICHT-erlangbarer
+Bestätigung). **Regel fail-closed:** KEIN respawn UND KEIN Singleton-Start ohne positiven Fence-Beweis (HA-
+Watchdog-Self-Fence / IPMI/PDU-Power-Fence / Node hat self-gefenced). Timeout → fail-closed, nie fail-open.
+Ersetzt das implizite „command issued = alter Owner tot".
+
+**A2 — #1: Singletons brauchen EIGENE Fence-Lease, nicht nur Broker-Epoch.** Die Epoch droppt nur Frames —
+hindert den alten Prozess NICHT, WA/Telegram/git direkt zu bedienen. Akzeptanz (3) „genau 1 Zustellung" ist
+behauptet, nicht garantiert. **Singleton-Adapter starten nach Failover DISABLED** und aktivieren erst nach
+Fence-Bestätigung + Provider-Session-Check (eigene Leader-Lease mit durable CAS ODER Egress-/Credential-Entzug
+des alten Peers). Fehlende Verteidigungslinie AUF Adapter-Ebene — der eigentliche Hebel.
+
+**A3 — #1: Epoch braucht monotonen, durable Store über Broker-Failover (Eskalation der offenen Frage).**
+Failover aus STALE ZFS-Replik → Epoch-Rollback → alte Epoch wieder akzeptiert/wiederverwendet. Die offene
+Frage „wo lebt der Epoch-Zähler" ist KEINE Nebensache, sondern zentral für Split-Brain-Schutz. **Anforderung:**
+quorum-backed / git-CAS (strict, fast-forward-only) / synchron-durable SQLite auf nicht-rollback-Storage /
+externer Consensus. Monotonie über Hub/Broker-Failover + Replik-Rollback definieren. (koppelt an #3-Durability.)
+
+**A4 — #3: `wal_checkpoint(TRUNCATE)` friert Writer NICHT ein.** Checkpoint drained WAL zum Zeitpunkt t; Writes
+laufen zwischen t und dem ZFS-Snapshot weiter → kein kohärenter App-Schnitt. **Echtes Quiesce-Protokoll:**
+read-only/quiesce → flush SQLite+JSON → fsync Files+Dirs → Snapshot → resume. ODER: Failover restored aus dem
+atomar-rename'ten `.backup`-**ARTEFAKT**, NICHT aus live `data/` (die Spec muss das explizit festlegen).
+
+**A5 — #3: Multi-File-Kohärenz (SQLite vs JSON vs Lifecycle-Cmd-Files).** Atomic-rename pro Datei ≠
+Transaktionsgrenze über Dateien (Registry-Epoch 42 in SQLite, Ledger 41 in JSON). **Manifest/Generation-
+Marker:** jede Snapshot/Backup trägt eine Generation-ID; Hub-Start lehnt mixed-generation-State ab / repariert.
+„Kein korruptes JSON" < „semantisch kohärent".
+
+**A6 — #3: atomic-rename JSON braucht fsync-Disziplin.** tmp schreiben → fsync(tmp) → rename → fsync(dir) → bei
+Read validieren + Vorgänger-Generation als Fallback. Sonst nach crash-konsistentem Failover: File fehlt/alt/0-Byte.
+
+**A7 — #4: Repl-Monitoring misst Job-Frische, NICHT Recoverability.** FailCount==0 + Snapshot-Alter beweisen
+NICHT: Replik bootet, Hub-DB öffnet, Platzierung passt, Singletons nicht doppelt. **Recoverability-Gate dazu:**
+periodischer automatisierter Restore-Drill auf der echten Target-Klasse (Replik booten, integrity_check,
+Broker/Peer-Reconcile-Check, Singleton-Exklusivitäts-Check) + Alert auf veralteten/fehlenden Restore-Test. (Das
+Restore-Booten steckt aktuell in #3-Akzeptanz als Einmal-Test → als wiederkehrendes #4-Gate hochziehen.)
+
+**A8 — #2: spawnerd-Spawn-Claim braucht Runtime-Lock + CAS — git-Soll-Map ist KEINE Laufzeit-Sperre.**
+Idempotenter Reconcile ist nur so stark wie die Atomarität des Spawn-Claims; Broker-Registry ist während
+Partition/Broker-Failover unzuverlässig. **Controller-Lease (gefenced) + durable Owner-Epoch + per-`peer_id`
+CAS-Claim:** claim → spawn → register → confirm → release/repair. (verträgt sich mit der Hot-Standby-Ablehnung
+— kein zweiter stehender Controller, aber der EINE Claim muss transaktional sein.)
+
+**A9 — Cross-cutting: pz2 (git-only) = harte Platzierungs-Ausschlüsse.** Hub/Broker/fleet-core (lokales
+`data/`) dürfen NIE auf pz2 starten (kein ZFS → kommt nur mit git-State hoch, ohne Hub-local-State/Epoch-
+History/Singleton-Ownership). **Als Proxmox-HA-Group/Constraint HART kodieren**, nicht nur Prosa. Für git-only-
+Nodes definieren, welche Peers erlaubt sind + welchen State sie rekonstruieren.
+
+**A10 — Cross-cutting: git-Konflikt-Policy.** Zwei Peers pushen dasselbe Repo während Partition → divergente
+Commits/Force-Push-Risiko, auch wenn Broker später Frames droppt. **Per-Repo/Branch-Ownership-Lease, protected
+branches, kein Agent-Force-Push, deterministische Konflikt-Reconciliation nach Failover.**
+
+**A11 — Sequencing + Akzeptanz-Fault-Matrix.** #4-zuerst nur teils richtig: frische Repliken sind für manche
+Drills nötig, verifizieren aber NICHT Fencing/Epoch/Quiesce/semantische Recovery. **Gate layern:** Repl-Health
+→ Restore-Drill → App-Konsistenz-Drill → Fencing-Drill → Singleton-Drill. Akzeptanz #1 darf nicht an EINEM
+iptables-Drop hängen → **Fault-Matrix:** asymmetrische Partition, Corosync-Verlust, Mgmt-API-Verlust, Node-
+Hang, LXC-stop-Hang, stale-Replik-Promotion, Internet-only-Isolation.
+
+### Bewertung (Schraubi)
+Der Refute **bestätigt die 4-Blocker-Struktur**, verschärft aber die Sicherheits-Anforderung erheblich: Spec-v1
+behandelte Epoch+STONITH als ausreichend; Codex zeigt, beide decken nur Broker-Frames + Happy-Path. **Der
+eigentliche Fix ist nicht „besser fencen", sondern (A2) Singleton-Adapter fail-closed + (A1) echte Fence-
+Semantik mit fail-closed-Timeout + (A3) durable monotone Epoch.** Das verschiebt Arbeit von „spawn-ordering" zu
+„Adapter-/Lease-Design" (Owner Broker+spawnerd). **Kein Dissens, der den Cutover-Plan umwirft — aber #1 ist
+NICHT review-fertig ohne A1–A3, #3 nicht ohne A4.** → Owner-Koordination mit diesen Amendments (über Hub).
