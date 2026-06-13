@@ -1,13 +1,14 @@
 # HANDOVER — Proxmox-GUI Head / Infra-LEAD ("Schraubi")
 
-**Updated:** 2026-06-13 ~03:55 · **Branch:** `master` @ `1fb9c37` (pushed, clean tree, in sync).
-**Operator:** Christin (von Perbandt) / Bikini Bottom Capital GmbH. **Peer-IDs (Fleet-Restart 13:57):** Hub=`07lvalhu`, Schnüffi=`8hc8vpgk`, Frischi=`7kmn9ddq`, Netzi=`dr8s8wtb`, Kuma=`zysoypfg`, Patchi=`328j1uc0`.
+**Updated:** 2026-06-13 ~04:25 · **Branch:** `master` @ `2587229` (pushed, clean tree, in sync).
+**Operator:** Christin (von Perbandt) / Bikini Bottom Capital GmbH. **Peer-IDs (04:01-Respawn):** Hub=`07lvalhu` (orchestrator), Kuma=`zysoypfg`, Netzi=`2ile9o2c`, Frischi=`mlhwoeko`, Tapsi=`5tqeyy7g`. (Schnüffi/Patchi nicht in der 04:12-Liste — bei Bedarf `list_peers` + peer/notify.)
 
-## State: Haupt-Strang T-0204 — alle DISKRETEN autonomen Einheiten ✅ DURCH. Cutover gated (Owner/Codex/Schnüffi/Netzi).
-Durable Detail in repo-memory **`project-open-tasks.md`** (oberster Block zuerst lesen).
-Topologie GELÖST (R) · R22-Hardening-Spec geschrieben (`build-ready/T0204-HARDENING-SPEC.md`, commit 05edd64)
-+ an Hub geroutet. `autonomous_open=0` · `blocked_open=5` · Idle-Improvement-Loop ist Standing-Rule bei leerem Queue
-(Runde 1 durch: 3 Merkel-Primärquellen HA-Fencing/ZFS-Repl/Synthese).
+## State: Haupt-Strang T-0204 — alle DISKRETEN autonomen Einheiten ✅ DURCH inkl. R22-Codex-Gate. Cutover gated (Owner-Impl/Schnüffi/Netzi).
+Durable Detail in repo-memory **`project-open-tasks.md`** (oberster Block SESSION-12 zuerst lesen).
+Topologie GELÖST (R) · R22-Hardening-Spec (`build-ready/T0204-HARDENING-SPEC.md`, 05edd64) · **✅ echter cross-lab
+Codex-Refute (gpt-5-codex) DURCH → Amendments A1–A11, commit 2587229; R22-Gate GESCHLOSSEN** · Roh-Evidenz
+`T0204-HARDENING-SPEC-CODEX-REFUTE.md` · Merkel-Ingest 828c042b. `autonomous_open=0` · `blocked_open=6`.
+Idle-Improvement-Loop ist Standing-Rule bei leerem Queue (Runde 1: 3 Merkel-Primärquellen HA-Fencing/ZFS-Repl/Synthese).
 
 ### ⭐ AKTUELLER HAUPT-STRANG: T-0204 verteiltes Fleet-Cluster (ersetzt T-0197)
 Eine Session in der Nacht 2026-06-13 (~02:34–02:48) hat eine **tiefere Live-Recon** gefahren (alle 5
