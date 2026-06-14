@@ -5,9 +5,11 @@ An operator runs a single curl|bash on their Proxmox VE 8.x host and arrives at
 a freshly-provisioned LXC running the FastAPI backend + SvelteKit UI behind
 Caddy with auto-HTTPS (self-signed for LAN; Let's Encrypt-ready for public).
 
-> **Status:** Phase 2 of 5 (Multi-Cluster Inventory). Read-only inventory, audit,
-> and quotas surfaces are live; provisioning (Phase 4), power/snapshots (Phase 3),
-> and self-update polish (Phase 5) are still to come.
+> **Status:** v1 feature-complete — all five phases shipped. Inventory, audit,
+> and quotas (Phase 2); the arq job queue, power, snapshots, backups, resize,
+> clone, migrate (Phase 3); LXC/VM provisioning, Cloud-Init, SDN, noVNC console
+> (Phase 4); and operational hardening incl. in-place self-update (Phase 5) are
+> all live. See *Known limitations* below for the remaining v1 gaps.
 
 ## Prerequisites
 
@@ -111,9 +113,9 @@ documents them so an operator knows what *not* to weaken.
 - `jwt.secret` and `pat.pepper`: likewise mode `0400` owned by `proxmox-gui`.
 - App startup re-validates these (Pitfall A6: `st_mode & 0o077 == 0` or refuse to start).
 
-> Phase 5 will ship a `proxmox-gui backup` CLI that bundles the four paths
-> above into a single timestamped tarball and pushes it to S3 / NFS /
-> Proxmox `backup` storage (DEPLOY-04).
+> A `proxmox-gui backup` CLI that bundles the four paths above into a single
+> timestamped tarball (S3 / NFS / Proxmox `backup` storage, DEPLOY-04) is
+> planned; for now, back up the four paths manually.
 
 ## systemd units
 
@@ -182,19 +184,22 @@ Let's Encrypt:
 
 Security headers shipped by default (ASVS V14.4):
 `Strict-Transport-Security`, `X-Content-Type-Options`, `X-Frame-Options`,
-`Referrer-Policy`. The `Server` header is stripped. **CSP is intentionally
-omitted in Phase 1** — Phase 5 polish hardens (acceptable v1 gap; documented).
+`Referrer-Policy`, and a `Content-Security-Policy` (`default-src 'self'`, with
+the `'unsafe-inline'` style/script allowances the SvelteKit bundle requires —
+see `deploy/caddy/Caddyfile.template`). The `Server` header is stripped.
 
-## Known limitations (Phase 1)
+## Known limitations (v1)
 
 - **No GPG-signed releases.** `curl | bash` over HTTPS is the only integrity
-  check. Phase 5 ships a detached-signature flow (DEPLOY-04, T-01-04-01).
-- **No self-update.** Re-running `bootstrap.sh` only migrates the DB; it
-  does not pull a new release. Phase 5 adds `proxmox-gui upgrade` (DEPLOY-04).
+  check; a detached-signature flow is planned (DEPLOY-04, T-01-04-01).
 - **No backup CLI.** Operator must back up the four paths above manually
-  for now (Pitfall 22 — Phase 5 ships `proxmox-gui backup`).
+  (Pitfall 22 — a `proxmox-gui backup` bundler is planned).
 - **No 2FA / OIDC.** v2 per `.planning/PROJECT.md`.
-- **CSP not in Caddyfile.** Phase 5 polish.
+
+> **In-place self-update IS shipped.** From admin Settings the worker runs the
+> `admin.self-update` job (`backend/app/jobs/selfupdate_functions.py`), which
+> pulls and applies a new release — `bootstrap.sh` re-runs are no longer the
+> only upgrade path.
 
 ## Files in this directory
 

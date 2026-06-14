@@ -33,7 +33,7 @@ from app.jobs.clone_migrate_functions import (
     run_migrate,
     run_template_convert,
 )
-from app.jobs.functions import noop_job, run_power_action
+from app.jobs.functions import noop_job, run_power_action, run_reattach
 from app.jobs.provisioning_functions import (
     run_community_script,
     run_create_lxc,
@@ -125,6 +125,11 @@ class WorkerSettings:
     functions = [
         # max_tries=1 — arq must NOT auto-retry (D-16; user-driven retry).
         func(noop_job, name='internal.noop', max_tries=1, timeout=30),
+        # LIFE-14: the orphan reaper enqueues `job.reattach` for a job whose
+        # PVE task was still running at worker restart — re-attach + poll the
+        # existing UPID to terminal. max_tries=1; 4h ceiling to cover the
+        # longest-running re-attached ops (clone/migrate/backup).
+        func(run_reattach, name='job.reattach', max_tries=1, timeout=14400),
         func(run_power_action, name='vm.power', max_tries=1, timeout=120),
         func(run_power_action, name='vm.delete', max_tries=1, timeout=120),
         # Plan 03-03: snapshot lifecycle (timeouts per RESEARCH §Pattern 1).

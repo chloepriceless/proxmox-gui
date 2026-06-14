@@ -1,0 +1,61 @@
+name: CI
+
+# Backend (pytest) + frontend (vitest) run on every push and PR. Lint/type
+# steps are report-only (continue-on-error) until the pre-existing lint debt
+# (ruff app/ findings, ESLint-9 flat-config migration) is cleared — then flip
+# them to gating. Tests are the merge gate today.
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install (core + [mcp] extra + dev group)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[mcp]" --group dev
+      - name: ruff (report-only)
+        run: ruff check app/ tests/
+        continue-on-error: true
+      - name: mypy (report-only)
+        run: mypy app/
+        continue-on-error: true
+      - name: pytest
+        run: pytest -q
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Enable pnpm (corepack reads packageManager from package.json)
+        run: corepack enable
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: ESLint (report-only — ESLint-9 flat-config migration pending)
+        run: pnpm lint
+        continue-on-error: true
+      - name: svelte-check (report-only)
+        run: pnpm check
+        continue-on-error: true
+      - name: vitest
+        run: pnpm test

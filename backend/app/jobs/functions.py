@@ -16,14 +16,18 @@ import json
 import logging
 from datetime import UTC, datetime
 
+from proxmoxer.tools import Tasks
+
 from app.audit.writer import audit_write
 from app.clusters.errors import PVEAPIError, PVEAuthError, PVEUnreachable
 from app.jobs.events import publish_event
-from app.jobs.poller import dispatch_and_poll
+from app.jobs.poller import dispatch_and_poll, poll_to_terminal
 from app.jobs.service import finish_job, get_job, update_job
 from app.lifecycle.errors import map_pve_error
 
 logger = logging.getLogger(__name__)
+
+_TERMINAL_STATES = {"succeeded", "failed", "needs_review"}
 
 
 async def noop_job(ctx: dict) -> None:
@@ -137,6 +141,81 @@ async def run_power_action(ctx: dict, job_id: int) -> None:
             payload_after={"job_id": job_id, "state": final.state if final else None},
         )
         await db.commit()
+
+
+async def run_reattach(ctx: dict, job_id: int) -> None:
+    """Resume polling an orphaned job's in-flight PVE task (LIFE-14 edge case 1).
+
+    The orphan reaper enqueues ``job.reattach`` for a job whose UPID was still
+    running when the worker restarted (``reaper._reconcile_with_upid``). The
+    UPID already exists, so we do NOT re-dispatch the mutating call — we
+    re-attach to the existing task and poll it to a terminal state via
+    ``poll_to_terminal``.
+
+    A transient/unknown outcome resolves to ``needs_review`` — never a false
+    ``failed`` on an op that may still be running (D-16); the connector being
+    unavailable or the UPID having aged out of Proxmox's task-log are both
+    "outcome unknown", not "failed".
+    """
+    sessionmaker = ctx["sessionmaker"]
+    registry = ctx["registry"]
+
+    # 1. Load the orphaned job; bail if already resolved or has no UPID.
+    async with sessionmaker() as db:
+        job = await get_job(db, job_id)
+        if job is None:
+            logger.warning("run_reattach: job %s not found", job_id)
+            return
+        if job.state in _TERMINAL_STATES:
+            # Already resolved (e.g. by a later reaper pass) — nothing to do.
+            return
+        if not job.upid:
+            # Defensive: the reaper only enqueues reattach for jobs WITH a UPID.
+            await update_job(
+                db, job_id, state="needs_review",
+                error="Re-attach requested but the job carries no UPID",
+            )
+            await db.commit()
+            return
+        upid = job.upid
+        # Fall back to decoding the node from the UPID if upid_node was never
+        # persisted (older write path / partial row) — the UPID encodes it.
+        node = job.upid_node or Tasks.decode_upid(upid)["node"]
+        cluster_id = job.cluster_id
+        team_id = job.team_id
+
+    # 2. Acquire the per-team connector.
+    try:
+        connector = await registry.get_for_team(
+            cluster_id=cluster_id, team_id=team_id
+        )
+    except Exception as exc:  # noqa: BLE001 — connector unavailable on boot.
+        async with sessionmaker() as db:
+            await update_job(
+                db, job_id, state="needs_review",
+                error=f"Re-attach could not reach the cluster: {exc}",
+            )
+            await db.commit()
+        return
+
+    # 3. Re-attach to the existing UPID and poll to terminal. Catch PVE errors
+    #    so arq never sees one (max_tries=1) and resolve to needs_review.
+    try:
+        await poll_to_terminal(ctx, job_id, connector, node=node, upid=upid)
+    except (PVEAPIError, PVEUnreachable, PVEAuthError) as exc:
+        # Transient/unknown poll error → needs_review (outcome unknown; never a
+        # false 'failed' on a possibly-running op, D-16). Re-check the row so a
+        # duplicate poller that already finished the job to a terminal state is
+        # NOT clobbered back to needs_review.
+        if isinstance(exc, PVEAPIError) and getattr(exc, "status_code", None) == 404:
+            msg = "UPID no longer known to Proxmox during re-attach"
+        else:
+            msg = f"Re-attach poll failed: {exc}"
+        async with sessionmaker() as db:
+            current = await get_job(db, job_id)
+            if current is not None and current.state not in _TERMINAL_STATES:
+                await update_job(db, job_id, state="needs_review", error=msg)
+                await db.commit()
 
 
 async def _fail_job(

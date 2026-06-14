@@ -79,13 +79,52 @@ async def dispatch_and_poll(
         if running is not None:
             await publish_event(redis, "job.running", running)
 
-    # 3. Poll. The FIRST stopped response is authoritative (Pitfall 2).
+    # 3. Poll to a terminal state. Shared with the orphan-reaper's reattach
+    #    path (``job.reattach`` → ``run_reattach``) so a worker restart resumes
+    #    an in-flight task instead of losing it.
+    await poll_to_terminal(ctx, job.id, connector, node=node, upid=upid)
+
+
+async def poll_to_terminal(
+    ctx: dict,
+    job_id: int,
+    connector: Any,
+    *,
+    node: str,
+    upid: str,
+) -> None:
+    """Poll an already-dispatched PVE task (UPID) to a terminal state.
+
+    The FIRST ``status == "stopped"`` response is authoritative (Pitfall 2):
+    fast ops are already stopped on poll #1. Used by ``dispatch_and_poll``
+    (right after dispatch) and by ``run_reattach`` (the reaper re-attaches to a
+    task that was still running at worker restart — the UPID already exists, so
+    no re-dispatch).
+
+    Args:
+        ctx: arq job context — carries ``sessionmaker`` and ``redis``.
+        job_id: the ``jobs`` row id to finish on terminal.
+        connector: the per-team ``PVEConnector``.
+        node: the node the task runs on (from the decoded UPID).
+        upid: the Proxmox task UPID to poll.
+    """
+    sessionmaker = ctx["sessionmaker"]
+    redis = ctx["redis"]
+
     delay = _INITIAL_DELAY
     while True:
         status = await connector.task_status(node=node, upid=upid)
         if status.get("status") == "stopped":
+            # The FIRST stopped response makes ``exitstatus`` authoritative —
+            # log retrieval is best-effort, so a failing task_log can never
+            # downgrade a KNOWN outcome to an ambiguous one.
             exitstatus = status.get("exitstatus") or ""
-            log_tail = await connector.task_log(node=node, upid=upid, limit=200)
+            try:
+                log_tail = await connector.task_log(
+                    node=node, upid=upid, limit=200
+                )
+            except Exception:  # noqa: BLE001 — best-effort log fetch.
+                log_tail = ""
             async with sessionmaker() as db:
                 if exitstatus == "OK" or exitstatus.startswith("WARNINGS:"):
                     # A3: WARNINGS: → succeeded, the warning still surfaced.
@@ -96,7 +135,7 @@ async def dispatch_and_poll(
                     )
                     await finish_job(
                         db,
-                        job.id,
+                        job_id,
                         state="succeeded",
                         friendly=friendly,
                         log=log_tail,
@@ -104,21 +143,21 @@ async def dispatch_and_poll(
                 else:
                     await finish_job(
                         db,
-                        job.id,
+                        job_id,
                         state="failed",
                         error=exitstatus,
                         friendly=map_pve_error(exitstatus, log_tail),
                         log=log_tail,
                     )
                 await db.commit()
-                done = await get_job(db, job.id)
+                done = await get_job(db, job_id)
                 if done is not None:
                     await publish_event(redis, "job.completed", done)
             return
 
         # Still running — emit a progress event and back off.
         async with sessionmaker() as db:
-            current = await get_job(db, job.id)
+            current = await get_job(db, job_id)
             if current is not None:
                 await publish_event(redis, "job.progress", current)
         await asyncio.sleep(delay)

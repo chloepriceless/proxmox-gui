@@ -28,7 +28,11 @@ from app.jobs.service import finish_job, select_jobs, update_job
 
 logger = logging.getLogger(__name__)
 
-_NON_TERMINAL = ["pending", "claimed", "running"]
+# ``orphaned`` IS included: a job set ``orphaned`` by edge-case-1 whose
+# ``job.reattach`` was lost (worker crash / Redis drop / arq timeout-cancel)
+# must be re-reconciled on the next boot — otherwise it strands forever
+# (the reattach enqueue is deduped per job so a re-scan is idempotent).
+_NON_TERMINAL = ["pending", "claimed", "running", "orphaned"]
 
 
 async def reap_orphans(ctx: dict) -> None:
@@ -124,11 +128,15 @@ async def _reconcile_with_upid(
             await db.commit()
         return
 
-    # Edge case 1: still running — re-enqueue a re-attach poll job.
+    # Edge case 1: still running — re-enqueue a re-attach poll job. The
+    # stable ``_job_id`` dedupes a double enqueue across two quick reboots so
+    # two pollers can't race the same row (arq drops the duplicate).
     async with sessionmaker() as db:
         await update_job(db, job.id, state="orphaned")
         await db.commit()
-    await arq_pool.enqueue_job("job.reattach", job.id)
+    await arq_pool.enqueue_job(
+        "job.reattach", job.id, _job_id=f"job-reattach-{job.id}"
+    )
     reattached.append(job.id)
 
 

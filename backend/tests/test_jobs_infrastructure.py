@@ -517,3 +517,176 @@ async def test_enqueue_job_dedups_double_submit_of_a_reissue() -> None:
         assert job2_id != job1_id
         assert job3.id == job2_id, "a double-submit of the re-issue must dedup"
     await eng.dispose()
+
+
+# ----------------------------------------------------------------------------
+# Task 2 — job.reattach: the reaper's edge-case-1 re-attach path (LIFE-14)
+#
+# Release-review CRITICAL regression: reaper.py enqueued ``job.reattach`` but
+# WorkerSettings.functions did not register it — arq silently discards an
+# unknown kind, so a job still running at worker restart hung forever.
+# ----------------------------------------------------------------------------
+
+
+def test_reaper_reattach_kind_is_registered() -> None:
+    """The reaper's ``job.reattach`` kind must exist in the worker registry."""
+    from app.jobs.worker import WorkerSettings
+
+    registered = {f.name for f in WorkerSettings.functions}
+    assert "job.reattach" in registered, (
+        "reaper enqueues 'job.reattach' but it is not registered: "
+        f"{sorted(registered)}"
+    )
+
+
+def test_reaper_enqueue_literals_are_all_registered() -> None:
+    """Static guard: every literal kind reaper.py enqueues is registered.
+
+    Catches future drift generically — the ``enqueue_job(job.kind, ...)`` form
+    is dynamic (already-registered kinds), so only the string literals are
+    checked here.
+    """
+    import re
+
+    from app.jobs.worker import WorkerSettings
+
+    registered = {f.name for f in WorkerSettings.functions}
+    src = (BACKEND_DIR / "app" / "jobs" / "reaper.py").read_text()
+    literals = set(re.findall(r'enqueue_job\(\s*["\']([\w.]+)["\']', src))
+    assert literals, "expected at least one literal enqueue_job kind in reaper.py"
+    missing = literals - registered
+    assert not missing, f"reaper enqueues unregistered kinds: {sorted(missing)}"
+
+
+@pytest.mark.asyncio
+async def test_reaper_reattaches_still_running_upid_job() -> None:
+    """A job with a UPID whose task is STILL running → orphaned + reattach enqueued."""
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from app.jobs.reaper import reap_orphans
+    from app.models import Job
+    from app.models.base import Base
+
+    eng = create_async_engine("sqlite+aiosqlite:///:memory:", future=True)
+    async with eng.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(eng, expire_on_commit=False)
+    upid = "UPID:pve-01:0001:000A:65000000:qmclone:100:gui-team-1@pve:"
+    async with factory() as session:
+        job = Job(
+            kind="vm.clone", state="running", payload="{}",
+            upid=upid, upid_node="pve-01",
+        )
+        session.add(job)
+        await session.commit()
+        job_id = job.id
+
+    class _RunningConnector:
+        async def task_status(self, *, node, upid):  # noqa: ANN001
+            return {"status": "running"}
+
+    class _Registry:
+        async def get_for_team(self, *, cluster_id, team_id, db=None):  # noqa: ANN001
+            return _RunningConnector()
+
+    pool = _FakeArqPool()
+    ctx = {
+        "sessionmaker": factory, "registry": _Registry(),
+        "redis": _FakeRedis(), "arq_pool": pool,
+    }
+    await reap_orphans(ctx)
+
+    async with factory() as session:
+        refreshed = await session.get(Job, job_id)
+        assert refreshed.state == "orphaned"
+    # The reaper enqueued exactly a job.reattach for this job.
+    kinds = [args[0] for args, _ in pool.enqueued]
+    assert kinds == ["job.reattach"], f"expected one job.reattach, got {pool.enqueued}"
+    assert pool.enqueued[0][0][1] == job_id
+    await eng.dispose()
+
+
+@pytest.mark.asyncio
+async def test_run_reattach_polls_running_upid_to_terminal() -> None:
+    """run_reattach resumes polling an orphaned job's UPID to a terminal state."""
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from app.jobs.functions import run_reattach
+    from app.models import Job
+    from app.models.base import Base
+
+    eng = create_async_engine("sqlite+aiosqlite:///:memory:", future=True)
+    async with eng.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(eng, expire_on_commit=False)
+    upid = "UPID:pve-01:0001:000A:65000000:qmclone:100:gui-team-1@pve:"
+    async with factory() as session:
+        job = Job(
+            kind="vm.clone", state="orphaned", payload="{}",
+            upid=upid, upid_node="pve-01",
+        )
+        session.add(job)
+        await session.commit()
+        job_id = job.id
+
+    class _StoppedConnector:
+        async def task_status(self, *, node, upid):  # noqa: ANN001
+            return {"status": "stopped", "exitstatus": "OK"}
+
+        async def task_log(self, *, node, upid, limit=200):  # noqa: ANN001
+            return "clone complete"
+
+    class _Registry:
+        async def get_for_team(self, *, cluster_id, team_id, db=None):  # noqa: ANN001
+            return _StoppedConnector()
+
+    ctx = {
+        "sessionmaker": factory, "registry": _Registry(),
+        "redis": _FakeRedis(), "arq_pool": _FakeArqPool(),
+    }
+    await run_reattach(ctx, job_id)
+
+    async with factory() as session:
+        refreshed = await session.get(Job, job_id)
+        assert refreshed.state == "succeeded"
+    await eng.dispose()
+
+
+@pytest.mark.asyncio
+async def test_run_reattach_unreachable_cluster_marks_needs_review() -> None:
+    """If the connector can't be acquired, run_reattach → needs_review (not failed)."""
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from app.jobs.functions import run_reattach
+    from app.models import Job
+    from app.models.base import Base
+
+    eng = create_async_engine("sqlite+aiosqlite:///:memory:", future=True)
+    async with eng.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(eng, expire_on_commit=False)
+    upid = "UPID:pve-01:0001:000A:65000000:qmclone:100:gui-team-1@pve:"
+    async with factory() as session:
+        job = Job(
+            kind="vm.clone", state="orphaned", payload="{}",
+            upid=upid, upid_node="pve-01",
+        )
+        session.add(job)
+        await session.commit()
+        job_id = job.id
+
+    class _Registry:
+        async def get_for_team(self, *, cluster_id, team_id, db=None):  # noqa: ANN001
+            raise RuntimeError("cluster offline on boot")
+
+    ctx = {
+        "sessionmaker": factory, "registry": _Registry(),
+        "redis": _FakeRedis(), "arq_pool": _FakeArqPool(),
+    }
+    await run_reattach(ctx, job_id)
+
+    async with factory() as session:
+        refreshed = await session.get(Job, job_id)
+        # outcome unknown, never a false 'failed' on a possibly-running op (D-16).
+        assert refreshed.state == "needs_review"
+    await eng.dispose()

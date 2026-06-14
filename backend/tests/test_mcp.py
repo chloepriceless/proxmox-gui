@@ -11,6 +11,12 @@ import httpx
 import pytest
 import respx
 
+# The MCP bridge lives in the optional ``[mcp]`` extra (pyproject), not in the
+# dev dependency group. Skip this whole module (instead of breaking the entire
+# suite at collection time) when ``mcp`` is absent — e.g. a bare dev install.
+# CI installs ``.[mcp]`` so this still runs there.
+pytest.importorskip("mcp")
+
 from app.mcp.client import MCPClientError, ProxmoxGuiClient
 from app.mcp.config import MCPConfig, MCPConfigError, load_config
 from app.mcp.server import build_server
