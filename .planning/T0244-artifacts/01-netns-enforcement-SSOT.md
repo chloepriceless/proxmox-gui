@@ -468,9 +468,13 @@ sysctl(ip_forward=0) → zone-netns-setup.service (br-zone + alle Seat-ns + IPv6
        ExecStartPre=+seat-negative-oracle %i  ← Netz-Layer fresh/Start (root)
        ExecStart=zone-seat-entrypoint (INERT bis Spawner-UDS-Handshake)
             │
+            ▼  GATE 3 (Egress/Detektor-Schicht — Schnüffi, parallel zu net/hardening)
+   zone-selftest-broker.service → Detektor-Recall-Oracle (Seed-PII→100%-Block)  (After Broker, Before spawner)
+            │  exit!=0 → failed → kein Spawner-Dispatch (Broker-Pivot-Gate)
             ▼
-   zone-spawner.service (After alle Seats, Requires beide Gates)
+   zone-spawner.service (After alle Seats, Requires=zone-selftest-{net,hardening,broker})
 ```
+**Integrationspunkt für Schnüffis 3. Oracle (Round-9, Co-Gate aktiv):** `zone-selftest-broker.service` hängt analog zu zone-selftest-net/-hardening: `After=zone-broker-llm zone-broker-merkel`, `Requires=` dieselben, `Before=zone-spawner.service`. **Der Spawner `Requires=` ALLE DREI Gates** (netns-Netz + Cap-Floor + Detektor-Recall) → kein Seat-Dispatch ohne alle drei grün. Da die Seats INERT bis zum Spawner-UDS-Handshake sind, gatet das Detektor-Oracle korrekt am Spawner (nicht am Seat-Start) — der Broker-Pivot-Exfil-Pfad wird erst mit echter Seat-Arbeit relevant.
 
 **Fail-closed-Garantien:**
 1. **Boot-Aggregat-Gates VOR jedem Seat** (H1): `zone-seat@` `Requires=/After= zone-selftest-net zone-selftest-hardening`. Failt ein Gate → KEIN Seat.
@@ -657,4 +661,10 @@ Verdikt NOT-BUILD-READY, aber codex (mit explizitem BUILD-READY-Mandat) bestäti
 | NB2 | low | argv-Check regex (für fixe Seatnamen dicht) | belassen |
 | NB3 | low | stale Fixture-Kommentare in zone-seat-probe.sh | aufgeräumt (ExecStartPre-Self-Proof statt Fixture-Unit) |
 
-**Trend: R1:7 → … → R6:6 → R7:3H+1M → R8:2H+3NB.** **R9 = BUILD-READY-Runde auf der netns/Prozess-Schicht.** Sobald grün → Schnüffis LLM-Broker-RPC-Co-Gate als dritter Oracle (Spec V1-V3: E2-EU-Hyperscaler, Cert-Pinning, zone-selftest-broker). **Round-9-Lens: ausstehend (gepingt).** Default=BLOCK bis grün.
+**Trend: R1:7 → … → R6:6 → R7:3H+1M → R8:2H+3NB.**
+
+### 🟢 Refute Round-9 — BUILD-READY abgezeichnet (Codex/Schnüffi, 420f7f6)
+Nach 9 Cross-Lab-Refute-Runden: **codex (mit explizitem Build-Ready-Mandat) findet KEINEN build-blockierenden Befund** mehr; beide R8-Blocker im echten Code zu; **alle 7 Prüfachsen OK**. Schnüffi hat die EINE load-bearing Stelle selbst code-verifiziert (`safe_canonical` `[ "$real" = "$p" ]` = readlink-e==self → Symlink-Stub-Bypass echt zu, plus root-owned + `&022`-Check). **Die netns/Prozess-Isolations-Schicht (B1b Netz + B1c Cap + Self-Proof + Boot/Restart-Komposition + Oracle-fail-closed + Egress-Ordering) ist R22-GRÜN.**
+- **Befund-Trend (9 Runden):** 7→9→10→9→8→6→3H+1M→2→0. false-PASS-Klasse R1-R3 3× zurück, ab R4 5× gehalten; R5 fing 2 echte Sicherheitslöcher (IPv6-Egress-Ordering, Floor-Claim≠Code); R6 bestätigte die ExecStartPre-Vereinfachung systemd-sound; R9 grün.
+- **Schnüffi-Co-Gate kippt von gated auf AKTIV:** zieht den 3. Oracle nach — `zone-selftest-broker.service` (Detektor-Recall Seed-PII→100%-Block + Broker-RPC-Contract + Cert-Pinning, schließt den daddr-losen :443). Integration = §6 GATE 3 (Spawner `Requires=` alle 3 Gates). Finale netns-Topo-Werte (10.99.0.1:8443 / .2:8500 / uid 8001-8003) an Schnüffi geliefert.
+- **Egress-Bau/Deploy weiterhin gated** auf Christin-Go + Netzi-VLAN50 + R3-Merkel — aber die Isolations-Artefakte (meine B1 + Schnüffis Co-Gate) sind die R22-grüne Foundation. **Nächster Sync:** Schnüffis V3-Spec → 3 Gates final verdrahten + gemeinsamer Build-Verify-Plan.
