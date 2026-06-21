@@ -1,13 +1,13 @@
 # HANDOVER — Proxmox-GUI Head / Infra-LEAD ("Schraubi")
 
-**Updated:** 2026-06-21 ~16:42 CEST. **Branch:** `fix/release-review-blockers` @ `a8be222` (pushed, clean tree, in sync).
+**Updated:** 2026-06-21 ~17:55Z (Respawn-Session). **Branch:** `fix/release-review-blockers` @ `505d814` (pushed, clean tree, in sync).
 **⚠️ Dieses Doc ist sekundär — die KANONISCHE Resume-Quelle ist `project-open-tasks.md` (oberster T-0244-Block, voll aktuell). Hier nur der Kurz-Stand.**
 **Peer-IDs (2026-06-21):** Hub-Sub=`f73n74ge`, Schnüffi(Security)=`9ux20vst`, Bizzi(Compliance)=`lnfo8eyv`, Netzi(Netz/VLAN)=`fqj85asg`, Tapsi(Backup)=`eib2hvyt`, Sentinel=`hgm1sq49`. Tüftli (Continuity) aktuell offline. Hub-Key=`vm-deployment-gui`.
 
-## 🔵 AKTUELLER STAND (2026-06-21, Respawn-Session)
-**T-0244 AVV-Zone (ich = BAU-LEAD): Pre-Build-Artefakt-Phase KOMPLETT.** Alle §3-Artefakte gebaut + BEIDE Refute-Lensen (Claude fresh + Codex/Schnüffi, konvergent) durch & eingearbeitet → `.planning/T0244-artifacts/` (7 Dateien, commits bd4692a→a8be222). Triple-Oracle-Gate (Netz-Isolation B1b + Cap-Drop B1c via neuem `seat-hardening-oracle.sh` + Schnüffis Detektor-Recall) mit Schnüffi vereinbart. **autonomous_open=0.**
-**Verbleibend an T-0244 = alles blocked/extern:** (1) Schnüffi-Re-Run-Bestätigungs-Lens (ihre Action, gepingt); (2) egress-fähiger Bau = Netzi-VLAN50 + Christin/Hub-Go; (3) Substrat-DDL-Finalisierung mit Tüftli (offline). **KEIN Live-pz2/UDM-Touch ohne Christin/Hub-Go.**
-**Beim Neustart:** `project-open-tasks.md` oberster Block lesen → falls Schnüffi-Re-Run-Befunde da: einfolden wie Lens-1/2. Sonst: T-0244 ist sauber geparkt, andere Stränge (unten) bleiben blockiert.
+## 🔵 AKTUELLER STAND (2026-06-21 ~17:55Z, Respawn-Session)
+**T-0244 AVV-Zone (ich = BAU-LEAD): BEIDE Isolations-Schichten BUILD-READY + Integration beidseitig verifiziert.** netns/Prozess-Schicht nach 9 Cross-Lab-Refute-Runden R22-grün (commits bd4692a→0c02b4d, 8 Artefakt-Dateien). Schnüffis GATE-3 (Detektor-Recall 76/76, Broker-RPC-Tightness 23/23) nach 19 Runden BUILD-READY (e5c3a93). **3-Gate-Triple-Oracle-Spawner verdrahtet + gemeinsamer `06-build-verify-plan.md`** (commit 505d814, 9 Artefakt-Dateien). **Schnüffi (per6ezmd) hat die Integration read-only gegen 505d814 verifiziert (17:54Z): Triple-Oracle-Gate vollständig + konsistent, keine neuen Befunde — beide durch.** **autonomous_open=0.**
+**Verbleibend an T-0244 = alles blocked/extern:** (1) gemeinsamer LIVE-Build-Verify (erst beim echten Bau — gated); (2) egress-fähiger Bau = Netzi-VLAN50 + Christin/Hub-Go + R3-Merkel + V1-Upstream-Pin (Bedrock vs Vertex); (3) Substrat-DDL-Finalisierung mit Tüftli (offline). **KEIN Live-pz2/UDM-Touch ohne Christin/Hub-Go.**
+**Beim Neustart:** `project-open-tasks.md` oberster Block lesen (kanonisch). T-0244 ist FERTIG/BUILD-READY, beidseitig bestätigt — nichts autonom Offenes. Auf neue Refute-Befunde reagieren (einfolden wie R1-R9) ODER egress-Go. Andere Stränge (unten) bleiben blockiert.
 
 ---
 
