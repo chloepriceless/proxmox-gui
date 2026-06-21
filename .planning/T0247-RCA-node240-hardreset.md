@@ -50,6 +50,12 @@ Andere 4 Cluster-Nodes überstehen dieselbe Backup-Welle → **lokal auf .240**.
 - **Rails NORMAL bis zur letzten Sample, dann Stille** → instantaner Upstream-AC/PSU-Cut (#2) → Fix-Pfad PSU-HW/PDU/UPS/Wand-AC.
 - **Optionale Tweaks** (koordiniert mit Collector-Owner f73n74ge): 1s-Intervall im Fenster 01:55–02:45 (Sag-Rampe besser fangen, Collector friert mit .240 ein → letzte Sample = ~Intervall vor Cut) + zusätzlich `ipmitool sensor` ~10s (BMC-PSU-Level/„ac-failed").
 
+**Auswertungs-Oracle (Kuma, Schwellen aus Live-Baseline — für die Messnacht-Auswertung):**
+- **12V** Baseline 12.10V → Abfall **<11.7V** ODER fallende Rampe in den letzten 1–3 Samples = **SAG** (ATX-Untergrenze 11.40V).
+- **5V** Baseline 5.07V (Untergrenze 4.75V). **3VSB/5VSB** müssen bombenfest sein — dippen sie = tiefes Power-Problem.
+- **Tctl** idle ~55°C; nur **>90°C** vor Cut wäre thermal (unwahrscheinlich bei instant).
+- **Entscheidung:** fallende 12V/5V-Rampe vor Stille → Brownout/Sag unter Last → PSU tauschen/aufdimensionieren + Last entzerren. Rails bei Baseline DANN Stille → instant Upstream-Cut → PSU-HW/PDU/UPS/Wand-AC. Die `ipmi-sensors.log`-PSU-Status-Zeile entscheidet zusätzlich ac-input vs. rail-sag.
+
 ## 6. Empfohlene Schritte
 ### Bereits erledigt (Interim-Mitigation, Auftraggeber)
 - **vzdump `bwlimit` 100→30 MiB/s** — senkt Peak-HBA/Disk/Power-Last → reduziert Brownout-Wahrscheinlichkeit. ✅ gute Sofort-Maßnahme.
