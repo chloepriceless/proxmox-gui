@@ -79,11 +79,26 @@ sysctl -w net.ipv4.ip_forward=0
 sysctl -w net.ipv6.conf.all.forwarding=0
 sysctl -w net.ipv4.conf.all.rp_filter=1
 
+# --- 0b. /run/netns als SHARED mount sichern (Refute HIGH-2) --------------
+# named-netns + systemd NetworkNamespacePath braucht /run/netns als shared mount,
+# sonst propagiert der ns-Pfad nicht in die private Mount-ns der Seat-Unit
+# (systemd PrivateMounts) → Seat-Unit failed silent. Vor JEDEM ip-netns-add.
+mkdir -p /run/netns
+mountpoint -q /run/netns || mount --bind /run/netns /run/netns
+mount --make-shared /run/netns
+
 # --- 1. Broker-Bridge (root-ns) ------------------------------------------
 ip link show "$BR" &>/dev/null || ip link add "$BR" type bridge
 ip link set "$BR" up
-# Broker-Bridge bekommt KEINE Default-Route, NUR die /24-Adresse:
+# Broker-Bridge: KEINE Default-Route. Bridge-eigene Verwaltungsadresse:
 ip addr replace 10.99.0.254/24 dev "$BR"
+# Broker-Listen-IPs als SEKUNDÄR-Adressen AUF der Bridge (Refute HIGH-1):
+# ohne diese binden die Broker auf 10.99.0.1/.2 mit EADDRNOTAVAIL und Seats
+# bekommen keine local-delivery. local delivery ignoriert das isolated-Flag
+# (Refute VERIFIED gg. Kernel 7d850ab) → Seats erreichen die Bridge-IPs, aber
+# NICHT einander.
+ip addr replace 10.99.0.1/24 dev "$BR"
+ip addr replace 10.99.0.2/24 dev "$BR"
 # L2-Isolation zwischen Seat-Ports (Stern, kein Seat<->Seat):
 ip link set "$BR" type bridge ageing_time 0
 echo 1 > /sys/class/net/$BR/bridge/no_linklocal_learn 2>/dev/null || true
@@ -139,8 +154,10 @@ table inet zone_root {
   chain output {
     type filter hook output priority 0; policy drop;
     oif "lo" accept
-    oif $BR_IF accept                       # Broker<->Seat intern frei
     ct state established,related accept
+    # Broker→Seat (intern): NUR Broker-UIDs neu auf br-zone (Refute MED-4 —
+    # vorher war 'oif br-zone accept' blanket = breiter als die Invariante):
+    oif $BR_IF meta skuid { $UID_LLM, $UID_MERKEL, $UID_RESOLV } accept
 
     # LLM-Broker: nur 443 raus (IP-Allowlist grob; FQDN/SNI/Pin = Broker-app-layer/Schnüffi)
     oif $EXT_IF meta skuid $UID_LLM    tcp dport 443 accept
@@ -239,7 +256,10 @@ WantedBy=multi-user.target
 ```nft
 #!/usr/sbin/nft -f
 # zone-seat.nft — IN der Seat-netns appliziert. Default-drop, NUR Broker-Ziele.
-flush ruleset
+# `nft -f` lädt die ganze Datei als EINE atomare Transaktion → kein default-accept-
+# Mikrofenster bei (Re-)Load (Refute MED-5: scoped 'flush table' statt 'flush ruleset',
+# damit ein Laufzeit-Reload nur DIESE Tabelle ersetzt, atomar):
+flush table inet zone_seat
 define LLM    = 10.99.0.1
 define MERKEL = 10.99.0.2
 table inet zone_seat {
@@ -264,6 +284,8 @@ table inet zone_seat {
 Description=T-0244 seat-ns nftables for %i (fail-closed)
 After=zone-netns-setup.service
 BindsTo=zone-netns-setup.service
+PartOf=zone-seat@%i.service           # Refute MED-5: Laufzeit-restart der nft-Unit
+                                       # zieht den Seat mit (nicht nur Boot-Kopplung)
 Before=zone-seat@%i.service           # B1d: nft VOR dem Seat
 [Service]
 Type=oneshot
@@ -308,6 +330,8 @@ Requires=zone-netns-setup.service
 [Service]
 Type=oneshot
 ExecStart=/usr/local/sbin/seat-negative-oracle.sh --all-seats --strict
+TimeoutStartSec=180          # Refute 3d: hängendes Ziel darf das Gate nicht aufhängen
+                              # → Timeout = Unit failed = fail-closed (Spawner startet nicht)
 # exit!=0 → diese Unit failed → zone-spawner (Requires=zone-selftest) startet nicht
 [Install]
 WantedBy=multi-user.target
@@ -323,4 +347,19 @@ WantedBy=multi-user.target
 - **Negativ-Oracle-Implementierung (B1b):** mein Artefakt 02 (separat, weil = der Test, der DIESE Policy beweist).
 
 ## 8. Verifikations-Hooks (R31 — was beweist „fertig")
-Dieses Artefakt ist erst „build-ready", wenn Artefakt 02 (Negativ-Oracle) in der gebauten VM grün läuft: ALLE Negativ-Proben FAIL + ALLE Positiv-Proben SUCCEED. Bis dahin: **SPEC, nicht verifiziert** (kein Live-Bau erfolgt — Christin/Hub-Go + Netzi-VLAN stehen aus).
+Dieses Artefakt ist erst „build-ready", wenn Artefakt 02 (Negativ-Oracle) in der gebauten VM grün läuft: ALLE Negativ-Proben geblockt + die 2 Broker-Positiv-Proben CONNECTED. Bis dahin: **SPEC, nicht verifiziert** (kein Live-Bau erfolgt — Christin/Hub-Go + Netzi-VLAN stehen aus).
+
+## 9. Refute-Lens v2 — eingearbeitete Befunde (2026-06-21, Claude-Lens, fresh context)
+Adversarialer Refute auf dieses Artefakt + das Oracle. **Was HIELT** (aktiv zu brechen versucht, nicht gebrochen): der Kern-B1c-Konter — systemd joint die netns und dropt Caps/seccomp VOR dem Seat-exec → der Seat startet bereits ohne `CAP_NET_ADMIN`/`setns`/`unshare` → netns wird zur harten Grenze (B1 real geschlossen, sofern der Seat NUR über die gehärtete Unit startet). `isolated`-Flag blockt Seat↔Seat, lässt aber local-delivery an Bridge-IPs durch (Kernel 7d850ab). Routenlose Seat-ns = echte zweite Schicht. Resolver auf 127.0.0.1 für Seats topologisch unerreichbar. **EINGEARBEITET:**
+| Befund | Sev | Fix in diesem Doc |
+|---|---|---|
+| Broker-IPs 10.99.0.1/.2 keinem IF zugewiesen → Bau bricht | HIGH | §2 setup.sh: `ip addr replace 10.99.0.1/.2/24 dev br-zone` |
+| named-netns Mount-Propagation-Footgun (PrivateMounts) | HIGH | §2 setup.sh §0b: `mount --make-shared /run/netns` vor netns-add |
+| Oracle wertete „refused"(=Host erreicht) wie geblockt = false-PASS | HIGH | Artefakt 02 v2: CONNECTED/REFUSED→Verletzung, +UDP/ICMP-Proben |
+| `oif br-zone accept` blanket = breiter als Invariante | MED | §3: auf Broker-UIDs `{8001,8002,8003}` eingeschränkt |
+| BindsTo deckt Laufzeit-restart nicht; flush-Mikrofenster | MED | §5: `PartOf=` + `flush table` (atomar) statt `flush ruleset` |
+| selftest-Gate kann an hängendem Ziel hängen | MED | §6: `TimeoutStartSec=180` (Timeout=fail-closed) |
+| Broker-Pivot (covert Exfil via erlaubtem Anthropic-Kanal) | MED | §7 + Oracle-Hinweis: B1-Oracle ≠ Egress-Gesamtrisiko → Schnüffis positive-Allowlist-Oracle = CO-GATE für den Spawner |
+| skuid-Match bricht, falls Broker zu anderer UID forkt; DoT-Upstream Annahme | LOW | Broker dürfen NICHT UID-wechseln (fail-closed=DROP); DoT-Upstream-Pin = offen mit Netzi/Schnüffi (H5) |
+
+**Zweite Lens (Codex via Schnüffi) am SYNC-PUNKT ausstehend** — erst nach deren Durchlauf gilt 01 als refute-durch (R22, Default=BLOCK).

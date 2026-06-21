@@ -27,6 +27,8 @@
 Artefakt 01 §1 fixiert die KONKRETE netns-Topologie (Broker-Listen-IPs/Ports `10.99.0.1:8443` LLM, `10.99.0.2:8500` Merkel; UID-Plan 8001-8003; Resolver `127.0.0.1:53` root-only). Schnüffis RPC-Methoden ziehen GEGEN diese Werte. Separate-Broker-VM-Fallback (B1) NUR falls der Cap-Drop-Isolationsbeweis (01 §4 + Oracle) nicht trägt — ihre Specs bleiben identisch.
 
 ## Gate-Status
-- **Refute-Lens auf 01+Oracle:** ausstehend (security-/architektur-kritisch → R22). Fresh-context-Refute (Claude-Lens) + Schnüffi/Codex-Lens am SYNC-PUNKT, BEVOR „build-ready".
-- **Egress-fähiger Bau:** BLOCKIERT bis Artefakte refute-durch + negativ-getestet + Konsens Schnüffi/Schraubi/Netzi.
+- **Refute-Lens 1 (Claude, fresh context):** ✅ DURCH (2026-06-21). 3×HIGH + 4×MED gefunden + EINGEARBEITET (01 §9 Changelog): Broker-IP-Assignment, `make-shared /run/netns`, Oracle-false-PASS-Fix (refused≠blockiert + UDP/ICMP), `oif br-zone` eingeschränkt, `PartOf`+atomares `flush table`, selftest-`TimeoutStartSec`. **Kern-B1c-Konter HIELT** (Cap-Drop macht netns hart).
+- **Refute-Lens 2 (Codex via Schnüffi) am SYNC-PUNKT:** ausstehend (R22, Default=BLOCK — erst nach 2. konvergenter Lens gilt 01 als refute-durch).
+- **Broker-Pivot-Restrisiko (Refute MED-6):** B1-Oracle beweist Seat-Netz-Isolation, NICHT das Egress-Gesamtrisiko (covert Exfil via erlaubtem Anthropic-Kanal). → Schnüffis positive-Allowlist-Detektor-Oracle = **CO-GATE** für den Spawner (nicht nur mein netns-Oracle).
+- **Egress-fähiger Bau:** BLOCKIERT bis beide Refute-Lensen durch + negativ-getestet + Konsens Schnüffi/Schraubi/Netzi.
 - **Foundation-ohne-Egress:** refute-frei, aber infra-gated (Netzi-VLAN + Christin/Hub-Go).
