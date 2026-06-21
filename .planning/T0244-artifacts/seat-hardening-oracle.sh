@@ -56,12 +56,14 @@ for ns in "${SEATS[@]}"; do
   [ -z "$floorbad" ] && chk ok "Policy-Floor erfüllt (${#FLOOR[@]} Soll-Werte)" \
                       || chk fail "Policy-Floor VERLETZT →$floorbad"
 
-  # (2) SystemCallFilter — kritische Denials MÜSSEN drin sein (semantisch)
+  # (2) SystemCallFilter — kritische Tokens PRÄSENT (R7-M1: ehrlich als PRÄSENZ-Check, NICHT
+  #     deny-seitig; die Config ist rein '~' = Denylist, und der dynamische ExecStartPre-
+  #     Self-Proof ist die VERHALTENS-Autorität für tatsächliche Verweigerung).
   scf=$(prop "$U" SystemCallFilter)
   miss=""
   for d in "${REQUIRED_DENIES[@]}"; do grep -qiw -- "$d" <<<"$scf" || miss+=" $d"; done
-  [ -z "$miss" ] && chk ok "SystemCallFilter enthält kritische Denials (${#REQUIRED_DENIES[@]})" \
-                  || chk fail "SystemCallFilter fehlen Denials →$miss (dynamischer Self-Proof ist Verhaltens-Autorität)"
+  [ -z "$miss" ] && chk ok "SystemCallFilter-Tokens präsent (${#REQUIRED_DENIES[@]}; deny-Verhalten ⇒ dyn. Self-Proof)" \
+                  || chk fail "SystemCallFilter fehlen Tokens →$miss"
 
   # (3) RestrictAddressFamilies: kein NETLINK/PACKET (Route/nft/raw blocken), AF_UNIX+AF_INET ok
   raf=$(prop "$U" RestrictAddressFamilies)
@@ -78,6 +80,9 @@ for ns in "${SEATS[@]}"; do
   #     exponiert flags= → 'privileged' für '+'). Der ganze Sicherheitsgewinn hängt hier dran —
   #     ein leeres `ExecStartPre=`-Override würde die Liste RESETTEN (systemd). Daher: GENAU 2
   #     Commands, exakte Reihenfolge/Pfade/Flags, KEIN grep.
+  # R7-H1: EXAKTE kanonische Vollpfade (kein Suffix-Match → kein /tmp/…-Stub-Bypass):
+  CANON_PROBE=/usr/local/sbin/zone-seat-probe.sh
+  CANON_NET=/usr/local/sbin/seat-negative-oracle.sh
   espx=$(prop "$U" ExecStartPreEx)
   mapfile -t blocks < <(grep -oE '\{[^}]*\}' <<<"$espx")
   ok5=1; reason=""
@@ -86,18 +91,22 @@ for ns in "${SEATS[@]}"; do
   else
     p0=$(grep -oP 'path=\K[^ ;]+' <<<"${blocks[0]}"); f0=$(grep -oP 'flags=\K[^;]*' <<<"${blocks[0]}")
     p1=$(grep -oP 'path=\K[^ ;]+' <<<"${blocks[1]}"); f1=$(grep -oP 'flags=\K[^;]*' <<<"${blocks[1]}")
-    # R6-H1 (+Schnüffi-Ergänzung): pro Command Pfad + privileged + ignore-failure HART.
-    # ignore-failure ('-'-Prefix) = dieselbe Klasse wie R3-H2/R5-H5: ein '-' am Probe macht
-    # einen GESCHEITERTEN Self-Proof wirkungslos → Seat startet ungeprüft (subtiler als Reset).
-    if   [[ "$p0" != */zone-seat-probe.sh ]];     then ok5=0; reason="[0] '$p0' ≠ zone-seat-probe.sh"
-    elif grep -qw privileged <<<"$f0";            then ok5=0; reason="[0] zone-seat-probe.sh hat '+'/privileged → Self-Proof ENTWERTET (muss confined sein!)"
-    elif grep -qw ignore-failure <<<"$f0";        then ok5=0; reason="[0] zone-seat-probe.sh hat '-'/ignore-failure → failt WIRKUNGSLOS, Seat startet ungeprüft!"
-    elif [[ "$p1" != */seat-negative-oracle.sh ]];then ok5=0; reason="[1] '$p1' ≠ seat-negative-oracle.sh"
-    elif ! grep -qw privileged <<<"$f1";          then ok5=0; reason="[1] seat-negative-oracle ohne '+'/privileged → braucht root für ip-netns-exec"
-    elif grep -qw ignore-failure <<<"$f1";        then ok5=0; reason="[1] seat-negative-oracle hat '-'/ignore-failure → Netz-Check wirkungslos"
+    a1=$(grep -oP 'argv\[\]=\K[^;]*' <<<"${blocks[1]}")   # R7-H1(b): argv des Netz-Oracles
+    # R6/R7-H1: pro Command Pfad(EXAKT) + privileged + ignore-failure + argv HART.
+    # ignore-failure ('-') = R3-H2/R5-H5-Klasse: '-' am Probe = Self-Proof wirkungslos.
+    # argv-Check (b): --seat MUSS auf DIESE Instanz ($ns) zeigen, sonst Cross-Instanz-Bypass
+    # (Seat1 startet, während der Oracle seat0 prüft).
+    if   [ "$p0" != "$CANON_PROBE" ];             then ok5=0; reason="[0] '$p0' ≠ $CANON_PROBE (exakt!)"
+    elif grep -qw privileged <<<"$f0";            then ok5=0; reason="[0] probe hat '+'/privileged → Self-Proof ENTWERTET (muss confined sein!)"
+    elif grep -qw ignore-failure <<<"$f0";        then ok5=0; reason="[0] probe hat '-'/ignore-failure → failt WIRKUNGSLOS, Seat startet ungeprüft!"
+    elif [ "$p1" != "$CANON_NET" ];               then ok5=0; reason="[1] '$p1' ≠ $CANON_NET (exakt!)"
+    elif ! grep -qw privileged <<<"$f1";          then ok5=0; reason="[1] netz ohne '+'/privileged → braucht root für ip-netns-exec"
+    elif grep -qw ignore-failure <<<"$f1";        then ok5=0; reason="[1] netz hat '-'/ignore-failure → Netz-Check wirkungslos"
+    elif ! grep -qE -- "--seat[ =]$ns( |$)" <<<"$a1"; then ok5=0; reason="[1] argv '--seat' ≠ '$ns' (Cross-Instanz-Bypass!): '$a1'"
+    elif ! grep -qw -- '--strict' <<<"$a1";       then ok5=0; reason="[1] argv ohne --strict: '$a1'"
     fi
   fi
-  [ "$ok5" = 1 ] && chk ok "ExecStartPre strukturell verriegelt (probe[0] confined, netz[1] +root, genau 2, Reihenfolge)" \
+  [ "$ok5" = 1 ] && chk ok "ExecStartPre verriegelt (exakte Pfade, probe[0] confined, netz[1] +root --seat $ns --strict, genau 2)" \
                   || chk fail "ExecStartPre-Verriegelung: $reason"
 done
 

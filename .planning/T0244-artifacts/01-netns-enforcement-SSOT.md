@@ -223,14 +223,15 @@ Type=oneshot
 RemainAfterExit=yes
 ExecStart=/usr/sbin/nft -f /etc/zone/zone-root.nft
 # Round-3 H2: KEIN führendes '-' → ein conntrack-Fehler failt die Unit (fail-closed).
-# conntrack-tools ist harte Build-Dependency (sonst überleben Fremd-Flows den Reload):
+# conntrack-tools ist harte Build-Dependency:
 ExecStartPost=/usr/sbin/conntrack -F           # Flow-Reset bei jedem Apply (#7)
-ExecReload=/usr/sbin/nft -f /etc/zone/zone-root.nft
-ExecReload=/usr/sbin/conntrack -F              # auch bei `systemctl reload`, fail-closed
+# Round-7 H3: KEIN ExecReload für zone-root-nft (= die Broker-Egress-Unit!) — sonst bleibt der
+# gefährliche Pfad „nft lädt gelockert, conntrack -F scheitert, Broker egress-fähig" (failed
+# ExecReload ≠ 'failed' → BindsTo der Broker greift nicht). CanReload=no → Config-Change=restart.
 [Install]
 WantedBy=multi-user.target
 ```
-(Beim Boot mit frischem Stack flusht `conntrack -F` eine leere Tabelle → exit 0; nur beim Live-Reload trägt es. **Build-Dep: `conntrack` MUSS installiert sein**, sonst failt die Unit absichtlich.)
+(Beim Boot mit frischem Stack flusht `conntrack -F` eine leere Tabelle → exit 0. **Build-Dep: `conntrack` MUSS installiert sein.** **Build-Gate (R7 H3):** `systemctl show -p CanReload zone-root-nft` UND `… zone-nft-seat@<jeder Seat>` MÜSSEN `no` liefern — eine Policy-Lockerung darf NIE per `reload` durchgehen, nur per `restart` (re-gated).)
 **M4 (Round-3) + M3 (Round-6): Broker-Unit-Stubs (eingebettet, damit die Broker↔root-nft-Kopplung prüfbar ist).** Die Broker laufen als gehärtete In-VM-Dienste mit dedizierten UIDs; die App-Logik (RPC-Spec/PII-Gate/SNI-Pin) liefert Schnüffi. Hier nur die fail-closed-Verdrahtung:
 ```ini
 # /etc/systemd/system/zone-broker-llm.service  (analog zone-broker-merkel / zone-resolver)
@@ -251,8 +252,44 @@ ExecStart=/usr/local/bin/zone-broker-llm   # RPC-Spec/PII-Gate/SNI-Pin = Schnüf
 Restart=on-failure
 [Install]
 WantedBy=multi-user.target
+
+# /etc/systemd/system/zone-broker-merkel.service  (Round-7: konkret, nicht „analog")
+[Unit]
+Description=T-0244 Merkel-Broker (uid 8002, einziger egress-fähiger .81-Pfad, fail-closed PII-Block)
+After=zone-netns-setup.service zone-root-nft.service
+Requires=zone-root-nft.service
+BindsTo=zone-root-nft.service
+[Service]
+User=zbroker-merkel                     # uid 8002 (im owner-match referenziert)
+CapabilityBoundingSet=
+NoNewPrivileges=yes
+RestrictAddressFamilies=AF_UNIX AF_INET
+ProtectSystem=strict
+SystemCallArchitectures=native
+ExecStart=/usr/local/bin/zone-broker-merkel   # PII-Block/RPC = Schnüffi
+Restart=on-failure
+[Install]
+WantedBy=multi-user.target
+
+# /etc/systemd/system/zone-resolver.service  (Round-7: konkret)
+[Unit]
+Description=T-0244 zone DoT-Resolver (uid 8003, nur :853 zum gepinnten Upstream, NUR Broker-seitig)
+After=zone-netns-setup.service zone-root-nft.service
+Requires=zone-root-nft.service
+BindsTo=zone-root-nft.service
+[Service]
+User=zresolver                          # uid 8003
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE   # nur falls :53<1024 nötig; sonst leer
+NoNewPrivileges=yes
+RestrictAddressFamilies=AF_UNIX AF_INET
+ProtectSystem=strict
+SystemCallArchitectures=native
+ExecStart=/usr/local/bin/zone-resolver   # unbound/dnsmasq, NUR Allowlist-FQDNs, DoT-Upstream
+Restart=on-failure
+[Install]
+WantedBy=multi-user.target
 ```
-→ ein Broker startet NICHT, wenn der owner-match-nft fehlschlug; fällt root-nft zur Laufzeit, stoppt der Broker (BindsTo). **Build-Verify:** `systemctl show -p Requires,After zone-broker-llm` enthält `zone-root-nft.service`.
+→ KEIN Broker startet, wenn der owner-match-nft fehlschlug; fällt root-nft zur Laufzeit, stoppen ALLE drei (BindsTo). **Build-Verify (R7):** `systemctl show -p Requires,After zone-broker-{llm,merkel},zone-resolver` enthält je `zone-root-nft.service` (alle 3 egress-berechtigten UIDs gekoppelt, nicht nur LLM).
 
 **Warum owner-match die Kern-Invariante trägt:** Selbst wenn ein Prozess in root-ns eine Route nach außen hätte, lässt die `output`-policy NUR `skuid ∈ {8001,8002,8003}` mit exakt einem Ziel-Port raus. Ein als root oder als Seat-UID laufender Prozess in root-ns → DROP+Log. Die einzige Möglichkeit, das zu umgehen, wäre, ALS Broker-UID zu laufen — was der Seat-Cap-Drop (§4) verhindert (kein `setuid` ohne Privileg, userns-Map disjunkt, `NoNewPrivileges`).
 
@@ -598,4 +635,14 @@ Verdikt NOT-BUILD-READY, aber **Architektur bestätigt sound** (codex verifizier
 
 **MED-6 (Schnüffis Revier, sie zieht nach sobald netns-Schicht grün):** der daddr-lose UID_LLM:443-Accept delegiert bewusst an den App-Layer → nur akzeptabel mit LLM-Broker-RPC-Spec (enges RPC, SNI/Cert-Pin, server-gepinntes Modell, per-Seat-authn) + Detektor-Recall-Oracle als echtes Co-Gate.
 
-**Round-7-Lens: ausstehend (gepingt).** Trend FALLEND: R1:7 → R2:9 → R3:10 → R4:9 → R5:8 → R6:6. „Sehr nah" — keine strukturellen Löcher mehr, nur noch Verifikations-Härtung. Default=BLOCK bis grün.
+### Refute Round-7 — Bestätigungs-Lens (Codex/Schnüffi, b5f1fc9) — 3 HIGH + 1 M, BUILD-READY-Kandidat in Sicht
+Verdikt NOT-BUILD-READY, aber knapp — nur Verifikations-Exaktheit + ein halb angewandter Fix, keine neuen strukturellen Löcher. false-PASS-Klasse 4× in Folge gehalten. ALLE gefoldet:
+| # | Sev | Befund | Fix |
+|---|---|---|---|
+| H1a | HIGH | ExecStartPreEx-Pfad nur Suffix-Match → `/tmp/zone-seat-probe.sh`-Stub-Bypass | EXAKTE kanonische Vollpfade (`/usr/local/sbin/…`) |
+| H1b | HIGH | argv ungeprüft → `--seat seat0` in `zone-seat@seat1` = Cross-Instanz-Bypass | argv[] aus Block[1] geparst: `--seat <DIESE %i>` + `--strict` Pflicht |
+| H3 | HIGH | Reload-Fix nur an zone-nft-seat@, `zone-root-nft` (Broker-Egress-Unit!) hatte noch ExecReload | ExecReload auch aus zone-root-nft → CanReload=no; Build-Gate prüft root-nft + jede seat-nft |
+| H2/M | MED | Broker-Stubs nur LLM konkret, Merkel/Resolver „analog" → 2/3 Egress-Pfade unbewiesen | konkrete `zone-broker-merkel` + `zone-resolver` Stubs (je Requires/After/BindsTo zone-root-nft) |
+| M1 | MED | SystemCallFilter-Check Token-Präsenz, nicht deny-seitig | ehrlich als PRÄSENZ-Check gelabelt (dyn. Self-Proof = Verhaltens-Autorität) |
+
+**Trend FALLEND: R1:7 → R2:9 → R3:10 → R4:9 → R5:8 → R6:6 → R7:3H+1M.** Restbefunde reine Exaktheit/Vollständigkeit. **R8 = realistischer BUILD-READY-Kandidat auf der netns/Prozess-Schicht.** Danach zieht Schnüffi das LLM-Broker-RPC-Co-Gate (MED-6, benannte schwächste Reststelle) nach. **Round-8-Lens: ausstehend (gepingt).** Default=BLOCK bis grün.
