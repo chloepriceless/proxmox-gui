@@ -30,5 +30,6 @@ Artefakt 01 §1 fixiert die KONKRETE netns-Topologie (Broker-Listen-IPs/Ports `1
 - **Refute-Lens 1 (Claude, fresh context):** ✅ DURCH (2026-06-21). 3×HIGH + 4×MED gefunden + EINGEARBEITET (01 §9 Changelog): Broker-IP-Assignment, `make-shared /run/netns`, Oracle-false-PASS-Fix (refused≠blockiert + UDP/ICMP), `oif br-zone` eingeschränkt, `PartOf`+atomares `flush table`, selftest-`TimeoutStartSec`. **Kern-B1c-Konter HIELT** (Cap-Drop macht netns hart).
 - **Refute-Lens 2 (Codex via Schnüffi) am SYNC-PUNKT:** ausstehend (R22, Default=BLOCK — erst nach 2. konvergenter Lens gilt 01 als refute-durch).
 - **Broker-Pivot-Restrisiko (Refute MED-6):** B1-Oracle beweist Seat-Netz-Isolation, NICHT das Egress-Gesamtrisiko (covert Exfil via erlaubtem Anthropic-Kanal). → Schnüffis positive-Allowlist-Detektor-Oracle = **CO-GATE** für den Spawner (nicht nur mein netns-Oracle).
-- **Egress-fähiger Bau:** BLOCKIERT bis beide Refute-Lensen durch + negativ-getestet + Konsens Schnüffi/Schraubi/Netzi.
+- **🔒 DUAL-ORACLE-GATE (Konsens Schraubi↔Schnüffi, 2026-06-21):** Der **Spawner ist erst build-ready, wenn BEIDE Oracles grün sind** — mein **Seat-Negativ-Oracle** (Netz-Isolation) UND Schnüffis **Detektor-Recall-Oracle** (Seed-PII = 100 % Block). Verankert beidseitig (hier + Schnüffis Spec: Artefakt-1 Response-Filtering + Artefakt-2 Detektor co-gaten den Spawner).
+- **Egress-fähiger Bau:** BLOCKIERT bis beide Refute-Lensen durch + beide Oracles grün + Konsens Schnüffi/Schraubi/Netzi.
 - **Foundation-ohne-Egress:** refute-frei, aber infra-gated (Netzi-VLAN + Christin/Hub-Go).
