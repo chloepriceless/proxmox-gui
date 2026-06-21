@@ -47,7 +47,7 @@
 
 ## 6. Build-Sequenz (substrat-fertig; GO-LIVE-gated)
 1. **pz2-Kapazität** ✅ (geprüft) → VM 2c/4G/80G anlegen (Debian 13, cpu host, LUKS-Root).
-2. **VLAN** mit Netzi (eigenes Zone-VLAN, default-DENY-Egress-Regelwerk).
+2. **VLAN** mit Netzi (eigenes Zone-VLAN, default-DENY-Egress-Regelwerk). **pz2-Topologie geklärt (read-only):** vmbr0 = plain Bridge (NICHT VLAN-aware, `vlan_filtering 0`) auf **`bond0`** (LAG-Uplink), Gateway UDM .1. → **nicht-disruptiver Attach:** `bond0.<zonetag>` VLAN-Sub-Interface + dedizierte Bridge **`vmbrZONE`** (rührt vmbr0/die 10 Live-LXCs NICHT an); Zone-VM dort dran, UDM-Zone-Interface als EINZIGES Gateway → kein UDM-Bypass → UDM enforced default-deny. **Bedingung (Netzi/Switch-Seite):** bond0s Switch-Ports müssen den Zone-Tag trunken + UDM braucht L3-Gateway aufm Zone-Subnetz. Ausführung gated auf Christin/Hub-Go + R22 (Codex+Schnüffi).
 3. **In-VM-Isolation:** netns für Seats + nftables (Seats→Broker→egress).
 4. **2 Broker** (LLM + Merkel) als gehärtete Services + zone-Resolver (DoT) — Schnüffi liefert Gate-Logik/Allowlist.
 5. **Substrat:** Koordinator + SQLite-Ledger (Epoch-Fencing) + Zone-Spawner + Audit-Log.
@@ -57,7 +57,8 @@
 9. **STOP vor GO-LIVE** → Bizzi-DSFA + Christin-Sign-off.
 
 ## 7. Offene Punkte / Coordination
-- **Schnüffi:** Gate-Logik (fail-closed PII-Detektion — Regeln + Kalibrierung, R31), Egress-Allowlist (FQDN/SNI), mTLS-Auth-Härtung, Codex-Refute aufs Gate VOR Bau.
+- **Schnüffi (Design-Position v2 = commit `f3774b8` @ orchestrator-security):** Gate-Logik (fail-closed PII-Detektion — Regeln + Kalibrierung, R31), Egress-Allowlist (FQDN/SNI), mTLS-Auth-Härtung. **4 Härtungs-Requirements (v2):** (1) explizite **fail-closed Failure-Mode→DENY-Tabelle** (Crash/Timeout/OOM/Parser/opaque-MIME/oversize/backpressure → alle blocken); (2) **opaque/unsupported Content → DENY** (PDF/Bild/Base64-Anhänge, die der Text-Detektor nicht sieht — Mail/Rechnungen!); (3) **Broker-SSRF-Härtung** (fixe Upstreams, keine user-URLs) + minimal-scoped Team-Cred + per-Seat-Rate-Limits; (4) **Pseudonym-Map = hochkritische PII** → MEIN SUBSTRAT-CONCERN: Envelope-Encryption, eigene ACLs, KEINE Logs, NICHT mit den Daten zusammen gebackupt (getrennt vom SQLite-Ledger §4).
+- **🔴 PRE-BUILD-GATE = doc-aware Kombi-Codex-Refute** (Schnüffi-Gate-Logik + meine Topologie, MIT eingebettetem Doc-Inhalt — der Standalone-Codex lief BLIND/bwrap-doc-unlesbar). KEIN egress-fähiger Bau (Broker/Egress-Rules) vor grünem Kombi-Refute. Foundation (VM/LUKS/netns/Substrat-ohne-Egress) darf vorher.
 - **Bizzi:** DSFA mit dem revidierten Scope (geteilter Vault + Merkel-für-Nicht-PII = neue Residuen); In-Scope-Egress-Quellen-Enumeration.
 - **Netzi:** Zone-VLAN + default-DENY-Egress + Zone-Ingress-Pinhole (Christins Workstation→ttyd).
 - **Tüftli:** Continuity-Logik auf dem Epoch-Fencing-Substrat.
