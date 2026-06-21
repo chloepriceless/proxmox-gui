@@ -1,7 +1,7 @@
 # T-0244 — Kundendaten-Isolations-Architektur (Infra-LEAD-Teil)
 
 **Autor:** Proxmox-GUI Head / Infra-LEAD („Schraubi", Hub-Key `vm-deployment-gui`)
-**Stand:** 2026-06-21 (rev.2: §9 right-sized 4c/8G, §2 A′-Option + .240-Defekt-Gate, §8 ZDR-Faktenkorrektur + per-Subjekt-Löschung + Art.28/32(1)(b)/5(1)(c), §3 DNS/NTP-Vorbedingung, §7 Polar-Webhook-Ingress). **Status:** Design-only, KEIN Bau (gated).
+**Stand:** 2026-06-21 (rev.2: §9 right-sized 4c/8G, §2 A′-Option + .240-Defekt-Gate, §8 ZDR-Faktenkorrektur + per-Subjekt-Löschung + Art.28/32(1)(b)/5(1)(c), §3 DNS/NTP-Vorbedingung, §7 Polar-Webhook-Ingress · rev.3 Schnüffi-R22-Refute: §3 SNI/FQDN-Egress+DoT statt IP-nach-DNS + konkrete Oracle-Ziele, §4 PBS-Client-Encryption + Bootstrap-Key-Provisioning, §7 mTLS-Auth + GUI-Mac-DSFA-Restrisiko). **Status:** Design-only, KEIN Bau (gated).
 **Co-Owner:** Schnüffi = Security/Synthesizer (`733y8dgt`) · Bizzi = Compliance/GDPR (`43sds8sq`) · Tüftli = Continuity-Logik (`6enyhavb`) · Netzi = Netz/VLAN (`o7a9xw7h`).
 **Auftrag (Christin via Orchestrator):** EINE hart isolierte Umgebung NUR für Kundendaten, vollständig getrennt vom Peer-Netz/Rest der Flotte. 5 Claude-**Teams**-Seats (AVV/DPA, **nicht** Pro/Consumer): 4 autonome Kundendaten-Agents + 1 operator-gesteuerter Agent. Verarbeiten ausschließlich Kunden-PII (Lizenzverwaltung, Shop/polar.sh, Kunden-Mail, Rechnungen, DVhub-Prod-Kundendaten).
 
@@ -58,19 +58,21 @@ Node `.240` **crasht reproduzierbar hart** im 02:00-Backup-Fenster (3× in Folge
 - **Default-deny INGRESS + EGRESS** an der Zone-Grenze.
 - **Egress-Allowlist (Zweckbindung Art. 5 auf Netz-Ebene):**
   - Anthropic-API: **minimaler Pfad = `api.anthropic.com` + Auth (`console.anthropic.com` bei OAuth/Seat)** — **das ist der einzige „Internet"-Pfad**. **KEINE Telemetrie-/Error-Reporting-Endpoints** auf der Allowlist: M10 schaltet Telemetrie/Error-Reporting per ENV ab (`DISABLE_TELEMETRY`/`DISABLE_ERROR_REPORTING`, Schnüffi) → wird gar nicht gesendet, also auch nicht erlaubt = weniger Angriffsfläche (Bizzi-Hinweis, mit Schnüffi abgestimmt).
+- **🔴 Durchsetzungs-Mechanismus = SNI/FQDN, NICHT IP-nach-DNS (Schnüffi-R22-Refute §3):** Eine `DNS-resolve→IP-nftables-Allowlist` ist **fragil** — Anthropic-Endpunkte liegen in geteilten Cloudflare/CDN-Ranges, die „without notice" rotieren → die IP-Allowlist driftet (bricht ODER eine **co-tenant-CDN-IP wird erreichbar**). **Robust = egress-Filterung auf TLS-ClientHello-SNI / FQDN** (z.B. egress-Proxy mit SNI-Inspektion), nicht IP-Pinning. + **DNS-Query-Privacy: DoT zum gepinnten Resolver, nicht plaintext `:53`** — die abgefragten Hostnamen würden sonst die PII-Quellen verraten.
   - die **konkret benannten Kundendaten-Quellen**, die die Seats erreichen MÜSSEN (Shop/polar.sh-API, Kunden-Mailserver, Lizenz-/Rechnungssystem, DVhub-Prod-Kundendaten-Endpoint). **Enumeration mit Bizzi je Zweck** — nichts „auf Vorrat".
   - **sonst NICHTS.**
 - **2 minimale Infra-Vorbedingungen (Bizzi-Hinweis, je gepinnt, NICHT offen):** (i) **gepinnter DNS-Resolver** — die hostbasierte Allowlist (`api.anthropic.com` etc.) braucht Auflösung, aber **kein offenes `:53`** nach außen: ein definierter Resolver (zonen-lokal oder ein gepinnter Upstream), nur die Allowlist-Hosts auflösend. (ii) **gepinnter NTP** — TLS-Cert-Validität braucht korrekte Zeit; ein definierter NTP-Peer, nicht offenes NTP. Beide stehen in Bizzis Enumeration (`orchestrator-bizzi/.planning/t0244-egress-allowlist-enumeration.md`).
 - **Kein Pfad zur Mac** `:7890`/`:7899` (kein Inter-VLAN-Routing zum Mac-Segment). Das ist die Netz-Durchsetzung der Kernregel §0.
 - **Ingress: GENAU EINE kontrollierte Ausnahme** — der Erreichbarkeitspfad des interaktiven Seats (§7), auditiert. Sonst default-deny.
-- **Verifikations-Oracle (vor GO):** aus der Zone heraus `curl`/`nc` auf `192.168.20.x:7890` und `:7899` → **muss timeouten/gedroppt** sein; `api.anthropic.com:443` → erreichbar; eine nicht-allowlisted externe IP → gedroppt. Egal welche Variante.
+- **Verifikations-Oracle (vor GO) — konkrete Fleet-Ziele enumerieren (Schnüffi-R22):** aus der Zone heraus `curl`/`nc` auf JEDES dieser Ziele → **muss timeouten/gedroppt** sein: Broker `192.168.20.x:7899`, Hub `:7890`, **Merkel `192.168.20.81:8000`/`:6333`/`:8080`**, **Loki `.153`**, **Coder-VM (.42/VLAN42)**, beliebiger Fleet-/24-Host. Positiv: `api.anthropic.com:443` → erreichbar (über SNI-Filter); eine nicht-allowlisted externe FQDN/IP → gedroppt. Egal welche Variante.
 
 ---
 
 ## 4. Substrat — eigener Spawner, KEIN Fleet-Anschluss (mein Kern-Teil)
 - **Eigener Spawner-Daemon ON dem isolierten Host/der VM**, der die 4 autonomen Seats verwaltet (Start/Stop/Respawn) **vollständig zonen-intern**. Analog zur Fleet-`spawnerd`, aber **luftdicht von der Fleet getrennt**: kein claude-peers-MCP, keine Hub-Registry, kein Broker-Socket, kein `peer/notify`. Die Zone taucht in keinem Fleet-Dashboard auf.
 - **Separater Credential-Store** für das/die Teams-API-Credential(s). **NICHT** das Fleet-1Password/op-connect (LXC 141 lebt auf der Fleet). Zonen-lokaler Secret-Store (verschlüsselte Datei / `age` / zonen-lokaler Vault), damit das Teams-Credential **nie die Fleet transitiert**.
-- **Getrennte Datasets/Backups:** zonen-lokaler Storage; Backup auf **separates Ziel** (NICHT der geteilte Fleet-PBS) **ODER** separater PBS-Namespace/-Datastore mit **eigenem Verschlüsselungs-Key**. → hält das Art-17-Löschkonzept sauber und verhindert, dass PII in geteilte Fleet-Backups sickert. **Entscheidungspunkt:** dediziertes Backup-Ziel vs. separierter PBS-Namespace (beide haltbar; Default = separater Namespace mit eigenem Key, wenn PBS-Kapazität reicht).
+  - **🔴 Bootstrap-Key-Provisioning explizit spezifizieren (Schnüffi-R22-Refute §4):** Beim unattended-Reboot-Autostart muss der Store entschlüsselt werden — **wo liegt der Entschlüsselungs-Key?** Liegt er **plaintext neben dem Store**, ist `age` wertlos und nur LUKS schützt real (= „key-next-to-lock", der NetBoard-Diff-2-Fall). → Bootstrap-Key via **TPM-sealed** (an den VM-/Host-Zustand gebunden) ODER **operator-unlock beim Boot** ODER **`systemd-creds`** — und dann **Host-Key-in-`vzdump` beachten** (der Backup-Pfad darf den Entsiegelungs-Key nicht mitsichern). Default-Empfehlung: TPM-sealed + LUKS-Root, operator-unlock nur wenn 24/7-unattended nicht zwingend.
+- **Getrennte Datasets/Backups:** zonen-lokaler Storage; Backup auf **separates Ziel** (NICHT der geteilte Fleet-PBS) **ODER** separater PBS-Namespace/-Datastore. **🔴 Nur mit CLIENT-seitiger Verschlüsselung + zone-gehaltenem Key (Schnüffi-R22-Refute §4):** ein separater PBS-Namespace isoliert PII NUR, wenn der **Client zonen-seitig verschlüsselt** und der **PBS-Server ausschließlich Ciphertext** speichert (der Key bleibt in der Zone). Sonst leakt die **Fleet-PBS-Trust-Boundary** in die Zone — ein PBS-Admin-/Server-Compromise liest namespace-übergreifend = dasselbe geteilte-Vertrauensbasis-Thema wie A/A′ vs. B, nur auf der **Backup-Ebene**. → hält das Art-17-Löschkonzept sauber + verhindert PII-Sickern in Fleet-Backups. **Entscheidungspunkt:** dediziertes Backup-Ziel vs. separierter PBS-Namespace **mit zone-gehaltenem Client-Encryption-Key** (Default = letzteres, wenn PBS-Kapazität reicht).
 - **KEIN PII-Ingest ins Fleet-Merkel** (LXC 146). Brauchen die Seats Vektorsuche → **isolierte eigene Instanz auf isoliertem Storage** in der Zone.
 
 ---
@@ -99,6 +101,8 @@ Node `.240` **crasht reproduzierbar hart** im 02:00-Backup-Fenster (3× in Folge
 ## 7. Erreichbarkeit des interaktiven Seats — OHNE Fleet-Broker
 Der 1 operator-gesteuerte Seat muss von Christin erreichbar sein, **ohne** über Hub/Broker zu gehen (das bräche die Isolation).
 - **GENAU EINE kontrollierte Ingress-Ausnahme** zur default-deny-Grenze: ein **zonen-lokales Web-Terminal / SSH-Jump**, erreichbar nur von **Christins Workstation-IP** (FW-Pinhole Source-pinned), **TLS**, **vollständig auditiert** (Art. 30/32).
+- **🔴 Starke AUTH, NICHT nur Source-IP-Pin (Schnüffi-R22-Refute §7):** Source-IP allein ist **LAN-spoofbar** (kein L2-Anti-Spoofing per se) → **Client-Cert / SSH-Key Pflicht** (mTLS), nicht nur IP. Der **Web-Terminal-/Jump-Dienst selbst wird gehärtet** (eigene Angriffsfläche: aktuelle Version, minimale Exposition, kein zusätzlicher Pfad).
+- **🔴 Restrisiko in die DSFA (Schnüffi-R22-Refute §7):** Der Source-Pin koppelt den EINEN Zone-Ingress an den **24/7-ENTSPERRTEN GUI-Mac** (`HOST-MAC-NO-SCREENLOCK`) = exponiertester Fleet-Host → **„kompromittierter GUI-Mac = PII-Ingress-Pfad"** ist ein dokumentpflichtiges Restrisiko (Art. 35 DSFA, mit Bizzi/Schnüffi). Mitigation: mTLS (s.o.) macht reinen Mac-Zugriff ohne Client-Key wertlos.
 - **NICHT** über das Fleet-Hub-Dashboard, **NICHT** über den Broker. Eine eigene, minimale, authentifizierte Tür.
 - Jede interaktive Session wird im Zone-Audit-Log (§ GDPR Art. 30) protokolliert.
 - **Polar-Webhooks (falls genutzt) = INGRESS, nicht Egress (Bizzi):** kommen sie zum Einsatz, sind sie ein zweiter kontrollierter Ingress-Pfad (Source-gepinnt auf Polars Webhook-IPs, signaturgeprüft, auditiert) — NICHT über die Egress-Allowlist abgedeckt. Mit Völtchen klären, ob Polar-Webhooks überhaupt gebraucht werden; wenn ja, eigenen §7-Pinhole spezifizieren.
@@ -125,7 +129,9 @@ Der 1 operator-gesteuerte Seat muss von Christin erreichbar sein, **ohne** über
 - **Netz:** dediziertes VLAN (Netzi-Tag) statt vmbr0-untagged-/24; statische IP.
 - **In der VM (systemd, alle `enabled`):** Zone-Spawner-Daemon · Koord-Dienst + SQLite-Ledger (WAL) · zonen-lokaler Credential-Store · 4 autonome Seat-Runner (Seat-Pool) · 1 interaktiver Seat hinter dem kontrollierten Ingress (§7) · optional isolierte Vektor-Instanz.
 - **FW:** default-deny in+out; Egress-Allowlist = Anthropic-API + enumerierte Kundendaten-Quellen; Ingress = ein auditierter interaktiver Pfad; KEIN Route zu Mac `:7890`/`:7899`.
-- **Backup:** separates Ziel / separater PBS-Namespace mit eigenem Key.
+- **Backup:** separates Ziel / separater PBS-Namespace mit **client-seitiger Verschlüsselung + zone-gehaltenem Key** (§4). **Bootstrap-Key** TPM-sealed/operator-unlock (§4), nicht key-next-to-lock.
+- **Egress-Enforcement:** SNI/FQDN-Filter (egress-Proxy) + DoT-Resolver (§3), nicht IP-nach-DNS.
+- **Ingress:** ein mTLS-Web-Terminal/Jump (Client-Cert), source-gepinnt, gehärtet, auditiert (§7).
 
 ---
 
