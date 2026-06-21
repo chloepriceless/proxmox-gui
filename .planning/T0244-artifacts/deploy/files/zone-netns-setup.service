@@ -1,0 +1,14 @@
+# /etc/systemd/system/zone-netns-setup.service
+[Unit]
+Description=T-0244 zone netns + broker-bridge setup (oneshot, fail-closed)
+After=systemd-sysctl.service
+Before=zone-root-nft.service zone-nft-seat@seat0.service zone-nft-seat@seat1.service zone-nft-seat@seat2.service zone-nft-seat@seat3.service zone-nft-seat@seatI.service
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/zone-netns-setup.sh
+# Idempotent/Re-Run-sicher (§2). KEIN ExecReload → CanReload=no → Config-Change = restart
+# (konsistent zur fail-closed-Linie von zone-root-nft/zone-nft-seat@; R6/R7-H3).
+# Bewusst KEINE Sandbox-Direktiven: mount --make-shared muss die Host-Mount-ns treffen.
+[Install]
+WantedBy=multi-user.target

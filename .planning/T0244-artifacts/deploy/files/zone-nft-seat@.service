@@ -1,0 +1,28 @@
+[Unit]
+Description=T-0244 seat-ns nftables for %i (fail-closed)
+After=zone-netns-setup.service
+BindsTo=zone-netns-setup.service
+# Refute MED-5: Laufzeit-restart der nft-Unit
+PartOf=zone-seat@%i.service
+                                       # zieht den Seat mit (nicht nur Boot-Kopplung)
+# B1d: nft VOR dem Seat
+Before=zone-seat@%i.service
+# Round-6 H3 (STRUKTURELL statt behavioral): KEIN ExecReload= für die nft-Policy. Ein
+# fehlgeschlagenes ExecReload geht bei systemd NICHT zuverlässig in 'failed' → OnFailure
+# feuert nicht garantiert (der gefährliche Pfad „nft lädt gelockert, conntrack -F scheitert,
+# Seat läuft weiter"). Ohne ExecReload ist CanReload=no → eine Config-Änderung MUSS
+# `systemctl restart` sein (propagiert via BindsTo/PartOf → Seat wird re-gated).
+# Build-Gate: `systemctl show -p CanReload zone-nft-seat@seat0` MUSS 'no' liefern.
+# OnFailure bleibt für ExecStart/ExecStartPost-Fehler (belt+suspenders).
+OnFailure=zone-seat-stop@%i.service
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/ip netns exec %i /usr/sbin/nft -f /etc/zone/zone-seat.nft
+# Round-4 M3: auch Seat-ns
+ExecStartPost=/usr/bin/ip netns exec %i /usr/sbin/conntrack -F
+# KEIN ExecReload → CanReload=no (Round-6 H3). Flow-Reset passiert bei jedem (Re)Start via ExecStartPost.
+# fail-closed: schlägt nft/conntrack beim Start fehl → Unit failed → OnFailure + BindsTo stoppen zone-seat@%i
+[Install]
+WantedBy=multi-user.target
+

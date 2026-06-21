@@ -1,0 +1,11 @@
+[Unit]
+Description=T-0244 zone spawner (Seat-Rotation, UDS-Handshake) — gated auf alle 3 Isolations-Oracles
+After=zone-seat@seat0.service zone-seat@seat1.service zone-seat@seat2.service zone-seat@seat3.service zone-seat@seatI.service zone-selftest-net.service zone-selftest-hardening.service zone-selftest-broker.service zone-coordinator.service
+# TRIPLE-ORACLE-GATE: ohne ALLE drei grün KEIN Seat-Dispatch (kein echtes PII-Processing):
+Requires=zone-selftest-net.service zone-selftest-hardening.service zone-selftest-broker.service zone-coordinator.service
+[Service]
+# Substrat §05 (Koordinator/Epoch-Fencing)
+ExecStart=/usr/local/bin/zone-spawner
+Restart=on-failure
+[Install]
+WantedBy=multi-user.target

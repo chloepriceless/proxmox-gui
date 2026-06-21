@@ -1,0 +1,19 @@
+[Unit]
+Description=T-0244 Merkel-Broker (uid 8002, einziger egress-fähiger .81-Pfad, fail-closed PII-Block)
+After=zone-netns-setup.service zone-root-nft.service
+Requires=zone-root-nft.service
+BindsTo=zone-root-nft.service
+[Service]
+# uid 8002 (im owner-match referenziert)
+User=zbroker-merkel
+CapabilityBoundingSet=
+NoNewPrivileges=yes
+RestrictAddressFamilies=AF_UNIX AF_INET
+ProtectSystem=strict
+SystemCallArchitectures=native
+# PII-Block/RPC = Schnüffi
+ExecStart=/usr/local/bin/zone-broker-merkel
+Restart=on-failure
+[Install]
+WantedBy=multi-user.target
+

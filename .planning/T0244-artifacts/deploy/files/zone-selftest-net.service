@@ -1,0 +1,17 @@
+[Unit]
+Description=T-0244 GATE 1: seat-negative-oracle (Netz-Schicht, kein Seat nötig)
+# H5: seatI mitgegatet. M1: Requires= (nicht nur After=) der nft-seat-Units (fail-closed).
+# R6-M2: AUCH die Broker (Requires/After) — die Positiv-Proben testen Seat→Broker-Erreichbarkeit,
+# also müssen die Broker oben sein, sonst failt das Gate nur deshalb = nicht grün-bootbar.
+After=zone-netns-setup.service zone-nft-seat@seat0.service zone-nft-seat@seat1.service zone-nft-seat@seat2.service zone-nft-seat@seat3.service zone-nft-seat@seatI.service zone-broker-llm.service zone-broker-merkel.service
+Requires=zone-netns-setup.service zone-nft-seat@seat0.service zone-nft-seat@seat1.service zone-nft-seat@seat2.service zone-nft-seat@seat3.service zone-nft-seat@seatI.service zone-broker-llm.service zone-broker-merkel.service
+Before=zone-seat@seat0.service zone-seat@seat1.service zone-seat@seat2.service zone-seat@seat3.service zone-seat@seatI.service
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment=ZONE_HUB_HOST=192.168.20.<MAC-IP-AM-BUILD-SETZEN>
+ExecStart=/usr/local/sbin/seat-negative-oracle.sh --all-seats --strict
+TimeoutStartSec=120
+[Install]
+WantedBy=multi-user.target
+

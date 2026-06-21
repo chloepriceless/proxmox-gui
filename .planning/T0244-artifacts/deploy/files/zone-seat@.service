@@ -1,0 +1,31 @@
+# /etc/systemd/system/zone-seat@.service — der ECHTE Seat (nur Instanz-Spezifika; Härtung kommt aus dem Include)
+[Unit]
+Description=T-0244 zone seat %i (hardened, netns-confined)
+# Round-3 H1: der Seat startet erst NACH den Boot-Aggregat-Gates (Netz + Static-Floor).
+# Der DYNAMISCHE Cap-Drop-Beweis ist der ExecStartPre-Self-Proof unten (kein separates Fixture mehr):
+After=zone-netns-setup.service zone-nft-seat@%i.service zone-selftest-net.service zone-selftest-hardening.service zone-broker-llm.service zone-broker-merkel.service
+Requires=zone-selftest-net.service zone-selftest-hardening.service zone-broker-llm.service zone-broker-merkel.service
+# B1d: kein Seat ohne netns+nft
+BindsTo=zone-netns-setup.service zone-nft-seat@%i.service
+[Service]
+NetworkNamespacePath=/var/run/netns/%i
+# instanz-spezifisch (NICHT im Drift-Vergleich)
+ReadWritePaths=/var/lib/zone/seats/%i
+# PrivateTmp + ZONE_HUB_HOST aus Shared-Include/Build; Env für die ExecStartPre-Netz-Probe:
+Environment=ZONE_HUB_HOST=192.168.20.<MAC-IP-AM-BUILD-SETZEN>
+# Round-5 H3+H4: der ECHTE Seat beweist sich FRISCH bei JEDEM (Re-)Start, fail-closed —
+# nicht boot-gelatcht (RemainAfterExit der Gates re-evaluiert bei `restart` NICHT).
+#  (1) zone-seat-probe.sh OHNE '+' → läuft unter der EIGENEN Seat-Härtung+netns
+#      (ExecStartPre erbt CapBounding/seccomp/NetworkNamespacePath) → self-proof Cap-Drop.
+#  (2) seat-negative-oracle MIT '+' → root (für `ip netns exec`), prüft Netz-Layer frisch.
+# Ein Non-Zero in einer ExecStartPre → Seat startet NICHT (fail-closed gg. geänderte Realität).
+ExecStartPre=/usr/local/sbin/zone-seat-probe.sh
+ExecStartPre=+/usr/local/sbin/seat-negative-oracle.sh --seat %i --strict
+# INERT bis Spawner-Handshake (Schnüffi-Verstärkung 3): der Entrypoint macht KEIN Netz,
+# bis der Spawner ihn über einen ÜBERGEBENEN UDS/FD freigibt — KEIN TCP/localhost-Handshake
+# (der wäre selbst das Egress-Loch, das die netns-Drop-Policy umgeht):
+ExecStart=/usr/local/bin/zone-seat-entrypoint %i
+Restart=on-failure
+RestartSec=5
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,59 @@
+#!/usr/sbin/nft -f
+# T-0244 zone-root.nft — VM-root-netns. NUR Broker-UIDs egress eth0. Fail-closed.
+flush ruleset
+
+define EXT_IF   = "eth0"          # 192.168.50.2 → UDM .50.1
+define BR_IF    = "br-zone"
+define UID_LLM    = 8001
+define UID_MERKEL = 8002
+define UID_RESOLV = 8003
+define MERKEL_IP  = 192.168.20.81
+define DOT_UPSTREAM = 192.168.50.1   # DoT via UDM-internen Resolver ODER gepinnte IP (Schnüffi/Netzi H5)
+
+table inet zone_root {
+  # ---- Egress über das EXTERNE Interface: owner-gematcht, sonst DROP ----
+  chain output {
+    type filter hook output priority 0; policy drop;
+    # Round-5 H1 (ECHTES IPv6-Egress-Loch): in `table inet` matcht `tcp dport 443`
+    # v4 UND v6 — die v6-saddr-drop-Regel am Ende kam ZU SPÄT (nach den Accepts).
+    # Deshalb v6 UNBEDINGT als ALLERERSTE Regel killen, vor jedem Accept:
+    meta nfproto ipv6 drop
+    oif "lo" accept
+    ct state established,related accept
+    # Broker→Seat (intern): NUR Broker-UIDs neu auf br-zone (Refute MED-4):
+    oif $BR_IF meta skuid { $UID_LLM, $UID_MERKEL, $UID_RESOLV } meta nfproto ipv4 accept
+
+    # LLM-Broker: 443 raus. KEIN `ip daddr` (Anthropic-IPs rotieren, nicht pinbar) →
+    # die Ziel-Restriktion MUSS der LLM-Broker-RPC-App-Layer tragen (SNI/Cert-Pin, Schnüffi).
+    # nft trägt hier nur owner+proto+port; nfproto ipv4 explizit:
+    oif $EXT_IF meta skuid $UID_LLM    meta nfproto ipv4 tcp dport 443 accept
+    # Merkel-Broker: nur .81:8000
+    oif $EXT_IF meta skuid $UID_MERKEL ip daddr $MERKEL_IP tcp dport 8000 accept
+    # DoT-Resolver: nur :853 zum gepinnten Upstream
+    oif $EXT_IF meta skuid $UID_RESOLV ip daddr $DOT_UPSTREAM tcp dport 853 accept
+
+    oif $EXT_IF log prefix "zone-root-egress-drop " drop   # alles andere raus = DROP+audit
+  }
+
+  # ---- Kein Transit: die VM routet NICHTS (H1 VM-intern, Belt+Suspenders zu ip_forward=0)
+  chain forward {
+    type filter hook forward priority 0; policy drop;
+    meta nfproto ipv6 drop
+    log prefix "zone-root-forward-drop " drop
+  }
+
+  # ---- Ingress: nur etablierte Antworten + Broker-Listener von Seats ----
+  chain input {
+    type filter hook input priority 0; policy drop;
+    meta nfproto ipv6 drop
+    iif "lo" accept
+    ct state established,related accept
+    # Broker-Listener von Seats — PAARWEISE gepinnt (Lens-2-confirm: ein
+    # {set} auf beiden Seiten = kartesisch = 4 Kombis inkl. .1:8500/.2:8443;
+    # zwei separate Regeln = genau die 2 zulässigen Paare):
+    iif $BR_IF ip daddr 10.99.0.1 tcp dport 8443 accept   # LLM-Broker
+    iif $BR_IF ip daddr 10.99.0.2 tcp dport 8500 accept   # Merkel-Broker
+    iif $EXT_IF ct state new drop                   # keine unsolicited Verbindung von außen
+    log prefix "zone-root-input-drop " drop
+  }
+}

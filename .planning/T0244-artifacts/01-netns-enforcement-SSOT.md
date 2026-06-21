@@ -144,6 +144,25 @@ echo "[zone-netns-setup] OK"
 - `isolated on` → Seat0 sieht Seat1 nicht (L2).
 - IPv6 disabled → kein link-local/SLAAC-Egress.
 
+### 2.1 systemd-Wrapper — `zone-netns-setup.service` (Round-10: war referenziert aber nicht eingebettet)
+Das Script braucht einen oneshot-Wrapper — 12× von zone-root-nft/zone-nft-seat@/zone-selftest-net per `After=/BindsTo=/Requires=` erwartet (lief über R1–R9 als implizit mit; beim Live-Deploy als fehlende Unit aufgefallen → hier nachgezogen, kanonisch). **`RemainAfterExit=yes` ist Pflicht** (die BindsTo-Konsumenten sind selbst oneshots und prüfen den `active(exited)`-Zustand). **KEIN PrivateMounts/ProtectSystem/Sandbox** — der Wrapper MUSS in der Host-Mount-ns laufen, sonst landet `mount --make-shared /run/netns` in einer privaten Mount-ns und propagiert NICHT zu den Seat-Units (= genau das Refute-HIGH-2-Loch, das §2.0b schließt). Voller root + CAP_NET_ADMIN/CAP_SYS_ADMIN.
+```ini
+# /etc/systemd/system/zone-netns-setup.service
+[Unit]
+Description=T-0244 zone netns + broker-bridge setup (oneshot, fail-closed)
+After=systemd-sysctl.service
+Before=zone-root-nft.service zone-nft-seat@seat0.service zone-nft-seat@seat1.service zone-nft-seat@seat2.service zone-nft-seat@seat3.service zone-nft-seat@seatI.service
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/zone-netns-setup.sh
+# Idempotent/Re-Run-sicher (§2). KEIN ExecReload → CanReload=no → Config-Change = restart
+# (konsistent zur fail-closed-Linie von zone-root-nft/zone-nft-seat@; R6/R7-H3).
+# Bewusst KEINE Sandbox-Direktiven: mount --make-shared muss die Host-Mount-ns treffen.
+[Install]
+WantedBy=multi-user.target
+```
+
 ---
 
 ## 3. nftables — root-ns (owner-match, default-deny) — `zone-root.nft`
@@ -224,7 +243,8 @@ RemainAfterExit=yes
 ExecStart=/usr/sbin/nft -f /etc/zone/zone-root.nft
 # Round-3 H2: KEIN führendes '-' → ein conntrack-Fehler failt die Unit (fail-closed).
 # conntrack-tools ist harte Build-Dependency:
-ExecStartPost=/usr/sbin/conntrack -F           # Flow-Reset bei jedem Apply (#7)
+# Flow-Reset bei jedem Apply (#7)
+ExecStartPost=/usr/sbin/conntrack -F
 # Round-7 H3: KEIN ExecReload für zone-root-nft (= die Broker-Egress-Unit!) — sonst bleibt der
 # gefährliche Pfad „nft lädt gelockert, conntrack -F scheitert, Broker egress-fähig" (failed
 # ExecReload ≠ 'failed' → BindsTo der Broker greift nicht). CanReload=no → Config-Change=restart.
@@ -238,17 +258,21 @@ WantedBy=multi-user.target
 [Unit]
 Description=T-0244 LLM-Broker (uid 8001, einziger egress-fähiger Anthropic-Pfad)
 After=zone-netns-setup.service zone-root-nft.service
-Requires=zone-root-nft.service          # M4: kein Broker-Egress, bevor owner-match-nft steht
-BindsTo=zone-root-nft.service           # fällt root-nft → Broker stoppt (fail-closed)
+# M4: kein Broker-Egress, bevor owner-match-nft steht
+Requires=zone-root-nft.service
+# fällt root-nft → Broker stoppt (fail-closed)
+BindsTo=zone-root-nft.service
 [Service]
-User=zbroker-llm                        # uid 8001 (statisch, im owner-match referenziert)
+# uid 8001 (statisch, im owner-match referenziert)
+User=zbroker-llm
 # Härtung analog Seat (kein DynamicUser — UID muss fix für skuid-Match sein):
 CapabilityBoundingSet=
 NoNewPrivileges=yes
 RestrictAddressFamilies=AF_UNIX AF_INET
 ProtectSystem=strict
 SystemCallArchitectures=native
-ExecStart=/usr/local/bin/zone-broker-llm   # RPC-Spec/PII-Gate/SNI-Pin = Schnüffi
+# RPC-Spec/PII-Gate/SNI-Pin = Schnüffi
+ExecStart=/usr/local/bin/zone-broker-llm
 Restart=on-failure
 [Install]
 WantedBy=multi-user.target
@@ -260,13 +284,15 @@ After=zone-netns-setup.service zone-root-nft.service
 Requires=zone-root-nft.service
 BindsTo=zone-root-nft.service
 [Service]
-User=zbroker-merkel                     # uid 8002 (im owner-match referenziert)
+# uid 8002 (im owner-match referenziert)
+User=zbroker-merkel
 CapabilityBoundingSet=
 NoNewPrivileges=yes
 RestrictAddressFamilies=AF_UNIX AF_INET
 ProtectSystem=strict
 SystemCallArchitectures=native
-ExecStart=/usr/local/bin/zone-broker-merkel   # PII-Block/RPC = Schnüffi
+# PII-Block/RPC = Schnüffi
+ExecStart=/usr/local/bin/zone-broker-merkel
 Restart=on-failure
 [Install]
 WantedBy=multi-user.target
@@ -278,13 +304,16 @@ After=zone-netns-setup.service zone-root-nft.service
 Requires=zone-root-nft.service
 BindsTo=zone-root-nft.service
 [Service]
-User=zresolver                          # uid 8003
-CapabilityBoundingSet=CAP_NET_BIND_SERVICE   # nur falls :53<1024 nötig; sonst leer
+# uid 8003
+User=zresolver
+# nur falls :53<1024 nötig; sonst leer
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 NoNewPrivileges=yes
 RestrictAddressFamilies=AF_UNIX AF_INET
 ProtectSystem=strict
 SystemCallArchitectures=native
-ExecStart=/usr/local/bin/zone-resolver   # unbound/dnsmasq, NUR Allowlist-FQDNs, DoT-Upstream
+# unbound/dnsmasq, NUR Allowlist-FQDNs, DoT-Upstream
+ExecStart=/usr/local/bin/zone-resolver
 Restart=on-failure
 [Install]
 WantedBy=multi-user.target
@@ -302,28 +331,37 @@ WantedBy=multi-user.target
 ```ini
 # /etc/zone/zone-hardening.conf — Single-Source der Seat-Härtung (Include für zone-seat@)
 [Service]
-CapabilityBoundingSet=        # leer = ALLE Caps weg (CAP_NET_ADMIN/SYS_ADMIN/SETUID/...)
+# leer = ALLE Caps weg (CAP_NET_ADMIN/SYS_ADMIN/SETUID/...)
+CapabilityBoundingSet=
 AmbientCapabilities=
 NoNewPrivileges=yes
 PrivateUsers=yes
-DynamicUser=yes               # ephemerer hoher UID-Bereich (≥61184), nie 8001-8003, nie 0
-SystemCallFilter=~@privileged @mount @swap @reboot @raw-io @cpu-emulation @obsolete   # R6-H2: @privileged ergänzt
+# ephemerer hoher UID-Bereich (≥61184), nie 8001-8003, nie 0
+DynamicUser=yes
+# R6-H2: @privileged ergänzt
+SystemCallFilter=~@privileged @mount @swap @reboot @raw-io @cpu-emulation @obsolete
 SystemCallFilter=~setns unshare clone3 bpf pivot_root mount_setattr open_tree move_mount
 SystemCallArchitectures=native
-RestrictNamespaces=yes        # blockt clone(CLONE_NEW*) hart
-RestrictAddressFamilies=AF_UNIX AF_INET   # Round-5 M2: kein AF_NETLINK (Route/nft) / AF_PACKET (raw)
+# blockt clone(CLONE_NEW*) hart
+RestrictNamespaces=yes
+# Round-5 M2: kein AF_NETLINK (Route/nft) / AF_PACKET (raw)
+RestrictAddressFamilies=AF_UNIX AF_INET
 LockPersonality=yes
 ProtectKernelTunables=yes
 ProtectKernelModules=yes
 ProtectControlGroups=yes
-ProtectProc=invisible         # Round-5 M2: kein Einblick in fremde PIDs
-ProtectClock=yes              # Round-5 M2
-RestrictRealtime=yes          # Round-5 M2
+# Round-5 M2: kein Einblick in fremde PIDs
+ProtectProc=invisible
+# Round-5 M2
+ProtectClock=yes
+# Round-5 M2
+RestrictRealtime=yes
 RestrictSUIDSGID=yes
 ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
-MemoryDenyWriteExecute=no     # Node/Claude-CLI braucht JIT → via seccomp-@raw-io abgedeckt
+# Node/Claude-CLI braucht JIT → via seccomp-@raw-io abgedeckt
+MemoryDenyWriteExecute=no
 
 # zone-seat@ zieht es per drop-in-SYMLINK:
 #   /etc/systemd/system/zone-seat@.service.d/10-hardening.conf -> /etc/zone/zone-hardening.conf
@@ -339,10 +377,12 @@ Description=T-0244 zone seat %i (hardened, netns-confined)
 # Der DYNAMISCHE Cap-Drop-Beweis ist der ExecStartPre-Self-Proof unten (kein separates Fixture mehr):
 After=zone-netns-setup.service zone-nft-seat@%i.service zone-selftest-net.service zone-selftest-hardening.service zone-broker-llm.service zone-broker-merkel.service
 Requires=zone-selftest-net.service zone-selftest-hardening.service zone-broker-llm.service zone-broker-merkel.service
-BindsTo=zone-netns-setup.service zone-nft-seat@%i.service   # B1d: kein Seat ohne netns+nft
+# B1d: kein Seat ohne netns+nft
+BindsTo=zone-netns-setup.service zone-nft-seat@%i.service
 [Service]
 NetworkNamespacePath=/var/run/netns/%i
-ReadWritePaths=/var/lib/zone/seats/%i    # instanz-spezifisch (NICHT im Drift-Vergleich)
+# instanz-spezifisch (NICHT im Drift-Vergleich)
+ReadWritePaths=/var/lib/zone/seats/%i
 # PrivateTmp + ZONE_HUB_HOST aus Shared-Include/Build; Env für die ExecStartPre-Netz-Probe:
 Environment=ZONE_HUB_HOST=192.168.20.<MAC-IP-AM-BUILD-SETZEN>
 # Round-5 H3+H4: der ECHTE Seat beweist sich FRISCH bei JEDEM (Re-)Start, fail-closed —
@@ -416,9 +456,11 @@ table inet zone_seat {         # frisch neu aufbauen:
 Description=T-0244 seat-ns nftables for %i (fail-closed)
 After=zone-netns-setup.service
 BindsTo=zone-netns-setup.service
-PartOf=zone-seat@%i.service           # Refute MED-5: Laufzeit-restart der nft-Unit
+# Refute MED-5: Laufzeit-restart der nft-Unit
+PartOf=zone-seat@%i.service
                                        # zieht den Seat mit (nicht nur Boot-Kopplung)
-Before=zone-seat@%i.service           # B1d: nft VOR dem Seat
+# B1d: nft VOR dem Seat
+Before=zone-seat@%i.service
 # Round-6 H3 (STRUKTURELL statt behavioral): KEIN ExecReload= für die nft-Policy. Ein
 # fehlgeschlagenes ExecReload geht bei systemd NICHT zuverlässig in 'failed' → OnFailure
 # feuert nicht garantiert (der gefährliche Pfad „nft lädt gelockert, conntrack -F scheitert,
@@ -431,7 +473,8 @@ OnFailure=zone-seat-stop@%i.service
 Type=oneshot
 RemainAfterExit=yes
 ExecStart=/usr/bin/ip netns exec %i /usr/sbin/nft -f /etc/zone/zone-seat.nft
-ExecStartPost=/usr/bin/ip netns exec %i /usr/sbin/conntrack -F   # Round-4 M3: auch Seat-ns
+# Round-4 M3: auch Seat-ns
+ExecStartPost=/usr/bin/ip netns exec %i /usr/sbin/conntrack -F
 # KEIN ExecReload → CanReload=no (Round-6 H3). Flow-Reset passiert bei jedem (Re)Start via ExecStartPost.
 # fail-closed: schlägt nft/conntrack beim Start fehl → Unit failed → OnFailure + BindsTo stoppen zone-seat@%i
 [Install]
@@ -529,7 +572,8 @@ After=zone-seat@seat0.service zone-seat@seat1.service zone-seat@seat2.service zo
 # TRIPLE-ORACLE-GATE: ohne ALLE drei grün KEIN Seat-Dispatch (kein echtes PII-Processing):
 Requires=zone-selftest-net.service zone-selftest-hardening.service zone-selftest-broker.service zone-coordinator.service
 [Service]
-ExecStart=/usr/local/bin/zone-spawner          # Substrat §05 (Koordinator/Epoch-Fencing)
+# Substrat §05 (Koordinator/Epoch-Fencing)
+ExecStart=/usr/local/bin/zone-spawner
 Restart=on-failure
 [Install]
 WantedBy=multi-user.target

@@ -1,0 +1,19 @@
+# /etc/systemd/system/zone-root-nft.service
+[Unit]
+Description=T-0244 root-ns nftables (owner-match, fail-closed)
+After=zone-netns-setup.service
+BindsTo=zone-netns-setup.service
+Before=zone-broker-llm.service zone-broker-merkel.service zone-resolver.service
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/nft -f /etc/zone/zone-root.nft
+# Round-3 H2: KEIN führendes '-' → ein conntrack-Fehler failt die Unit (fail-closed).
+# conntrack-tools ist harte Build-Dependency:
+# Flow-Reset bei jedem Apply (#7)
+ExecStartPost=/usr/sbin/conntrack -F
+# Round-7 H3: KEIN ExecReload für zone-root-nft (= die Broker-Egress-Unit!) — sonst bleibt der
+# gefährliche Pfad „nft lädt gelockert, conntrack -F scheitert, Broker egress-fähig" (failed
+# ExecReload ≠ 'failed' → BindsTo der Broker greift nicht). CanReload=no → Config-Change=restart.
+[Install]
+WantedBy=multi-user.target

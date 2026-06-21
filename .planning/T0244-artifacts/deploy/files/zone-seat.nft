@@ -1,0 +1,27 @@
+#!/usr/sbin/nft -f
+# zone-seat.nft — IN der Seat-netns appliziert. Default-drop, NUR Broker-Ziele.
+# `nft -f` lädt die ganze Datei als EINE atomare Transaktion → kein default-accept-
+# Mikrofenster bei (Re-)Load (MED-5: scoped statt 'flush ruleset').
+define LLM    = 10.99.0.1
+define MERKEL = 10.99.0.2
+# Idempotente atomare Tabellen-Ersetzung (Round-3 M1): 'destroy table' = delete-if-
+# exists OHNE Fehler wenn fehlend (nft ≥ 1.0.2, Debian 13 ✓) → dann frisch neu, alles
+# in DERSELBEN atomaren nft -f-Transaktion. PFLICHT-Build-Test: 2× `nft -f` nacheinander
+# muss beide Male exit 0 + identisches Ruleset ergeben (per-Reload nicht durch Lesen
+# entscheidbar — gegen die GEPINNTE nft-Version verifizieren).
+destroy table inet zone_seat   # idempotent: weg falls da, kein Fehler falls nicht
+table inet zone_seat {         # frisch neu aufbauen:
+  chain output {
+    type filter hook output priority 0; policy drop;
+    meta nfproto ipv6 drop                 # Round-5 H1: v6 unbedingt zuerst (vor Accepts)
+    oif "lo" accept
+    ct state established,related accept
+    # v4-qualifiziert (ip daddr matcht nur IPv4) — Broker-Ziele:
+    ip daddr $LLM    tcp dport 8443 accept
+    ip daddr $MERKEL tcp dport 8500 accept
+    log prefix "zone-seat-egress-drop " drop
+  }
+  chain input  { type filter hook input  priority 0; policy drop;
+                 meta nfproto ipv6 drop; iif "lo" accept; ct state established,related accept; }
+  chain forward{ type filter hook forward priority 0; policy drop; meta nfproto ipv6 drop; }
+}

@@ -1,0 +1,5 @@
+[Unit]
+Description=T-0244 fail-closed stop of zone-seat@%i
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/systemctl stop zone-seat@%i.service

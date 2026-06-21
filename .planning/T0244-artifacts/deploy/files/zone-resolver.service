@@ -1,0 +1,19 @@
+[Unit]
+Description=T-0244 zone DoT-Resolver (uid 8003, nur :853 zum gepinnten Upstream, NUR Broker-seitig)
+After=zone-netns-setup.service zone-root-nft.service
+Requires=zone-root-nft.service
+BindsTo=zone-root-nft.service
+[Service]
+# uid 8003
+User=zresolver
+# nur falls :53<1024 nötig; sonst leer
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=yes
+RestrictAddressFamilies=AF_UNIX AF_INET
+ProtectSystem=strict
+SystemCallArchitectures=native
+# unbound/dnsmasq, NUR Allowlist-FQDNs, DoT-Upstream
+ExecStart=/usr/local/bin/zone-resolver
+Restart=on-failure
+[Install]
+WantedBy=multi-user.target

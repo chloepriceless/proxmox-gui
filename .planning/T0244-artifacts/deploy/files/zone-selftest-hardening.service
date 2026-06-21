@@ -1,0 +1,14 @@
+[Unit]
+Description=T-0244 GATE 2: seat-hardening-oracle (statischer Policy-Floor am echten zone-seat@)
+# Liest die STATISCHE Config der zone-seat@-Units (vor deren Start lesbar) — kein Prozess/
+# Fixture nötig. seatI dabei (H5). Die DYNAMISCHE Garantie = ExecStartPre-Self-Proof pro Seat.
+After=zone-selftest-net.service
+Requires=zone-selftest-net.service
+Before=zone-seat@seat0.service zone-seat@seat1.service zone-seat@seat2.service zone-seat@seat3.service zone-seat@seatI.service
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/seat-hardening-oracle.sh
+TimeoutStartSec=60
+[Install]
+WantedBy=multi-user.target

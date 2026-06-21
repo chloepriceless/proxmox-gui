@@ -1,0 +1,22 @@
+[Unit]
+Description=T-0244 LLM-Broker (uid 8001, einziger egress-fähiger Anthropic-Pfad)
+After=zone-netns-setup.service zone-root-nft.service
+# M4: kein Broker-Egress, bevor owner-match-nft steht
+Requires=zone-root-nft.service
+# fällt root-nft → Broker stoppt (fail-closed)
+BindsTo=zone-root-nft.service
+[Service]
+# uid 8001 (statisch, im owner-match referenziert)
+User=zbroker-llm
+# Härtung analog Seat (kein DynamicUser — UID muss fix für skuid-Match sein):
+CapabilityBoundingSet=
+NoNewPrivileges=yes
+RestrictAddressFamilies=AF_UNIX AF_INET
+ProtectSystem=strict
+SystemCallArchitectures=native
+# RPC-Spec/PII-Gate/SNI-Pin = Schnüffi
+ExecStart=/usr/local/bin/zone-broker-llm
+Restart=on-failure
+[Install]
+WantedBy=multi-user.target
+
