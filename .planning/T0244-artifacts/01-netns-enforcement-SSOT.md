@@ -106,24 +106,30 @@ echo 1 > /sys/class/net/$BR/bridge/no_linklocal_learn 2>/dev/null || true
 # --- 2. Pro-Seat-netns + veth-Paar ---------------------------------------
 for entry in "${SEATS[@]}"; do
   NS="${entry%%:*}"; rest="${entry#*:}"; OCT="${rest%%:*}"; VETH="${rest##*:}"
-  ip netns add "$NS" 2>/dev/null || true
-  # veth: host-Seite an br-zone, peer in die Seat-ns
-  ip link add "v-$VETH" type veth peer name "p-$VETH" 2>/dev/null || true
+  # Idempotent (Lens-2 Befund 2: '||true' verdeckte Dup-/Move-Fehler beim 2. Lauf).
+  # Reconcile: netns nur anlegen wenn fehlt; veth je Lauf NEU (billig; Löschen einer
+  # veth-Seite entfernt beide Enden), Adressen mit 'replace' statt 'add'.
+  ip netns list | grep -qw "$NS" || ip netns add "$NS"
+  ip link del "v-$VETH" 2>/dev/null || true          # alte veth-Reste entfernen (idempotent)
+  ip -n "$NS" link del eth0 2>/dev/null || true
+  ip link add "v-$VETH" type veth peer name "p-$VETH"
   ip link set "v-$VETH" master "$BR"
   ip link set "v-$VETH" type bridge_slave isolated on   # Seat<->Seat L2 blockiert
   ip link set "v-$VETH" up
   ip link set "p-$VETH" netns "$NS"
-  ip netns exec "$NS" ip link set lo up
-  ip netns exec "$NS" ip link set "p-$VETH" name eth0
-  ip netns exec "$NS" ip addr add "10.99.0.$OCT/24" dev eth0
-  ip netns exec "$NS" ip link set eth0 up
+  ip -n "$NS" link set lo up
+  ip -n "$NS" link set "p-$VETH" name eth0
+  ip -n "$NS" addr replace "10.99.0.$OCT/24" dev eth0   # replace = idempotent
+  ip -n "$NS" link set eth0 up
   # KEIN default route in der Seat-ns. Nur on-link 10.99.0.0/24 (automatisch).
   # IPv6 in der Seat-ns komplett aus (H2):
-  ip netns exec "$NS" sysctl -w net.ipv6.conf.all.disable_ipv6=1
-  ip netns exec "$NS" sysctl -w net.ipv6.conf.default.disable_ipv6=1
-  ip netns exec "$NS" sysctl -w net.ipv4.ip_forward=0
+  ip netns exec "$NS" sysctl -qw net.ipv6.conf.all.disable_ipv6=1
+  ip netns exec "$NS" sysctl -qw net.ipv6.conf.default.disable_ipv6=1
+  ip netns exec "$NS" sysctl -qw net.ipv4.ip_forward=0
 done
 echo "[zone-netns-setup] OK"
+# Re-Run-Test (Build-Verify): Skript 2× nacheinander → 2. Lauf exit 0, Topologie
+# identisch (kein Dup, kein set-e-Abbruch). Teil des Boot-Self-Tests.
 ```
 
 **Eigenschaften (testbar durch Artefakt 02):**
@@ -181,12 +187,16 @@ table inet zone_root {
     type filter hook input priority 0; policy drop;
     iif "lo" accept
     ct state established,related accept
-    iif $BR_IF tcp dport { 8443, 8500 } accept     # Seats → Broker-Listener
+    # Lens-2 Befund 8: daddr auf die Broker-IPs pinnen, sonst ist JEDER root-ns-
+    # Prozess auf :8443/:8500 von Seats erreichbar:
+    iif $BR_IF ip daddr { 10.99.0.1, 10.99.0.2 } tcp dport { 8443, 8500 } accept
     iif $EXT_IF ct state new drop                   # keine unsolicited Verbindung von außen
     log prefix "zone-root-input-drop " drop
   }
 }
 ```
+
+**Reload-Hinweis (Lens-2 Befund 7):** `ct state established,related accept` steht UID-unabhängig VOR den Owner-Regeln → bei einem Ruleset-RELOAD zur Laufzeit könnten bereits offene Fremd-Flows überleben. Darum: bei jedem nft-Reload `conntrack -F` (Flush der Conntrack-Tabelle), damit die neuen Owner-Regeln auch bestehende Flows neu bewerten. Beim Boot (frischer Stack) irrelevant; nur beim Live-Reload relevant.
 
 **Warum owner-match die Kern-Invariante trägt:** Selbst wenn ein Prozess in root-ns eine Route nach außen hätte, lässt die `output`-policy NUR `skuid ∈ {8001,8002,8003}` mit exakt einem Ziel-Port raus. Ein als root oder als Seat-UID laufender Prozess in root-ns → DROP+Log. Die einzige Möglichkeit, das zu umgehen, wäre, ALS Broker-UID zu laufen — was der Seat-Cap-Drop (§4) verhindert (kein `setuid` ohne Privileg, userns-Map disjunkt, `NoNewPrivileges`).
 
@@ -198,9 +208,12 @@ table inet zone_root {
 # /etc/systemd/system/zone-seat@.service  (instanziiert: zone-seat@seat0 ...)
 [Unit]
 Description=T-0244 zone seat %i (hardened, netns-confined)
-After=zone-netns-setup.service zone-nft-seat@%i.service
+# Lens-2 Befund 3: 'Requires=' ohne 'After=' Broker → Seat startete vor Broker-Ready.
+# Broker MÜSSEN auch im After= stehen (Reihenfolge, nicht nur Kopplung):
+After=zone-netns-setup.service zone-nft-seat@%i.service zone-broker-llm.service zone-broker-merkel.service
 BindsTo=zone-netns-setup.service zone-nft-seat@%i.service   # B1d: kein Seat ohne netns+nft
 Requires=zone-broker-llm.service zone-broker-merkel.service
+# Pflicht-Verify am Build: `systemd-analyze verify zone-seat@seat0.service` (Lens-2 Befund 3/6)
 
 [Service]
 # --- in die vorbereitete Seat-netns (NICHT PrivateNetwork: die ns ist persistent gebaut) ---
@@ -216,7 +229,7 @@ NoNewPrivileges=yes
 # --- B1c user-namespace-Map: Seat-UID disjunkt von Broker-UIDs (8001-8003) ---
 PrivateUsers=yes
 DynamicUser=yes            # ephemerer hoher UID-Bereich (≥61184), nie 8001-8003, nie 0
-User=                      # von DynamicUser gesetzt
+                           # (Lens-2 Befund 6: leeres 'User=' entfernt — DynamicUser setzt es selbst)
 
 # --- B1c seccomp: netns-/mount-/bpf-Syscalls blocken ---
 SystemCallFilter=~@mount @swap @reboot @raw-io @cpu-emulation @obsolete
@@ -257,11 +270,14 @@ WantedBy=multi-user.target
 #!/usr/sbin/nft -f
 # zone-seat.nft — IN der Seat-netns appliziert. Default-drop, NUR Broker-Ziele.
 # `nft -f` lädt die ganze Datei als EINE atomare Transaktion → kein default-accept-
-# Mikrofenster bei (Re-)Load (Refute MED-5: scoped 'flush table' statt 'flush ruleset',
-# damit ein Laufzeit-Reload nur DIESE Tabelle ersetzt, atomar):
-flush table inet zone_seat
+# Mikrofenster bei (Re-)Load (MED-5: scoped statt 'flush ruleset').
 define LLM    = 10.99.0.1
 define MERKEL = 10.99.0.2
+# Idempotenter First-Boot (Lens-2 Befund 1: 'flush table' ALLEIN failt, wenn die
+# Tabelle noch nicht existiert → Unit failed → Seats aus). 'add table' ist no-op
+# wenn vorhanden, DANN flush — beides in DERSELBEN atomaren nft-Transaktion:
+add table inet zone_seat
+flush table inet zone_seat
 table inet zone_seat {
   chain output {
     type filter hook output priority 0; policy drop;
@@ -362,4 +378,19 @@ Adversarialer Refute auf dieses Artefakt + das Oracle. **Was HIELT** (aktiv zu b
 | Broker-Pivot (covert Exfil via erlaubtem Anthropic-Kanal) | MED | §7 + Oracle-Hinweis: B1-Oracle ≠ Egress-Gesamtrisiko → Schnüffis positive-Allowlist-Oracle = CO-GATE für den Spawner |
 | skuid-Match bricht, falls Broker zu anderer UID forkt; DoT-Upstream Annahme | LOW | Broker dürfen NICHT UID-wechseln (fail-closed=DROP); DoT-Upstream-Pin = offen mit Netzi/Schnüffi (H5) |
 
-**Zweite Lens (Codex via Schnüffi) am SYNC-PUNKT ausstehend** — erst nach deren Durchlauf gilt 01 als refute-durch (R22, Default=BLOCK).
+### Refute-Lens 2 — Codex/GPT via Schnüffi (2026-06-21, konvergent, R22)
+Verdikt NOT-BUILD-READY mit 4 NEUEN HIGH (Fokus BUILD-MECHANIK, die Lens-1 übersah) + MEDs — alle EINGEARBEITET (`orchestrator-security/reviews/2026-06-21-T0244-B1-netns-refute-codex-lens2.md`, 90d1c4f):
+| Befund | Sev | Fix |
+|---|---|---|
+| **#5** Oracle beweist Cap-Drop NICHT (nur Netz-Reachability aus Root-Sicht) | HIGH | **NEU `seat-hardening-oracle.sh` (B1c-Beweis):** /proc/$PID/status CapEff/CapBnd=0 + NoNewPrivs=1 + Seccomp=2 + uid_map disjunkt + Probe-Dienst-Negativ-Ops |
+| #1 `flush table` failt First-Boot (Tabelle fehlt) → Seats aus | HIGH | §5: `add table`(no-op)+`flush table` atomar |
+| #2 `zone-netns-setup.sh` nicht idempotent (Dup unter set -e) | HIGH | §2: reconcile + `ip addr replace` + veth-Recreate + Re-Run-Test |
+| #3 Seat `Requires=` Broker ohne `After=` → Seat vor Broker-Ready | HIGH | §4: Broker in `After=` + `systemd-analyze verify` |
+| #4 Oracle: Platzhalter `HUBHOST`→OTHER als „OK" gewertet | HIGH | Oracle v3: Platzhalter=INVALID=FAIL; `ZONE_HUB_HOST` Pflicht |
+| #7 `ct established` UID-unabhängig vor Owner-Regeln (Reload-Flows) | MED | §3 Reload-Hinweis: `conntrack -F` bei Reload |
+| #8 Broker-Input ohne `ip daddr`-Pin | MED | §3: `ip daddr {10.99.0.1,.2}` gepinnt |
+| #9 Oracle wertet Tool-/NSS-Fehler als „blockiert" | MED | Oracle v3: TOOLERR=FAIL (Tool-Check) |
+| #6 leeres `User=` bei DynamicUser | MED | §4: entfernt + `systemd-analyze verify` |
+| #10 Broker-Pivot außerhalb netns-Oracle (✅ bestätigt) | — | Schnüffis Detektor-Recall-Oracle = CO-GATE (Dual-Oracle) |
+
+**KONVERGENZ beider Lensen:** B1-Kern-Konter (Cap-Drop macht netns hart) gilt — ABER war BIS Lens-2 unbewiesen (jetzt `seat-hardening-oracle.sh`). Beide Lensen bestätigen: Egress-Bau bleibt BLOCK bis BEIDE Oracles (Netz + Cap-Drop) + Schnüffis Detektor-Oracle grün. **Re-Run-Bestätigungs-Lens (Schnüffi) auf das gefixte Oracle + den neuen B1c-Oracle: angeboten, ausstehend.**

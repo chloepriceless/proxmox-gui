@@ -3,28 +3,28 @@
 # T-0244 Artefakt 02 — seat-negative-oracle.sh   (Verdikt-Blocker B1b)
 # =============================================================================
 # ZWECK: Beweist die KERN-INVARIANTE aus der SEAT-NETNS-PERSPEKTIVE, NEGATIV.
-#   Der alte §3.5-Oracle maß auf VM-Ebene (.50.2) und testete POSITIV, dass
-#   api.anthropic.com erreichbar ist — das ist die FALSCHE Ebene und das
-#   FALSCHE Vorzeichen. Ein Seat darf Anthropic/.81/LAN genau NICHT direkt
-#   erreichen, NUR die beiden Broker-veth-Adressen.
+#   Der alte §3.5-Oracle maß auf VM-Ebene (.50.2) + testete POSITIV. Ein Seat
+#   darf Anthropic/.81/LAN NICHT direkt erreichen, NUR die 2 Broker-veth-Adressen.
 #
-# v2 (nach Refute-Lens 2026-06-21): KRITISCHER FIX gegen false-PASS —
-#   „Connection refused" (RST) bedeutet, das Paket hat den Host ERREICHT (Port
-#   nur zu) → die Isolation hat NICHT gegriffen. v1 wertete refused==blockiert
-#   (false PASS). v2 unterscheidet:
-#     CONNECTED / REFUSED  → Host erreicht → bei NEG = VERLETZUNG
-#     TIMEOUT / NOROUTE    → geblockt      → bei NEG = OK
-#   Plus UDP-Egress- + externe-ICMP-Proben (waren blinde Flecken).
+# v2 (Refute-Lens-1): „Connection refused"(RST) = Host ERREICHT → bei NEG Verletzung
+#   (v1 wertete refused==blockiert = false PASS). + UDP/ICMP-Proben.
+# v3 (Refute-Lens-2/Codex): WEITERE false-PASS-Klassen geschlossen —
+#   (Befund 4) Platzhalter wie '192.168.20.HUBHOST' ist keine IP → /dev/tcp→OTHER
+#     → wurde als „nicht erreicht"=OK gewertet. v3: Platzhalter = INVALID = FAIL.
+#   (Befund 9) fehlendes ping/getent (Tool-/NSS-Fehler) wurde als „blockiert" gewertet.
+#     v3: Tool-Fehler = TOOLERR = FAIL. Inconclusive ist NIE „blockiert" (fail-closed).
+#   HUB_HOST muss real gesetzt sein, sonst FAIL (kein Gate-Pass mit Platzhalter).
 #
 # ORACLE (R31, Erfolgskriterium VOR dem Lauf als Zahl fixiert):
-#   PASS  ⟺  (a) JEDE Negativ-Probe ist geblockt (TIMEOUT|NOROUTE|UNREACH)
+#   PASS  ⟺  (a) JEDE Negativ-Probe ist EINDEUTIG geblockt (TIMEOUT|NOROUTE|UNREACH)
 #        AND (b) JEDE Positiv-Probe (nur die 2 Broker-Ports) ist CONNECTED.
-#   Irgendeine NEG erreicht den Host (CONNECTED|REFUSED) ODER eine POS scheitert → NO-GO.
+#   NEG = CONNECTED|REFUSED (Host erreicht)  ODER  INVALID|TOOLERR|OTHER (inconclusiv)
+#         → VERLETZUNG. POS != CONNECTED → VERLETZUNG.
 #
-# AUSFÜHRUNG: als root in der gebauten Zone-VM (`ip netns exec <seat>`). Der
-#   Verifier (root) ist NICHT der Seat; er prüft, was ein auf die Seat-ns
-#   beschränkter Prozess erreichen kann. Build-/Boot-Self-Test gated den Spawner.
-#   KEIN Live-Touch beim Schreiben — Lauf erst nach Christin/Hub-Go in der VM.
+# AUSFÜHRUNG: als root in der gebauten Zone-VM (`ip netns exec <seat>`). Build-/
+#   Boot-Self-Test gated den Spawner. KEIN Live-Touch beim Schreiben.
+#   HINWEIS: Dieses Oracle beweist die SEAT-NETZ-ISOLATION (B1b). Den CAP-DROP des
+#   echten Seat-Prozesses (B1c) beweist seat-hardening-oracle.sh (separat, Lens-2 #5).
 # =============================================================================
 set -uo pipefail
 
@@ -32,17 +32,18 @@ set -uo pipefail
 LLM_IP=10.99.0.1;    LLM_PORT=8443
 MERKEL_IP=10.99.0.2; MERKEL_PORT=8500
 SEATS_DEFAULT=(seat0 seat1 seat2 seat3 seatI)
-TIMEOUT=3            # niedrig halten: 5 Seats * ~16 Proben darf den selftest nicht hängen
+TIMEOUT=3
 STRICT=0; SEATS=()
+# PFLICHT am Build setzen: echte LAN-IP des Mac-Hubs (Mac :7890/:7899). Unset/Platzhalter → FAIL.
+HUB_HOST="${ZONE_HUB_HOST:-}"      # z.B. export ZONE_HUB_HOST=192.168.20.XX vor dem Lauf
 
 # Negativ-Ziele { Beschreibung | typ(tcp|tcp6|udp|ping|ping6|dns) | Adresse | Port }
-#   MÜSSEN ALLE geblockt sein (TIMEOUT|NOROUTE|UNREACH), aus jeder Seat-ns.
 NEG_TARGETS=(
   "Anthropic-direkt          |tcp |api.anthropic.com|443"
   "Anthropic-IP(1.1.1.1)     |tcp |1.1.1.1|443"
   "Merkel-direkt(.81)        |tcp |192.168.20.81|8000"
-  "Hub-Mac(:7890)            |tcp |192.168.20.HUBHOST|7890"
-  "Broker-Mac(:7899)         |tcp |192.168.20.HUBHOST|7899"
+  "Hub-Mac(:7890)            |tcp |__HUB__|7890"
+  "Broker-Mac(:7899)         |tcp |__HUB__|7899"
   "Fleet-LAN-Host(.20.171)   |tcp |192.168.20.171|443"
   "LAN-Gateway(.20.1)        |ping|192.168.20.1|-"
   "VLAN50-GW/UDM(.50.1)      |ping|192.168.50.1|-"
@@ -55,13 +56,12 @@ NEG_TARGETS=(
   "Merkel-Broker-falsch(:80) |tcp |10.99.0.2|80"
   "IPv6-Egress(Anthropic-v6) |tcp6|2606:4700:4700::1111|443"
 )
-# Positiv-Ziele: NUR diese dürfen CONNECTED sein.
 POS_TARGETS=(
   "LLM-Broker    |tcp|$LLM_IP|$LLM_PORT"
   "Merkel-Broker |tcp|$MERKEL_IP|$MERKEL_PORT"
 )
 
-usage(){ echo "usage: $0 [--all-seats|--seat <ns>] [--strict]"; exit 2; }
+usage(){ echo "usage: ZONE_HUB_HOST=<mac-ip> $0 [--all-seats|--seat <ns>] [--strict]"; exit 2; }
 while [ $# -gt 0 ]; do case "$1" in
   --all-seats) SEATS=("${SEATS_DEFAULT[@]}");;
   --seat) shift; SEATS+=("$1");;
@@ -74,47 +74,61 @@ esac; shift; done
 FAILS=0; CHECKS=0
 red(){ printf '\033[31m%s\033[0m' "$1"; }; grn(){ printf '\033[32m%s\033[0m' "$1"; }
 
-# classify <ns> <typ> <addr> <port>  →  echo: CONNECTED|REFUSED|TIMEOUT|NOROUTE|UNREACH|OTHER
-#   CONNECTED/REFUSED = Host wurde ERREICHT (Paket kam durch) → NEG-Verletzung
-#   TIMEOUT/NOROUTE/UNREACH = geblockt → NEG ok
+# Tool-Verfügbarkeit EINMAL prüfen (Befund 9: fehlendes Tool != geblockt)
+have_ping=1; have_getent=1
+command -v ping   >/dev/null || have_ping=0
+command -v getent >/dev/null || have_getent=0
+
+# Adress-Validierung (Befund 4): Platzhalter (Großbuchstaben/Unterstrich-Marker) = INVALID
+is_placeholder(){ [[ "$1" == *__* || ( "$1" =~ [A-Z] && ! "$1" =~ ^[0-9a-fA-F:.]+$ ) ]]; }
+
+# classify <ns> <typ> <addr> <port> → CONNECTED|REFUSED|TIMEOUT|NOROUTE|UNREACH|INVALID|TOOLERR|OTHER
 classify(){
   local ns="$1" typ="$2" addr="$3" port="$4" out rc
+  # Hub-Platzhalter auflösen / sonst INVALID
+  if [ "$addr" = "__HUB__" ]; then
+    [ -n "$HUB_HOST" ] || { echo INVALID; return; }
+    addr="$HUB_HOST"
+  fi
+  if is_placeholder "$addr"; then echo INVALID; return; fi
   case "$typ" in
     tcp|tcp6)
       out=$(ip netns exec "$ns" timeout "$TIMEOUT" bash -c "exec 3<>/dev/tcp/$addr/$port" 2>&1); rc=$?
       if   [ $rc -eq 0 ];   then echo CONNECTED
       elif [ $rc -eq 124 ]; then echo TIMEOUT
-      elif grep -qi 'refused'                    <<<"$out"; then echo REFUSED
+      elif grep -qi 'refused'                          <<<"$out"; then echo REFUSED
       elif grep -qiE 'no route|unreachable|network is' <<<"$out"; then echo NOROUTE
       else echo OTHER; fi ;;
     udp)
-      # UDP: in der routenlosen Seat-ns schlägt der send() mit ENETUNREACH fehl.
-      # (Begrenzung: bei vorhandener Route + nft-drop kann send() lokal „gelingen";
-      #  Seats haben aber KEINE Route → no-route ist die dominante Kontrolle. Ehrlich kennzeichnen.)
       out=$(ip netns exec "$ns" timeout "$TIMEOUT" bash -c "echo -n x >/dev/udp/$addr/$port" 2>&1); rc=$?
       if   [ $rc -eq 124 ]; then echo TIMEOUT
       elif grep -qiE 'no route|unreachable|network is' <<<"$out"; then echo UNREACH
-      elif [ $rc -eq 0 ];   then echo CONNECTED   # send() gelang = Route existierte → verdächtig
+      elif [ $rc -eq 0 ];   then echo CONNECTED        # send() gelang = Route existierte → verdächtig
       else echo OTHER; fi ;;
     ping|ping6)
+      [ $have_ping -eq 1 ] || { echo TOOLERR; return; }
       local f=-4; [ "$typ" = ping6 ] && f=-6
       if ip netns exec "$ns" ping $f -c1 -W"$TIMEOUT" "$addr" &>/dev/null; then echo CONNECTED
-      else echo NOROUTE; fi ;;   # ping-Fehler in routenloser ns = geblockt
+      else echo NOROUTE; fi ;;
     dns)
+      [ $have_getent -eq 1 ] || { echo TOOLERR; return; }
       if ip netns exec "$ns" timeout "$TIMEOUT" getent hosts "$addr" &>/dev/null; then echo CONNECTED
       else echo NOROUTE; fi ;;
     *) echo OTHER ;;
   esac
 }
-reached(){ case "$1" in CONNECTED|REFUSED) return 0;; *) return 1;; esac; }  # Host erreicht?
+reached(){     case "$1" in CONNECTED|REFUSED) return 0;; *) return 1;; esac; }
+blocked_ok(){  case "$1" in TIMEOUT|NOROUTE|UNREACH) return 0;; *) return 1;; esac; }  # EINDEUTIG geblockt
+# Alles andere (INVALID|TOOLERR|OTHER) = inconclusiv = bei einem Gate FAIL (fail-closed).
 
-echo "=== T-0244 seat-negative-oracle v2  (Seats: ${SEATS[*]}, timeout ${TIMEOUT}s) ==="
+echo "=== T-0244 seat-negative-oracle v3  (Seats: ${SEATS[*]}, timeout ${TIMEOUT}s, strict=$STRICT) ==="
+[ -z "$HUB_HOST" ] && echo "  [$(red WARN)] ZONE_HUB_HOST nicht gesetzt → Hub-Proben werden INVALID=FAIL (Platzhalter im Gate verboten, Lens-2 Befund 4)"
+
 for ns in "${SEATS[@]}"; do
   if ! ip netns list | grep -qw "$ns"; then
     echo "  [$(red FAIL)] netns '$ns' existiert nicht"; FAILS=$((FAILS+1)); continue
   fi
   echo "--- Seat-ns: $ns ---"
-  # 0. Topologie-Invarianten
   CHECKS=$((CHECKS+1))
   if ip netns exec "$ns" ip route show default 2>/dev/null | grep -q .; then
     echo "  [$(red FAIL)] $ns hat DEFAULT-ROUTE (darf KEINE haben)"; FAILS=$((FAILS+1))
@@ -124,20 +138,22 @@ for ns in "${SEATS[@]}"; do
     echo "  [$(grn OK)]   IPv6 disabled"
   else echo "  [$(red FAIL)] $ns IPv6 NICHT disabled (H2)"; FAILS=$((FAILS+1)); fi
 
-  # 1. NEGATIV — Host darf NICHT erreicht werden (CONNECTED/REFUSED = Verletzung)
+  # 1. NEGATIV — OK NUR bei EINDEUTIGEM Block; reached ODER inconclusiv = Verletzung
   for t in "${NEG_TARGETS[@]}"; do
     IFS='|' read -r desc typ addr port <<<"$t"
     desc="${desc// /}"; typ="${typ// /}"
     CHECKS=$((CHECKS+1))
     verdict=$(classify "$ns" "$typ" "$addr" "$port")
-    if reached "$verdict"; then
+    if blocked_ok "$verdict"; then
+      echo "  [$(grn OK)]   NEG geblockt ($verdict): $desc"
+    elif reached "$verdict"; then
       echo "  [$(red FAIL)] NEG ERREICHT ($verdict, SOLL geblockt): $desc → $addr:$port"; FAILS=$((FAILS+1))
     else
-      echo "  [$(grn OK)]   NEG geblockt ($verdict): $desc"
+      echo "  [$(red FAIL)] NEG INCONCLUSIV ($verdict = Platzhalter/Tool-/Probe-Fehler → fail-closed): $desc"; FAILS=$((FAILS+1))
     fi
   done
 
-  # 2. POSITIV — nur die 2 Broker-Ports dürfen CONNECTED sein
+  # 2. POSITIV — OK NUR bei CONNECTED
   for t in "${POS_TARGETS[@]}"; do
     IFS='|' read -r desc typ addr port <<<"$t"
     desc="${desc// /}"; typ="${typ// /}"
@@ -153,11 +169,10 @@ done
 
 echo "=== Ergebnis: $((CHECKS-FAILS))/$CHECKS Checks bestanden, $FAILS Verletzung(en) ==="
 if [ "$FAILS" -ne 0 ]; then
-  echo ">>> NO-GO: Seat-Isolation NICHT bewiesen. Egress-Bau bleibt geblockt."
+  echo ">>> NO-GO: Seat-Netz-Isolation NICHT bewiesen. Egress-Bau bleibt geblockt."
   exit 1
 fi
-echo ">>> PASS: Seat erreicht AUSSCHLIESSLICH die beiden Broker. Invariante bewiesen."
-echo ">>> HINWEIS: Dieses Oracle schließt B1 (Seat-Netz-Isolation), NICHT das Egress-GESAMT-"
-echo ">>>          Risiko. Der Broker-Pivot (covert Exfil via erlaubtem Anthropic-Kanal) ist"
-echo ">>>          NICHT hier getestet → Schnüffis positive-Allowlist-Oracle = Co-Gate."
+echo ">>> PASS: Seat erreicht AUSSCHLIESSLICH die beiden Broker. Netz-Invariante bewiesen."
+echo ">>> HINWEIS: schließt B1b (Netz-Isolation), NICHT B1c (Cap-Drop → seat-hardening-oracle.sh)"
+echo ">>>          und NICHT den Broker-Pivot (→ Schnüffis Detektor-Recall-Oracle = Co-Gate)."
 exit 0

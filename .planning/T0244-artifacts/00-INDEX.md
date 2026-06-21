@@ -7,8 +7,8 @@
 | Verdikt-ID | Befund | Artefakt | Status |
 |---|---|---|---|
 | **B1a** | netns/nftables nur behauptet → maschinenlesbares SSOT | `01-netns-enforcement-SSOT.md` (Topologie+nft+UIDs) | SPEC ✅ |
-| **B1b** | Oracle maß VM-Ebene+positiv → Seat-Perspektive, NEGATIV | `seat-negative-oracle.sh` (lauffähig, `bash -n` grün) | SPEC ✅ |
-| **B1c** | Seat-Cap-Drop/seccomp/userns (macht netns belastbar) | `01-…` §4 (`zone-seat@.service`) | SPEC ✅ |
+| **B1b** | Oracle maß VM-Ebene+positiv → Seat-Perspektive, NEGATIV | `seat-negative-oracle.sh` v3 (false-PASS-Klassen zu, `bash -n` grün) | SPEC ✅ |
+| **B1c** | Seat-Cap-Drop/seccomp/userns (macht netns belastbar) | `01-…` §4 (`zone-seat@.service`) + **`seat-hardening-oracle.sh`** (beweist Cap-Drop am realen PID — Lens-2 #5) | SPEC ✅ |
 | **B1d** | Boot-Ordering fail-closed | `01-…` §6 (systemd-Graph + selftest-Gate) | SPEC ✅ |
 | **H1** | pz2/VM `ip_forward` L3-Bypass | `03-network-residuals.md` §H1 | SPEC ✅ |
 | **H2** | IPv6-Residual | `03-…` §H2 + Oracle-Probe | SPEC ✅ |
@@ -28,8 +28,9 @@ Artefakt 01 §1 fixiert die KONKRETE netns-Topologie (Broker-Listen-IPs/Ports `1
 
 ## Gate-Status
 - **Refute-Lens 1 (Claude, fresh context):** ✅ DURCH (2026-06-21). 3×HIGH + 4×MED gefunden + EINGEARBEITET (01 §9 Changelog): Broker-IP-Assignment, `make-shared /run/netns`, Oracle-false-PASS-Fix (refused≠blockiert + UDP/ICMP), `oif br-zone` eingeschränkt, `PartOf`+atomares `flush table`, selftest-`TimeoutStartSec`. **Kern-B1c-Konter HIELT** (Cap-Drop macht netns hart).
-- **Refute-Lens 2 (Codex via Schnüffi) am SYNC-PUNKT:** ausstehend (R22, Default=BLOCK — erst nach 2. konvergenter Lens gilt 01 als refute-durch).
-- **Broker-Pivot-Restrisiko (Refute MED-6):** B1-Oracle beweist Seat-Netz-Isolation, NICHT das Egress-Gesamtrisiko (covert Exfil via erlaubtem Anthropic-Kanal). → Schnüffis positive-Allowlist-Detektor-Oracle = **CO-GATE** für den Spawner (nicht nur mein netns-Oracle).
-- **🔒 DUAL-ORACLE-GATE (Konsens Schraubi↔Schnüffi, 2026-06-21):** Der **Spawner ist erst build-ready, wenn BEIDE Oracles grün sind** — mein **Seat-Negativ-Oracle** (Netz-Isolation) UND Schnüffis **Detektor-Recall-Oracle** (Seed-PII = 100 % Block). Verankert beidseitig (hier + Schnüffis Spec: Artefakt-1 Response-Filtering + Artefakt-2 Detektor co-gaten den Spawner).
-- **Egress-fähiger Bau:** BLOCKIERT bis beide Refute-Lensen durch + beide Oracles grün + Konsens Schnüffi/Schraubi/Netzi.
+- **Refute-Lens 2 (Codex via Schnüffi):** ✅ DURCH (2026-06-21, konvergent). 4 NEUE HIGH (Build-Mechanik) + MEDs gefunden + EINGEARBEITET (01 §9): NEU `seat-hardening-oracle.sh` (B1c-Beweis, #5), `add table`+`flush table` (#1), netns-Idempotenz (#2), Seat-`After=`-Broker (#3), Oracle v3 Platzhalter/Tool-Fehler=FAIL (#4/#9), daddr-Pin (#8), conntrack-Reload (#7), `User=` raus (#6). Beide Lensen konvergieren: Cap-Drop-Konter gilt, ist jetzt auch BEWIESEN statt asserted.
+- **Broker-Pivot-Restrisiko (MED-6/#10):** B1-Oracle beweist Seat-Netz-Isolation, NICHT das Egress-Gesamtrisiko (covert Exfil via erlaubtem Anthropic-Kanal). → Schnüffis positive-Allowlist-Detektor-Oracle = **CO-GATE**.
+- **🔒 TRIPLE-ORACLE-GATE (Konsens Schraubi↔Schnüffi, 2026-06-21):** Der **Spawner ist erst build-ready, wenn ALLE drei Oracles grün sind** — mein **Seat-Negativ-Oracle** (Netz, B1b) + mein **seat-hardening-oracle** (Cap-Drop, B1c) + Schnüffis **Detektor-Recall-Oracle** (Seed-PII = 100 % Block). Beidseitig verankert.
+- **Re-Run-Bestätigungs-Lens (Schnüffi) auf gefixtes Oracle + B1c-Oracle:** angeboten, ausstehend.
+- **Egress-fähiger Bau:** BLOCKIERT bis Triple-Oracle grün + Re-Run-Lens + Konsens Schnüffi/Schraubi/Netzi.
 - **Foundation-ohne-Egress:** refute-frei, aber infra-gated (Netzi-VLAN + Christin/Hub-Go).
