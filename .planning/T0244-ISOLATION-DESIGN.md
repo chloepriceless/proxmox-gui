@@ -1,7 +1,7 @@
 # T-0244 — Kundendaten-Isolations-Architektur (Infra-LEAD-Teil)
 
 **Autor:** Proxmox-GUI Head / Infra-LEAD („Schraubi", Hub-Key `vm-deployment-gui`)
-**Stand:** 2026-06-21, fertig zur Synthese. **Status:** Design-only, KEIN Bau (gated).
+**Stand:** 2026-06-21 (rev.2: §9 right-sized 4c/8G, §2 A′-Option + .240-Defekt-Gate, §8 ZDR-Faktenkorrektur + per-Subjekt-Löschung + Art.28/32(1)(b)/5(1)(c), §3 DNS/NTP-Vorbedingung, §7 Polar-Webhook-Ingress). **Status:** Design-only, KEIN Bau (gated).
 **Co-Owner:** Schnüffi = Security/Synthesizer (`733y8dgt`) · Bizzi = Compliance/GDPR (`43sds8sq`) · Tüftli = Continuity-Logik (`6enyhavb`) · Netzi = Netz/VLAN (`o7a9xw7h`).
 **Auftrag (Christin via Orchestrator):** EINE hart isolierte Umgebung NUR für Kundendaten, vollständig getrennt vom Peer-Netz/Rest der Flotte. 5 Claude-**Teams**-Seats (AVV/DPA, **nicht** Pro/Consumer): 4 autonome Kundendaten-Agents + 1 operator-gesteuerter Agent. Verarbeiten ausschließlich Kunden-PII (Lizenzverwaltung, Shop/polar.sh, Kunden-Mail, Rechnungen, DVhub-Prod-Kundendaten).
 
@@ -27,7 +27,7 @@
 Die VM-Wahl steht; **wo** die VM lebt, ist die eine echte Christin-Entscheidung (HW-Spend vs. Isolationsstärke — irreversibel/teuer/Präferenz nach DRIVE-TO-GOAL).
 
 ### Variante A — In-Cluster-VM auf `proxmox`/.240 (sofort baubar)
-- **Kapazität verifiziert (Inventar-SSOT, read-only):** `proxmox`/.240 = 128 GB / 32 Cores, **80.945 MB avail RAM**, `local-lvm` lvmthin **228,8 GB frei**, `Samsung_1TB` zfspool 2.828 GB frei. → PII-VM **8c / 24 GB / 150 GB** passt komfortabel in den Headroom (einziger Node mit echter Reserve).
+- **Kapazität verifiziert (Inventar-SSOT, read-only):** `proxmox`/.240 = 128 GB / 32 Cores, **80.945 MB avail RAM**, `local-lvm` lvmthin **228,8 GB frei**, `Samsung_1TB` zfspool 2.828 GB frei. → right-sized PII-VM (§9: **4c / 8 GB / 80 GB**, da Seats API-I/O-bound) passt mit großem Abstand; .240 hätte sogar Reserve für eine großzügigere Auslegung.
 - **Netz:** eigenes VLAN (Netzi) statt vmbr0-untagged-/24 + default-deny-FW (§3).
 - **🔴 Residual-Risiko (dokumentpflichtig für Bizzis DSFA):** Die VM liegt **innerhalb Cluster01** → geteilte **Management-Plane**: corosync, `/etc/pve` (pmxcfs cluster-weit synchronisiert), `root@pam`. Ein **Cluster01-Admin-Compromise** ODER ein kompromittierter anderer Node (→ cluster-weites pmxcfs) ist ein **realer Residual-Pfad** zur PII-VM: `qm`-Zugriff, Konsole, Disk-Snapshot-Exfil, Live-Migration. Die Netz-Isolation schützt **nicht** gegen die Hypervisor-/Cluster-Admin-Ebene.
 - **Fazit A:** stärkste *Netz-/Workload*-Isolation sofort verfügbar, aber **geteilte Vertrauensbasis auf Hypervisor-Ebene** bleibt.
@@ -37,10 +37,19 @@ Die VM-Wahl steht; **wo** die VM lebt, ist die eine echte Christin-Entscheidung 
 - **🔴 Christin-Procurement-Gate:** kein sauberer in-Cluster-Pfad zu einem dedizierten Host ohne neue HW oder Disruption — pz1/pz2/pz3 sind 16-GB-Nodes (4,4 / 8,9 / 6,6 GB frei, zu klein), `.240`/`pve` tragen kritische Guests. → braucht **~32 GB Mini-PC/NUC** ODER **disruptives Node-Repurpose + Migration** der dortigen Guests.
 - **Fazit B:** maximale Isolation (auch gegen die Hypervisor-Admin-Ebene), Preis = HW-Beschaffung/Disruption.
 
-### Empfehlung (Infra-LEAD)
-- **Security-Default = B** (vollständige Trennung der Vertrauensbasis ist bei Kunden-PII der saubere Weg).
-- **A ist die pragmatische Sofort-Option**, *falls* Christin den geteilten-Mgmt-Plane-Residual bewusst akzeptiert (dann zwingend in der DSFA als Restrisiko führen + Cluster01-Admin-Zugang härten/minimieren).
-- **→ Schnüffi konsolidiert A vs B als die eine Christin-MC.** (Ich feuere selbst KEINE Christin-MC, um Doppel-Fragen zu vermeiden — Synthese-Owner ist Schnüffi.)
+### 🔴 NEU (2026-06-21): .240 ist defekt-blockiert (T-0247) → A nicht mehr „sofort"
+Node `.240` **crasht reproduzierbar hart** im 02:00-Backup-Fenster (3× in Folge, T-0247, ich übernehme die HW-RCA). Ein Headroom-Node, der reproduzierbar resettet, ist **kein PII-Host**. → **Variante A geht von „sofort baubar" auf „gesperrt bis T-0247-RCA durch + Fix verifiziert + Stabilitäts-Burn-in".** Das öffnet einen dritten Pfad:
+
+### Variante A′ — right-sized VM auf einem ANDEREN In-Cluster-Node (Stopgap, ohne Procurement)
+- Da die Last API-I/O-bound ist (§9: ~4c/8 GB), trägt sie auch **pz2** (8.936 MB avail) oder **pz3** (6.595 MB avail) right-sized — eng, konkurriert mit dem Infra-Ring (merkel/forgejo-runner/checkmk bzw. semaphore/forgejo/ansible).
+- **ABER: identische Mgmt-Plane-Residual wie A** (alle in Cluster01) + **kein Isolationsgewinn** ggü. A. = „A auf anderem Host". Nur sinnvoll als Stopgap, falls die .240-RCA zieht UND Christin B nicht beschaffen will.
+- **Kein In-Cluster-Pfad entfernt die Residual** — pve/pz1/pz2/pz3 teilen ALLE corosync/pmxcfs/root@pam. **Nur B** (außerhalb Cluster01) bricht die Mgmt-Plane-Compromise-Kette.
+
+### Empfehlung (Infra-LEAD) — drei Optionen mit Gates
+- **Security-Default = B** (einziger Pfad ohne Mgmt-Plane-Residual; vollständige Trennung der Vertrauensbasis ist bei Kunden-PII der saubere Weg). Christin-Procurement-Gate.
+- **A (.240)** = beste Kapazität, aber **defekt-blockiert** bis T-0247-RCA + Burn-in.
+- **A′ (pz2/pz3, right-sized)** = ohne Procurement sofort möglich, ABER Mgmt-Plane-Residual + enge Kapazität, kein Isolationsgewinn → degradierter Stopgap.
+- **→ Schnüffi konsolidiert A / A′ / B als die eine Christin-MC** (HW-Spend vs. Isolationsstärke = Christins Entscheidung). Ich feuere selbst KEINE Christin-MC (Synthese-Owner = Schnüffi).
 
 ---
 
@@ -48,9 +57,10 @@ Die VM-Wahl steht; **wo** die VM lebt, ist die eine echte Christin-Entscheidung 
 - **Eigenes VLAN / dediziertes L2-Segment.** Kein Bridging auf die Fleet-`192.168.20.0/24` und auf KEINE der bestehenden VLANs (3/4/6/42…). Eigener Tag, eigenes Subnetz.
 - **Default-deny INGRESS + EGRESS** an der Zone-Grenze.
 - **Egress-Allowlist (Zweckbindung Art. 5 auf Netz-Ebene):**
-  - Anthropic-API (`api.anthropic.com` + zugehörige Auth-/Telemetrie-Endpoints des Claude-Code/Teams-Clients) — **das ist der einzige „Internet"-Pfad**.
+  - Anthropic-API: **minimaler Pfad = `api.anthropic.com` + Auth (`console.anthropic.com` bei OAuth/Seat)** — **das ist der einzige „Internet"-Pfad**. **KEINE Telemetrie-/Error-Reporting-Endpoints** auf der Allowlist: M10 schaltet Telemetrie/Error-Reporting per ENV ab (`DISABLE_TELEMETRY`/`DISABLE_ERROR_REPORTING`, Schnüffi) → wird gar nicht gesendet, also auch nicht erlaubt = weniger Angriffsfläche (Bizzi-Hinweis, mit Schnüffi abgestimmt).
   - die **konkret benannten Kundendaten-Quellen**, die die Seats erreichen MÜSSEN (Shop/polar.sh-API, Kunden-Mailserver, Lizenz-/Rechnungssystem, DVhub-Prod-Kundendaten-Endpoint). **Enumeration mit Bizzi je Zweck** — nichts „auf Vorrat".
   - **sonst NICHTS.**
+- **2 minimale Infra-Vorbedingungen (Bizzi-Hinweis, je gepinnt, NICHT offen):** (i) **gepinnter DNS-Resolver** — die hostbasierte Allowlist (`api.anthropic.com` etc.) braucht Auflösung, aber **kein offenes `:53`** nach außen: ein definierter Resolver (zonen-lokal oder ein gepinnter Upstream), nur die Allowlist-Hosts auflösend. (ii) **gepinnter NTP** — TLS-Cert-Validität braucht korrekte Zeit; ein definierter NTP-Peer, nicht offenes NTP. Beide stehen in Bizzis Enumeration (`orchestrator-bizzi/.planning/t0244-egress-allowlist-enumeration.md`).
 - **Kein Pfad zur Mac** `:7890`/`:7899` (kein Inter-VLAN-Routing zum Mac-Segment). Das ist die Netz-Durchsetzung der Kernregel §0.
 - **Ingress: GENAU EINE kontrollierte Ausnahme** — der Erreichbarkeitspfad des interaktiven Seats (§7), auditiert. Sonst default-deny.
 - **Verifikations-Oracle (vor GO):** aus der Zone heraus `curl`/`nc` auf `192.168.20.x:7890` und `:7899` → **muss timeouten/gedroppt** sein; `api.anthropic.com:443` → erreichbar; eine nicht-allowlisted externe IP → gedroppt. Egal welche Variante.
@@ -91,6 +101,7 @@ Der 1 operator-gesteuerte Seat muss von Christin erreichbar sein, **ohne** über
 - **GENAU EINE kontrollierte Ingress-Ausnahme** zur default-deny-Grenze: ein **zonen-lokales Web-Terminal / SSH-Jump**, erreichbar nur von **Christins Workstation-IP** (FW-Pinhole Source-pinned), **TLS**, **vollständig auditiert** (Art. 30/32).
 - **NICHT** über das Fleet-Hub-Dashboard, **NICHT** über den Broker. Eine eigene, minimale, authentifizierte Tür.
 - Jede interaktive Session wird im Zone-Audit-Log (§ GDPR Art. 30) protokolliert.
+- **Polar-Webhooks (falls genutzt) = INGRESS, nicht Egress (Bizzi):** kommen sie zum Einsatz, sind sie ein zweiter kontrollierter Ingress-Pfad (Source-gepinnt auf Polars Webhook-IPs, signaturgeprüft, auditiert) — NICHT über die Egress-Allowlist abgedeckt. Mit Völtchen klären, ob Polar-Webhooks überhaupt gebraucht werden; wenn ja, eigenen §7-Pinhole spezifizieren.
 
 ---
 
@@ -99,14 +110,18 @@ Der 1 operator-gesteuerte Seat muss von Christin erreichbar sein, **ohne** über
 |------|-------------|-------------------------------------------|
 | **Art. 5 (Zweckbindung)** | Daten nur für benannte Zwecke | Egress-Allowlist (§3) erlaubt NUR die zweckgebundenen Quellen; Seats können physisch nichts anderes erreichen. Zone verarbeitet ausschließlich die 5 benannten PII-Kategorien. |
 | **Art. 32 (Zugriffskontrolle / Need-to-know / Risikoreduktion)** | Stand der Technik, Zugriff minimiert | VM-HW-Isolation (§1) + eigenes VLAN + default-deny (§3) + separater Credential-Store (§4) + kein Fleet-Broker (§0). **Residual (Variante A):** geteilte Mgmt-Plane — dokumentiert (§2). |
-| **Art. 17 + 5(1e) (Löschkonzept / Speicherbegrenzung)** | Löschbarkeit, inkl. Anthropic-seitig | Getrennte Datasets/Backups (§4) → PII als Einheit löschbar (Zone-Teardown / Dataset-Wipe), ohne geteilten Fleet-Storage zu durchkämmen. **Anthropic-Seite:** Teams/Enterprise-Tier (AVV) muss **Zero-Data-Retention / kein Training + Löschgarantie + Datenresidenz** bieten — **Bizzi+Christin klären den AVV/ZDR-/Enterprise-Stand mit Anthropic** (Ende-zu-Ende-Löschung). |
+| **Art. 17 + 5(1e) (Löschkonzept / Speicherbegrenzung)** | Löschbarkeit (per Subjekt UND Zone), inkl. Anthropic-seitig | **(a) Zone-/Dataset-Ebene:** getrennte Datasets/Backups (§4) → PII als Einheit löschbar (Zone-Teardown / Dataset-Wipe), ohne geteilten Fleet-Storage. **(b) Per-Subjekt-Löschpfad (eigener Punkt, ≠ Whole-Dataset-Wipe — Bizzi):** Art. 17 verlangt Löschung EINES Betroffenen auf Anfrage über alle Systeme, OHNE alles zu wipen → Daten-/App-Ebene-Löschpfad nötig (= Schnüffis Per-System-Retention-Design). **(c) Anthropic-Seite [🔴 Bizzi-Faktenkorrektur, VERIFIED]:** Claude **TEAM bietet KEIN ZDR** (Zero-Data-Retention nur API/Enterprise via Anthropic-Sales). End-zu-Ende-Löschung stützt sich daher NICHT auf ZDR-auf-Team, sondern auf **Backend-Purge ≤30 T nach Löschung + Input-Minimierung (Christin-Default E1-A)** ODER **sensibelste Teilmenge auf API/Enterprise mit ZDR (E1-B)** = Christins offene Entscheidung **E1**. |
 | **Art. 30 + 5(2) (Auditierbarkeit / Rechenschaft)** | Nachweisbarkeit | Zonen-lokales Audit-Log: SQLite-Ledger (§6) + Koord-Dienst-Log + FW-/Egress-Logs + interaktiver Ingress-Log (§7). **Getrennt** von Fleet-Logs. Jeder Kundendaten-Zugriff nachvollziehbar. |
 | **Art. 33/34 (Datenpannen)** | Erkennung + Meldung | **Eigener Breach-Pfad für die Zone** (separat vom Fleet-Incident-Flow, da luftdicht): Detektion über Egress-Anomalien / FW-deny-Spikes / Auth-Fehler im Koord-Dienst; definierte Melde-Kette. **Owner-Klärung mit Bizzi:** wer überwacht die Zone, wie wird eine Panne erkannt/eskaliert. |
+| **Art. 32(1)(b) (Verfügbarkeit + Integrität)** | belastbare, verfügbare Verarbeitung | **🔴 T-0247-Bezug (Bizzi):** ein Host, der reproduzierbar hart resettet (.240 im 02:00-Backup-Fenster), ist ein Verfügbarkeits-/Integritäts-Restrisiko bei PII-Verarbeitung → Variante A erst nach T-0247-RCA-Fix + Burn-in; verschiebt das Pendel Richtung B. Wird als DSFA-Restrisiko geführt. |
+| **Art. 28 (AVV / Auftragsverarbeitung)** | Rechtsgrundlage | Infra SETZT VORAUS, dass der AVV existiert: Anthropic-DPA (auto via Team) + polar.sh eigener AV-Strang (Bizzi/Völtchen). Kein Bau ohne diese Rechtsgrundlage. |
+| **Art. 5(1)(c) (Datenminimierung)** | nur notwendige Daten | Ingest-Gateway / Input-Minimierung (Schnüffi): den Seats wird nur das zweckmäßige Minimum an PII zugeführt; verzahnt mit E1-A (Input-Minimierung als ZDR-Ersatz auf Team). |
 
 ---
 
-## 9. Konkreter baubarer Spec (Variante A, bei GO — als Referenz; B analog auf separatem Blech)
-- **PII-VM auf `proxmox`/.240:** 8 vCPU · 24576 MB · 150 GB (`local-lvm`, 228,8 GB frei) · `cpu host` · Debian 13 Trixie (Fleet-Baseline).
+## 9. Konkreter baubarer Spec (right-sized; Variante A/.240 ODER A′/pz2/pz3 ODER B/separates Blech)
+**Right-Sizing (ehrlicher Bedarf, ersetzt die früheren großzügigen 24G):** Die Last = 5 Claude-Teams-Seats (4 autonom + 1 interaktiv) + Koordinator + SQLite-Ledger + ggf. kleine Vektor-Instanz. Claude-Code-Seats sind **API-I/O-bound** (Calls an Anthropic), lokal CPU-leicht. → **Baseline 4 vCPU · 8192 MB · 80 GB**; flex auf **12 GB**, falls Seats + lokale Vektor-Instanz mehr brauchen. Passt damit auf **.240** (riesig Reserve), **pz2** (8.936 MB avail, eng) oder **pz3** (6.595 MB avail, eng) — nicht nur auf .240.
+- **VM-Stack:** `cpu host` · Debian 13 Trixie (Fleet-Baseline) · `local-lvm`.
 - **Netz:** dediziertes VLAN (Netzi-Tag) statt vmbr0-untagged-/24; statische IP.
 - **In der VM (systemd, alle `enabled`):** Zone-Spawner-Daemon · Koord-Dienst + SQLite-Ledger (WAL) · zonen-lokaler Credential-Store · 4 autonome Seat-Runner (Seat-Pool) · 1 interaktiver Seat hinter dem kontrollierten Ingress (§7) · optional isolierte Vektor-Instanz.
 - **FW:** default-deny in+out; Egress-Allowlist = Anthropic-API + enumerierte Kundendaten-Quellen; Ingress = ein auditierter interaktiver Pfad; KEIN Route zu Mac `:7890`/`:7899`.
@@ -115,7 +130,7 @@ Der 1 operator-gesteuerte Seat muss von Christin erreichbar sein, **ohne** über
 ---
 
 ## 10. Offene Entscheidungen / Blocker (NICHT autonom)
-1. **🔴 Host-Boundary A vs B** — Christin-MC, **Schnüffi trägt sie in die Synthese** (Security-Default B, pragmatisch A mit dokumentiertem Residual). Bis dahin **kein Bau**.
+1. **🔴 Host-Boundary A / A′ / B** — Christin-MC, **Schnüffi trägt sie in die Synthese** (Security-Default B; A=defekt-blockiert bis T-0247-RCA+Burn-in; A′=ohne Procurement aber Mgmt-Plane-Residual+eng). Bis dahin **kein Bau**.
 2. **Anthropic AVV / ZDR / Enterprise + Datenresidenz** — Bizzi+Christin klären den Vertrags-/Retention-Stand mit Anthropic (Art. 17/5(1e)-Ende-zu-Ende). Downstream, blockt das Design nicht.
 3. **Egress-Allowlist-Enumeration** — exakte Endpoints der Kundendaten-Quellen, Zweck-gemappt mit Bizzi. Konkretisierung vor Bau.
 4. **Backup-Variante** — dediziertes Ziel vs. separater PBS-Namespace (Infra-Detail, entscheide ich beim Bau nach PBS-Kapazität; Default = separater Namespace + eigener Key).
