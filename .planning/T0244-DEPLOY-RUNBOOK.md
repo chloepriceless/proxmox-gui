@@ -166,3 +166,14 @@ ifreload -a && ip -br link show vmbrZONE && ping -c1 192.168.20.1 && kill $DEADM
 - **H4** cloud-init setzt externen DNS in root-ns (:53-Egress) → `--nameserver 127.0.0.1` (zone-Resolver), erst in Stufe 2 mit Netz.
 - **M1** Resize-Verify (df -h) in P4. **M2** Thin-Pool-Exhaustion-Monitor (`lvs data_percent` → Uptime-Kuma; kann ALLE Guests kippen). **M3** Import-IO-Spike → `ionice -c3`. **M4** Provider-Pin = harter P-Broker-Blocker (Stufe-2-Gate, nicht „parallel"). **M5** Rollback prüft PBS-Restpunkte.
 - **L1** kein guest-agent im Image → serielle Konsole als Deploy-Pfad. **L2** Checksum fail-stop. **L3** MAC fix bei create → vorab an Netzi.
+
+## 12. Bau-Log (Live-Ausführung)
+**2026-06-21 ~20:20Z — STUFE 1 / P1+P2 DONE (netz-los):**
+- **P1 Image L2-verifiziert:** `debian-13-genericcloud-amd64.qcow2` auf pz2, SHA512 == offizielle Debian-trixie-latest (`IMG-MATCH`, Hash `35337a6bcd9c...`). pz2 hat Internet (Verify lief).
+- **`local`-Storage** um `snippets` erweitert (`pvesm set local --content vztmpl,snippets,iso`) für cicustom.
+- **P2 VM 159 angelegt + läuft (netz-los):** 2c/4096M/80G, cpu `x86-64-v3`, `serial0 socket`/`vga serial0`, scsi0 import-from (rescan-synced auf 80G), ide2 cloudinit, **net0 MAC `BC:24:11:5A:00:59` bridge=vmbr0 link_down=1**, ciuser chrissi + zone-bootstrap-pubkey, onboot=1. `qm status`=running (~3min, idle). Alle Refute-Fixes (B1/B3/B4/H3/L3) verbaut.
+- **Zone-Bootstrap-Privkey:** `~/.ssh/zone-avv-bootstrap_ed25519` (dev-vm, NICHT Repo/Zone) — vor GO-LIVE rotieren.
+- **D7 (NEU) Deploy-Kanal:** genericcloud hat KEINEN qemu-guest-agent; cloud-init setzt KEIN Passwort → weder `qm guest exec` noch serial-Login. **Netz-loser Deploy = cicustom `write_files`** (Artefakte beim Boot, kein Login/Netz). Optional cipassword (Bootstrap) für serial-Verifikation, vor GO-LIVE raus.
+- **MAC an Netzi geliefert; VLAN50-Anlage Netzi-seitig in flight (Hub-Methoden-Go).**
+
+**NÄCHSTER SCHRITT (netz-los, reversibel):** cicustom-Snippet `local:snippets/zone-avv-user.yaml` mit allen `T0244-artifacts/`-Dateien (nft/Scripts/zone-*.service aus 01-SSOT §6) als `write_files` → `qm set 159 --cicustom` → cloud-init clean+reboot → Static-Checks (§ Verify-Plan §2). Dann ttyd. STUFE 2 (Egress) nach Netzi-VLAN50 + Provider-Pin.
