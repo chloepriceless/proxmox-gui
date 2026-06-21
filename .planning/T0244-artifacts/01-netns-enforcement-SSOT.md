@@ -254,6 +254,7 @@ ProtectControlGroups=yes
 RestrictSUIDSGID=yes
 ProtectSystem=strict
 ProtectHome=yes
+PrivateTmp=yes                # Round-4 M2: gehört ins Shared-Include (gleich für seat+probe)
 MemoryDenyWriteExecute=no     # Node/Claude-CLI braucht JIT → via seccomp-@raw-io abgedeckt
 
 # Beide Units ziehen es per drop-in-SYMLINK auf DIESELBE Datei (strukturelle Identität):
@@ -266,14 +267,15 @@ MemoryDenyWriteExecute=no     # Node/Claude-CLI braucht JIT → via seccomp-@raw
 # /etc/systemd/system/zone-seat@.service — der ECHTE Seat (nur Instanz-Spezifika; Härtung kommt aus dem Include)
 [Unit]
 Description=T-0244 zone seat %i (hardened, netns-confined)
-# Round-3 H1: der Seat startet erst NACH den Isolations-Gates (beide Oracles):
-After=zone-netns-setup.service zone-nft-seat@%i.service zone-selftest-net.service zone-selftest-hardening.service zone-broker-llm.service zone-broker-merkel.service
-Requires=zone-selftest-net.service zone-selftest-hardening.service zone-broker-llm.service zone-broker-merkel.service
+# Round-3 H1: der Seat startet erst NACH den Isolations-Gates (beide Oracles) UND
+# nach SEINEM Probe (R4-H1: fehlgeschlagener Probe blockt direkt diesen Seat):
+After=zone-netns-setup.service zone-nft-seat@%i.service zone-seat-probe@%i.service zone-selftest-net.service zone-selftest-hardening.service zone-broker-llm.service zone-broker-merkel.service
+Requires=zone-seat-probe@%i.service zone-selftest-net.service zone-selftest-hardening.service zone-broker-llm.service zone-broker-merkel.service
 BindsTo=zone-netns-setup.service zone-nft-seat@%i.service   # B1d: kein Seat ohne netns+nft
 [Service]
 NetworkNamespacePath=/var/run/netns/%i
-ReadWritePaths=/var/lib/zone/seats/%i
-PrivateTmp=yes
+ReadWritePaths=/var/lib/zone/seats/%i    # instanz-spezifisch (NICHT im Drift-Vergleich)
+# PrivateTmp kommt aus dem Shared-Include (M2)
 # INERT bis Spawner-Handshake (Schnüffi-Verstärkung 3): der Entrypoint macht KEIN Netz,
 # bis der Spawner ihn über einen ÜBERGEBENEN UDS/FD freigibt — KEIN TCP/localhost-Handshake
 # (der wäre selbst das Egress-Loch, das die netns-Drop-Policy umgeht):
@@ -294,6 +296,10 @@ Before=zone-selftest-hardening.service zone-seat@%i.service
 BindsTo=zone-netns-setup.service zone-nft-seat@%i.service
 [Service]
 Type=oneshot
+RemainAfterExit=yes        # Round-4 (Schnüffi-Flag): saubere Dependency-Semantik —
+                           # zone-seat@ Requires= sieht den Probe nach Exit 0 als active(exited),
+                           # NICHT inactive(dead). Der Oracle wertet Result/ExecMainStatus/Boot-
+                           # Timestamp (NICHT ActiveState=active → das wäre der oneshot-false-FAIL).
 NetworkNamespacePath=/var/run/netns/%i            # SELBE netns wie der echte Seat
 ExecStart=/usr/local/sbin/zone-seat-probe.sh
 [Install]
@@ -357,6 +363,9 @@ Before=zone-seat@%i.service           # B1d: nft VOR dem Seat
 Type=oneshot
 RemainAfterExit=yes
 ExecStart=/usr/bin/ip netns exec %i /usr/sbin/nft -f /etc/zone/zone-seat.nft
+ExecStartPost=/usr/bin/ip netns exec %i /usr/sbin/conntrack -F   # Round-4 M3: auch Seat-ns
+ExecReload=/usr/bin/ip netns exec %i /usr/sbin/nft -f /etc/zone/zone-seat.nft
+ExecReload=/usr/bin/ip netns exec %i /usr/sbin/conntrack -F      # Flow-Reset bei Reload (fail-closed)
 # fail-closed: schlägt nft fehl → Unit failed → BindsTo bricht zone-seat@%i ab
 [Install]
 WantedBy=multi-user.target
@@ -398,11 +407,14 @@ sysctl(ip_forward=0) → zone-netns-setup.service (br-zone + alle Seat-ns + IPv6
 # /etc/systemd/system/zone-selftest-net.service  — GATE 1 (Netz-Isolation, vor Probe+Seat)
 [Unit]
 Description=T-0244 GATE 1: seat-negative-oracle (Netz-Schicht, kein Seat nötig)
-After=zone-netns-setup.service zone-nft-seat@seat0.service zone-nft-seat@seat1.service zone-nft-seat@seat2.service zone-nft-seat@seat3.service
-Before=zone-seat-probe@seat0.service zone-seat@seat0.service
-Requires=zone-netns-setup.service
+# Round-4 H5: seatI (interaktiv, sieht PII) MUSS mitgegatet sein. M1: Requires= (nicht
+# nur After=) der nft-seat-Units → fehlt eine nft-Regel, startet das Gate nicht fail-open.
+After=zone-netns-setup.service zone-nft-seat@seat0.service zone-nft-seat@seat1.service zone-nft-seat@seat2.service zone-nft-seat@seat3.service zone-nft-seat@seatI.service
+Requires=zone-netns-setup.service zone-nft-seat@seat0.service zone-nft-seat@seat1.service zone-nft-seat@seat2.service zone-nft-seat@seat3.service zone-nft-seat@seatI.service
+Before=zone-seat-probe@seat0.service zone-seat-probe@seat1.service zone-seat-probe@seat2.service zone-seat-probe@seat3.service zone-seat-probe@seatI.service zone-seat@seat0.service zone-seat@seat1.service zone-seat@seat2.service zone-seat@seat3.service zone-seat@seatI.service
 [Service]
 Type=oneshot
+RemainAfterExit=yes
 # ZONE_HUB_HOST = echte Mac-Hub-IP (am Build gesetzt), sonst Hub-Proben = INVALID = FAIL:
 Environment=ZONE_HUB_HOST=192.168.20.<MAC-IP-AM-BUILD-SETZEN>
 ExecStart=/usr/local/sbin/seat-negative-oracle.sh --all-seats --strict
@@ -413,17 +425,20 @@ WantedBy=multi-user.target
 # /etc/systemd/system/zone-selftest-hardening.service  — GATE 2 (Cap-Drop, vor Seat)
 [Unit]
 Description=T-0244 GATE 2: seat-hardening-oracle (Prozess/Cap-Schicht, gegen Probe-Fixture)
-After=zone-seat-probe@seat0.service zone-seat-probe@seat1.service zone-seat-probe@seat2.service zone-seat-probe@seat3.service zone-selftest-net.service
-Before=zone-seat@seat0.service zone-seat@seat1.service zone-seat@seat2.service zone-seat@seat3.service
+# After= (nicht Requires=) die Probes: das Gate MUSS laufen+reporten, auch wenn ein
+# Probe failte (es LIEST dessen Result und failt dann selbst). seatI dabei (H5).
+After=zone-seat-probe@seat0.service zone-seat-probe@seat1.service zone-seat-probe@seat2.service zone-seat-probe@seat3.service zone-seat-probe@seatI.service zone-selftest-net.service
 Requires=zone-selftest-net.service
+Before=zone-seat@seat0.service zone-seat@seat1.service zone-seat@seat2.service zone-seat@seat3.service zone-seat@seatI.service
 [Service]
 Type=oneshot
+RemainAfterExit=yes
 ExecStart=/usr/local/sbin/seat-hardening-oracle.sh
 TimeoutStartSec=120
 [Install]
 WantedBy=multi-user.target
 ```
-(Beide Gates = `Requires=` von `zone-seat@` → exit!=0 ⇒ Gate failed ⇒ KEIN Seat. `zone-spawner` zusätzlich `Requires=` beide → doppelter Riegel.)
+(`zone-seat@%i` `Requires=` beide Gates + seinen `zone-seat-probe@%i` → exit!=0 ⇒ KEIN Seat. `zone-spawner` zusätzlich `Requires=` beide Gates → doppelter Riegel. **seatI in ALLEN Listen** — der interaktive Seat ist der sensibelste und wird vollständig vor-isoliert.)
 
 ---
 
@@ -502,4 +517,20 @@ Verdikt NOT-BUILD-READY. ✅ ZU: R2-#1 (daddr paarweise). Befunde — ALLE gefol
 
 **Schnüffis 3 proaktive Verstärkungen (vor-Bau) — alle übernommen:** (1) Shared-Include als STRUKTUR-Primär (s. H5); (2) **Layer-Split-Block** (§4 Ende: netns-Oracle = nur Netz-Schicht, Probe = nur Cap-Schicht, nicht redundant, keiner ersetzt den anderen); (3) **Inert-Seat-Handshake = UDS/FD, NIE TCP/localhost** (§4, sonst ist der Handshake selbst das Egress-Loch).
 
-**Round-4-Lens auf diesen Fold: ausstehend (gepingt).** Iteration konvergiert (R1: 7 → R2: 9 → R3 fängt strukturelle Design-Frage H1 + zwei Folge-false-PASS). Default=BLOCK bis grün.
+### Refute Round-4 — Bestätigungs-Lens (Codex/Schnüffi, 0b5ec19) — 5 HIGH + 4 MED gefoldet
+Verdikt NOT-BUILD-READY, **Durchbruch: die false-PASS-Klasse kam erstmals NICHT wieder** (R1-R3 dreimal). H2/H3/H4/H6 aus R3 + Layer-Split + UDS-Handshake bestätigt ZU. ALLE gefoldet:
+| # | Sev | Befund | Fix |
+|---|---|---|---|
+| H1 | HIGH | Job-Graph-Widerspruch: Probe `Before=` Gate UND Oracle `systemctl start`et sie | Probe = echtes BOOT-Unit (`RemainAfterExit=yes`, Before Gate); Oracle LIEST nur Result; `zone-seat@ Requires=zone-seat-probe@%i` |
+| H2 | HIGH | `systemctl start \|\|true` schluckt Start-Fehler (false-PASS neu) | entfällt mit H1; Result/ExecMainStatus/Boot-Timestamp hart |
+| H3 | HIGH | `readlink -f` matcht auch kaputten Symlink/fehlendes Canonical | `readlink -e` + `test -f $CANON` + leer verboten |
+| H4 | HIGH | Struktur-Gleichheit beweist probe==seat, nicht Policy-STÄRKE | Drift-Detektor PLUS absoluter Policy-FLOOR (14 harte Soll-Werte am Seat) |
+| H5 | HIGH | seatI (interaktiv, sieht PII!) NICHT im Gate-Ordering | seatI voll in beide Gate-Units (After/Before/Requires) + Boot-Ziel |
+| M1 | MED | zone-selftest-net nur `After=` nft-seat | `Requires=` nft-seat (alle Seats) |
+| M2 | MED | Probe/Seat divergieren bei PrivateTmp | PrivateTmp ins Shared-Include + Drift-Props |
+| M3 | MED | Seat-ns nft kein conntrack-F bei Reload | `zone-nft-seat@` ExecStartPost/ExecReload `conntrack -F` in der ns |
+| M4 | MED | TCP-TIMEOUT pauschal=blockiert | layer-aware: route-lose Ziele MÜSSEN NOROUTE/UNREACH (verifiziert) |
+
+**Schnüffi-Pre-Build-Flag (oneshot-ActiveState):** Oracle wertet NICHT `ActiveState=active` (oneshot→inactive(dead) nach Erfolg=false-FAIL), sondern Result+ExecMainStatus+Boot-Timestamp; `RemainAfterExit=yes` am Probe für saubere `Requires=`-Semantik. Übernommen.
+
+**Round-5-Lens: ausstehend (gepingt).** Konvergenz QUALITATIV: R1:7 → R2:9 → R3:6+4 (strukturell) → R4:5+4 (Verfeinerungen; false-PASS-Klasse erstmals NICHT zurück). Default=BLOCK bis grün.

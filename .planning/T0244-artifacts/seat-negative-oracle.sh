@@ -126,8 +126,17 @@ classify(){
   esac
 }
 reached(){     case "$1" in CONNECTED|REFUSED) return 0;; *) return 1;; esac; }
-blocked_ok(){  case "$1" in TIMEOUT|NOROUTE|UNREACH) return 0;; *) return 1;; esac; }  # EINDEUTIG geblockt
-# Alles andere (INVALID|TOOLERR|OTHER) = inconclusiv = bei einem Gate FAIL (fail-closed).
+# Round-4 M4 (layer-aware): route-LOSE Ziele (extern, nicht 10.99.0.0/24) MÜSSEN
+# NOROUTE/UNREACH ergeben (Seat hat keine Route → ENETUNREACH). Ein TIMEOUT dort =
+# verdächtig (Route existierte, Paket downstream gedroppt) = inconclusiv = FAIL.
+# Nur on-link Broker-Subnetz (10.99.0.*, falscher Port) darf per nft-DROP TIMEOUT geben.
+blocked_ok(){  # $1=verdict $2=addr
+  case "$2" in
+    10.99.0.*) case "$1" in TIMEOUT|NOROUTE|UNREACH) return 0;; *) return 1;; esac ;;
+    *)         case "$1" in NOROUTE|UNREACH) return 0;; *) return 1;; esac ;;
+  esac
+}
+# Alles andere (INVALID|TOOLERR|OTHER + TIMEOUT bei route-losem Ziel) = bei einem Gate FAIL.
 
 echo "=== T-0244 seat-negative-oracle v3  (Seats: ${SEATS[*]}, timeout ${TIMEOUT}s, strict=$STRICT) ==="
 [ -z "$HUB_HOST" ] && echo "  [$(red WARN)] ZONE_HUB_HOST nicht gesetzt → Hub-Proben werden INVALID=FAIL (Platzhalter im Gate verboten, Lens-2 Befund 4)"
@@ -152,7 +161,7 @@ for ns in "${SEATS[@]}"; do
     desc="${desc// /}"; typ="${typ// /}"
     CHECKS=$((CHECKS+1))
     verdict=$(classify "$ns" "$typ" "$addr" "$port")
-    if blocked_ok "$verdict"; then
+    if blocked_ok "$verdict" "$addr"; then
       echo "  [$(grn OK)]   NEG geblockt ($verdict): $desc"
     elif reached "$verdict"; then
       echo "  [$(red FAIL)] NEG ERREICHT ($verdict, SOLL geblockt): $desc → $addr:$port"; FAILS=$((FAILS+1))
