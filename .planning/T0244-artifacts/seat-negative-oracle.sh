@@ -106,14 +106,17 @@ classify(){
       elif [ $rc -eq 0 ];   then echo CONNECTED        # send() gelang = Route existierte → verdächtig
       else echo OTHER; fi ;;
     ping|ping6)
+      # Lens-2-confirm #9: Exit-Code unterscheiden statt pauschal NOROUTE.
+      # ping: 0=reply(erreicht), 1=kein reply(timeout/unreachable=blockiert), 2=sonstiger Fehler(inconclusiv).
       [ $have_ping -eq 1 ] || { echo TOOLERR; return; }
       local f=-4; [ "$typ" = ping6 ] && f=-6
-      if ip netns exec "$ns" ping $f -c1 -W"$TIMEOUT" "$addr" &>/dev/null; then echo CONNECTED
-      else echo NOROUTE; fi ;;
+      ip netns exec "$ns" ping $f -c1 -W"$TIMEOUT" "$addr" &>/dev/null; rc=$?
+      case $rc in 0) echo CONNECTED;; 1) echo NOROUTE;; *) echo OTHER;; esac ;;
     dns)
+      # getent: 0=aufgelöst(erreicht!), 2=not-found(kein Resolver=blockiert), sonst=Fehler(inconclusiv).
       [ $have_getent -eq 1 ] || { echo TOOLERR; return; }
-      if ip netns exec "$ns" timeout "$TIMEOUT" getent hosts "$addr" &>/dev/null; then echo CONNECTED
-      else echo NOROUTE; fi ;;
+      ip netns exec "$ns" timeout "$TIMEOUT" getent hosts "$addr" &>/dev/null; rc=$?
+      case $rc in 0) echo CONNECTED;; 2) echo NOROUTE;; *) echo OTHER;; esac ;;
     *) echo OTHER ;;
   esac
 }

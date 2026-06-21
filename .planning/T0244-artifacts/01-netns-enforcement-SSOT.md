@@ -110,8 +110,12 @@ for entry in "${SEATS[@]}"; do
   # Reconcile: netns nur anlegen wenn fehlt; veth je Lauf NEU (billig; Löschen einer
   # veth-Seite entfernt beide Enden), Adressen mit 'replace' statt 'add'.
   ip netns list | grep -qw "$NS" || ip netns add "$NS"
-  ip link del "v-$VETH" 2>/dev/null || true          # alte veth-Reste entfernen (idempotent)
+  # Stale-Reste VOLLSTÄNDIG räumen (Lens-2-confirm #2: veth, evtl. zurückgebliebenes
+  # p-veth in root-ns aus einem vor dem netns-move abgebrochenen Lauf, alte eth0):
+  ip link del "v-$VETH" 2>/dev/null || true          # entfernt beide veth-Enden
+  ip link del "p-$VETH" 2>/dev/null || true          # falls p-veth noch in root-ns hängt
   ip -n "$NS" link del eth0 2>/dev/null || true
+  ip -n "$NS" addr flush dev eth0 2>/dev/null || true
   ip link add "v-$VETH" type veth peer name "p-$VETH"
   ip link set "v-$VETH" master "$BR"
   ip link set "v-$VETH" type bridge_slave isolated on   # Seat<->Seat L2 blockiert
@@ -121,6 +125,7 @@ for entry in "${SEATS[@]}"; do
   ip -n "$NS" link set "p-$VETH" name eth0
   ip -n "$NS" addr replace "10.99.0.$OCT/24" dev eth0   # replace = idempotent
   ip -n "$NS" link set eth0 up
+  ip -n "$NS" route flush default 2>/dev/null || true   # defensiv: GARANTIERT keine default-route (Lens-2-confirm #2)
   # KEIN default route in der Seat-ns. Nur on-link 10.99.0.0/24 (automatisch).
   # IPv6 in der Seat-ns komplett aus (H2):
   ip netns exec "$NS" sysctl -qw net.ipv6.conf.all.disable_ipv6=1
@@ -187,16 +192,36 @@ table inet zone_root {
     type filter hook input priority 0; policy drop;
     iif "lo" accept
     ct state established,related accept
-    # Lens-2 Befund 8: daddr auf die Broker-IPs pinnen, sonst ist JEDER root-ns-
-    # Prozess auf :8443/:8500 von Seats erreichbar:
-    iif $BR_IF ip daddr { 10.99.0.1, 10.99.0.2 } tcp dport { 8443, 8500 } accept
+    # Broker-Listener von Seats — PAARWEISE gepinnt (Lens-2-confirm: ein
+    # {set} auf beiden Seiten = kartesisch = 4 Kombis inkl. .1:8500/.2:8443;
+    # zwei separate Regeln = genau die 2 zulässigen Paare):
+    iif $BR_IF ip daddr 10.99.0.1 tcp dport 8443 accept   # LLM-Broker
+    iif $BR_IF ip daddr 10.99.0.2 tcp dport 8500 accept   # Merkel-Broker
     iif $EXT_IF ct state new drop                   # keine unsolicited Verbindung von außen
     log prefix "zone-root-input-drop " drop
   }
 }
 ```
 
-**Reload-Hinweis (Lens-2 Befund 7):** `ct state established,related accept` steht UID-unabhängig VOR den Owner-Regeln → bei einem Ruleset-RELOAD zur Laufzeit könnten bereits offene Fremd-Flows überleben. Darum: bei jedem nft-Reload `conntrack -F` (Flush der Conntrack-Tabelle), damit die neuen Owner-Regeln auch bestehende Flows neu bewerten. Beim Boot (frischer Stack) irrelevant; nur beim Live-Reload relevant.
+**Reload-Hinweis (Lens-2 Befund 7) — jetzt KODIERT, nicht nur Prosa:** `ct state established,related accept` steht UID-unabhängig VOR den Owner-Regeln → bei einem Ruleset-RELOAD könnten offene Fremd-Flows überleben. Die anwendende Unit erzwingt `conntrack -F` bei JEDEM (Re-)Apply, damit bestehende Flows neu bewertet werden:
+```ini
+# /etc/systemd/system/zone-root-nft.service
+[Unit]
+Description=T-0244 root-ns nftables (owner-match, fail-closed)
+After=zone-netns-setup.service
+BindsTo=zone-netns-setup.service
+Before=zone-broker-llm.service zone-broker-merkel.service zone-resolver.service
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/nft -f /etc/zone/zone-root.nft
+ExecStartPost=-/usr/sbin/conntrack -F          # Lens-2-confirm #7: Flow-Reset bei jedem Apply
+ExecReload=/usr/sbin/nft -f /etc/zone/zone-root.nft
+ExecReload=-/usr/sbin/conntrack -F             # auch bei `systemctl reload`
+[Install]
+WantedBy=multi-user.target
+```
+(Beim Boot mit frischem Stack ist `conntrack -F` ein No-op; nur beim Live-Reload trägt es.)
 
 **Warum owner-match die Kern-Invariante trägt:** Selbst wenn ein Prozess in root-ns eine Route nach außen hätte, lässt die `output`-policy NUR `skuid ∈ {8001,8002,8003}` mit exakt einem Ziel-Port raus. Ein als root oder als Seat-UID laufender Prozess in root-ns → DROP+Log. Die einzige Möglichkeit, das zu umgehen, wäre, ALS Broker-UID zu laufen — was der Seat-Cap-Drop (§4) verhindert (kein `setuid` ohne Privileg, userns-Map disjunkt, `NoNewPrivileges`).
 
@@ -273,12 +298,13 @@ WantedBy=multi-user.target
 # Mikrofenster bei (Re-)Load (MED-5: scoped statt 'flush ruleset').
 define LLM    = 10.99.0.1
 define MERKEL = 10.99.0.2
-# Idempotenter First-Boot (Lens-2 Befund 1: 'flush table' ALLEIN failt, wenn die
-# Tabelle noch nicht existiert → Unit failed → Seats aus). 'add table' ist no-op
-# wenn vorhanden, DANN flush — beides in DERSELBEN atomaren nft-Transaktion:
-add table inet zone_seat
-flush table inet zone_seat
-table inet zone_seat {
+# Idempotente atomare Tabellen-Ersetzung (Lens-2-confirm #1: weder 'flush table'
+# allein (failt wenn fehlend) noch 'add table' (kann versionsabhängig 'File exists')
+# sind zuverlässig). Kanonisches create-if-absent → delete → recreate, alles in
+# DERSELBEN atomaren nft -f-Transaktion (kein Mikrofenster):
+table inet zone_seat { }       # no-op wenn vorhanden, legt sonst leer an
+delete table inet zone_seat    # existiert jetzt sicher → weg
+table inet zone_seat {         # frisch neu aufbauen:
   chain output {
     type filter hook output priority 0; policy drop;
     oif "lo" accept
@@ -345,10 +371,16 @@ Before=zone-spawner.service
 Requires=zone-netns-setup.service
 [Service]
 Type=oneshot
+# ZONE_HUB_HOST = echte Mac-Hub-IP (am Build gesetzt), sonst Hub-Proben = INVALID = FAIL:
+Environment=ZONE_HUB_HOST=192.168.20.<MAC-IP-AM-BUILD-SETZEN>
 ExecStart=/usr/local/sbin/seat-negative-oracle.sh --all-seats --strict
+# Lens-2-confirm #5b: der B1c-Hardening-Oracle MUSS auch im Boot-Gate laufen, sonst
+# ist der Cap-Drop kein Spawner-Gate. 2. ExecStart (oneshot: sequenziell, jeder
+# Non-Zero failt die Unit):
+ExecStart=/usr/local/sbin/seat-hardening-oracle.sh
 TimeoutStartSec=180          # Refute 3d: hängendes Ziel darf das Gate nicht aufhängen
                               # → Timeout = Unit failed = fail-closed (Spawner startet nicht)
-# exit!=0 → diese Unit failed → zone-spawner (Requires=zone-selftest) startet nicht
+# beide exit==0 nötig → sonst Unit failed → zone-spawner (Requires=zone-selftest) startet nicht
 [Install]
 WantedBy=multi-user.target
 ```
@@ -393,4 +425,22 @@ Verdikt NOT-BUILD-READY mit 4 NEUEN HIGH (Fokus BUILD-MECHANIK, die Lens-1 über
 | #6 leeres `User=` bei DynamicUser | MED | §4: entfernt + `systemd-analyze verify` |
 | #10 Broker-Pivot außerhalb netns-Oracle (✅ bestätigt) | — | Schnüffis Detektor-Recall-Oracle = CO-GATE (Dual-Oracle) |
 
-**KONVERGENZ beider Lensen:** B1-Kern-Konter (Cap-Drop macht netns hart) gilt — ABER war BIS Lens-2 unbewiesen (jetzt `seat-hardening-oracle.sh`). Beide Lensen bestätigen: Egress-Bau bleibt BLOCK bis BEIDE Oracles (Netz + Cap-Drop) + Schnüffis Detektor-Oracle grün. **Re-Run-Bestätigungs-Lens (Schnüffi) auf das gefixte Oracle + den neuen B1c-Oracle: angeboten, ausstehend.**
+**KONVERGENZ beider Lensen:** B1-Kern-Konter (Cap-Drop macht netns hart) gilt — ABER war BIS Lens-2 unbewiesen (jetzt `seat-hardening-oracle.sh`). Beide Lensen bestätigen: Egress-Bau bleibt BLOCK bis BEIDE Oracles (Netz + Cap-Drop) + Schnüffis Detektor-Oracle grün.
+
+### Refute Round-2 — Bestätigungs-Lens (Codex/Schnüffi, b8149bd) — 9 Befunde gefoldet
+Verdikt NOT-YET. ✅ ZU bestätigt: #3 (After= Broker), #4 (Platzhalter=FAIL), #6 (User= raus). 2 NEUE Bugs, die meine Lens-2-Fixes selbst einführten, + Rest-Lücken im B1c-Oracle — ALLE gefoldet:
+| # | Befund | Fix |
+|---|---|---|
+| 1 | daddr-Pin `{set} dport {set}` = 4 Kombis (kartesisch) statt 2 | §3: PAARWEISE — `daddr .1 dport 8443` / `daddr .2 dport 8500` (2 Regeln) |
+| 2 | `try_denied(){ "$@" && bad=1; }` = JEDE Nicht-Null „verweigert" (false-PASS — exakt #5-Klasse, reintroduziert) | hardening-oracle: nur EPERM/EACCES/SIGSYS=OK; Tool-Preflight; sonst FAIL (lokal getestet) |
+| 3/5b | Hardening-Oracle NICHT im Boot-Gate | §6: 2. ExecStart in `zone-selftest.service` |
+| 4 | uid_map nur 1. Zeile/2. Spalte → keine Range-Disjunktheit | hardening-oracle: ALLE Zeilen als outer..outer+len-1 gg. {0,8001-8003} |
+| 5a | kein netns-Membership-Check des PID | hardening-oracle: `ip netns identify $PID` == erwartete ns |
+| 5c | Probe-Dienst nur Existenz, nicht Härtungs-GLEICHHEIT geprüft | hardening-oracle: `systemctl show` CapBnd/NNP/PrivateUsers/SyscallFilter/RestrictNS/DynamicUser Probe==Seat |
+| 5d | `start \|\|true`+ExecMainStatus → Stale | hardening-oracle: reset-failed + frische InvocationID + Result=success |
+| 6 | `add table` evtl. „File exists" beim Reload | §5: `table{}`+`delete table`+`table{...}` (kanonisch idempotent) |
+| 7 | netns-Reconcile unvollständig (stale p-veth, addrs, default-route) | §2: `ip link del p-veth` + `addr flush` + `route flush default` |
+| 8 | conntrack -F nur Prosa | §3: kodiert als `ExecStartPost=`/`ExecReload=` in `zone-root-nft.service` |
+| 9 | Oracle ping/dns pauschal NOROUTE → NSS-Fehler als PASS | Oracle v3.1: ping-Exit 0/1/2 + getent 0/2/sonst diskriminiert |
+
+**Schnüffi recycelte nach 4 Refute-Runden** (Lens-Rezept im durablen Memory) → ihre frische Session fährt die nächste Bestätigungs-Lens. **Round-3-Lens auf diesen Fold: ausstehend (gepingt).** Default=BLOCK bis grün.
