@@ -646,3 +646,15 @@ Verdikt NOT-BUILD-READY, aber knapp — nur Verifikations-Exaktheit + ein halb a
 | M1 | MED | SystemCallFilter-Check Token-Präsenz, nicht deny-seitig | ehrlich als PRÄSENZ-Check gelabelt (dyn. Self-Proof = Verhaltens-Autorität) |
 
 **Trend FALLEND: R1:7 → R2:9 → R3:10 → R4:9 → R5:8 → R6:6 → R7:3H+1M.** Restbefunde reine Exaktheit/Vollständigkeit. **R8 = realistischer BUILD-READY-Kandidat auf der netns/Prozess-Schicht.** Danach zieht Schnüffi das LLM-Broker-RPC-Co-Gate (MED-6, benannte schwächste Reststelle) nach. **Round-8-Lens: ausstehend (gepingt).** Default=BLOCK bis grün.
+
+### Refute Round-8 — Bestätigungs-Lens (Codex/Schnüffi, 05be85c) — 2 Last-Mile-Blocker, 5 Achsen sound
+Verdikt NOT-BUILD-READY, aber codex (mit explizitem BUILD-READY-Mandat) bestätigte ALLE 5 Architektur-Achsen sound (Netz-Isolation / Prozess-Härtung / Boot+Restart-Komposition / Oracle-fail-closed / Egress-Ordering) — und fand genau 2 echte Verifikations-Lücken. false-PASS-Klasse 5× gehalten. ALLE gefoldet:
+| # | Sev | Befund | Fix |
+|---|---|---|---|
+| B1 | HIGH | H1a-Pfad exakt-String, aber nicht KANONISCH → Symlink `/usr/local/sbin/…→/tmp/stub` (path= bleibt kanonisch, Stub läuft) | `safe_canonical()` Preflight: `readlink -e`==self (kein Symlink woanders) + `-f` + root-owned + nicht group/world-writable. Symlink-Bypass lokal verifiziert |
+| B2 | HIGH | `CanReload=no`-Gate behauptet, aber in KEINEM Oracle implementiert → späterer ExecReload-Drop-in ungefangen | hardening-oracle asserted `CanReload=no` maschinell: zone-root-nft (Preflight) + jede zone-nft-seat@ (per Seat), fail-closed |
+| NB1 | low | `--strict` verlangt aber funktional ungenutzt | verdrahtet: Gate-Modus inconclusiv=FAIL, Default lenient=WARN |
+| NB2 | low | argv-Check regex (für fixe Seatnamen dicht) | belassen |
+| NB3 | low | stale Fixture-Kommentare in zone-seat-probe.sh | aufgeräumt (ExecStartPre-Self-Proof statt Fixture-Unit) |
+
+**Trend: R1:7 → … → R6:6 → R7:3H+1M → R8:2H+3NB.** **R9 = BUILD-READY-Runde auf der netns/Prozess-Schicht.** Sobald grün → Schnüffis LLM-Broker-RPC-Co-Gate als dritter Oracle (Spec V1-V3: E2-EU-Hyperscaler, Cert-Pinning, zone-selftest-broker). **Round-9-Lens: ausstehend (gepingt).** Default=BLOCK bis grün.

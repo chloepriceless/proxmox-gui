@@ -76,7 +76,7 @@ esac; shift; done
 [ ${#SEATS[@]} -eq 0 ] && SEATS=("${SEATS_DEFAULT[@]}")
 
 FAILS=0; CHECKS=0
-red(){ printf '\033[31m%s\033[0m' "$1"; }; grn(){ printf '\033[32m%s\033[0m' "$1"; }
+red(){ printf '\033[31m%s\033[0m' "$1"; }; grn(){ printf '\033[32m%s\033[0m' "$1"; }; yel(){ printf '\033[33m%s\033[0m' "$1"; }
 
 # Tool-Verfügbarkeit EINMAL prüfen (Befund 9: fehlendes Tool != geblockt)
 have_ping=1; have_getent=1
@@ -164,9 +164,14 @@ for ns in "${SEATS[@]}"; do
     if blocked_ok "$verdict" "$addr"; then
       echo "  [$(grn OK)]   NEG geblockt ($verdict): $desc"
     elif reached "$verdict"; then
+      # Host ERREICHT = echte Verletzung, IMMER FAIL (auch ohne --strict):
       echo "  [$(red FAIL)] NEG ERREICHT ($verdict, SOLL geblockt): $desc → $addr:$port"; FAILS=$((FAILS+1))
-    else
+    elif [ "$STRICT" = 1 ]; then
+      # Inconclusiv im Gate (--strict) = fail-closed:
       echo "  [$(red FAIL)] NEG INCONCLUSIV ($verdict = Platzhalter/Tool-/Probe-Fehler → fail-closed): $desc"; FAILS=$((FAILS+1))
+    else
+      # Ohne --strict (Debug): inconclusiv nur WARN, NICHT gezählt (im Gate wäre es FAIL):
+      echo "  [$(yel WARN)] NEG inconclusiv ($verdict — ohne --strict nur Warnung; im Gate=FAIL): $desc"
     fi
   done
 

@@ -1,19 +1,20 @@
 #!/usr/bin/env bash
 # =============================================================================
-# T-0244 zone-seat-probe.sh  — Cap-Drop-Beweis-Fixture (B1c, Round-3 H6/H3)
+# T-0244 zone-seat-probe.sh  — Cap-Drop-Self-Proof (B1c)
 # =============================================================================
-# Läuft als ExecStart des `zone-seat-probe@%i.service`, der BYTE-IDENTISCHE
-# Härtungs-Direktiven wie `zone-seat@.service` trägt (gemeinsames Include
-# /etc/systemd/zone-hardening.conf — siehe 01-SSOT §4) — NUR ExecStart zeigt
-# hierauf statt auf claude, und es läuft VOR den echten Seats (Boot-Gate, H1).
+# Läuft als `ExecStartPre=` (OHNE '+') im echten `zone-seat@%i.service` (Round-5-
+# Vereinfachung: KEINE separate Fixture-Unit mehr). ExecStartPre erbt die volle Unit-
+# Confinement (NetworkNamespacePath/CapBounding/SystemCallFilter/NNP/PrivateUsers/
+# RestrictNamespaces) → der Prozess läuft unter EXAKT der echten Seat-Härtung, FRISCH
+# bei jedem (Re-)Start, BEVOR `claude` (ExecStart) läuft. Exit≠0 → Seat startet nicht.
 #
 # Self-Proof: der confinte Prozess inspiziert SICH SELBST (kein Privileg, das zu
 # fälschen) + versucht die gefährlichen Ops. Exit 0 NUR wenn vollständig gesperrt.
-# Der hardening-oracle (Driver) prüft zusätzlich Template-Gleichheit Probe==Seat.
+# Identität/Ownership des Scripts verriegelt der seat-hardening-oracle (safe_canonical
+# + ExecStartPreEx-Parse: exakter Pfad, ohne '+'/ohne ignore-failure, --seat-Instanz).
 #
 # H3-FIX (Round-3): NUR SIGSYS (rc==159 = 128+31) zählt als seccomp-Verweigerung —
-#   NICHT `rc>=128` (das akzeptierte fälschlich SIGKILL/SIGSEGV/SIGTERM = false-PASS,
-#   das DRITTE Mal, dass diese Klasse auftauchte).
+#   NICHT `rc>=128` (das akzeptierte fälschlich SIGKILL/SIGSEGV/SIGTERM = false-PASS).
 # =============================================================================
 set -uo pipefail
 bad=0

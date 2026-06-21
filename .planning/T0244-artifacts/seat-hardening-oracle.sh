@@ -37,12 +37,38 @@ declare -A FLOOR=(
 # Kritische Denials, die im SystemCallFilter stehen MÜSSEN (R5-H2 semantisch, nicht nur Präsenz):
 REQUIRED_DENIES=(setns unshare clone3 bpf @mount @privileged @swap)
 
+CANON_PROBE=/usr/local/sbin/zone-seat-probe.sh
+CANON_NET=/usr/local/sbin/seat-negative-oracle.sh
+
 FAILS=0; CHECKS=0
 red(){ printf '\033[31m%s\033[0m' "$1"; }; grn(){ printf '\033[32m%s\033[0m' "$1"; }
 chk(){ CHECKS=$((CHECKS+1)); if [ "$1" = ok ]; then echo "  [$(grn OK)]   $2"; else echo "  [$(red FAIL)] $2"; FAILS=$((FAILS+1)); fi; }
 prop(){ systemctl show -p "$2" --value "$1" 2>/dev/null; }
 
-echo "=== T-0244 seat-hardening-oracle v5 (B1c STATIC config-floor am echten Seat) — Seats: ${SEATS[*]} ==="
+# R8-B1: ist der kanonische Pfad das ECHTE Script — kein Symlink woanders hin (Stub-Bypass),
+# root-owned, NICHT group/world-writable (sonst ist der Pfad selbst swappbar)?
+safe_canonical(){
+  local p="$1" real owner mode
+  [ -f "$p" ] || { echo "kein reguläres File: $p"; return 1; }
+  real=$(readlink -e "$p" 2>/dev/null) || { echo "readlink -e scheitert: $p"; return 1; }
+  [ "$real" = "$p" ] || { echo "Symlink woanders hin: $p → $real (Stub-Bypass!)"; return 1; }
+  read -r owner mode < <(stat -c '%U %a' "$p" 2>/dev/null) || { echo "stat scheitert: $p"; return 1; }
+  [ "$owner" = root ] || { echo "$p nicht root-owned (owner=$owner)"; return 1; }
+  [ $(( 0$mode & 022 )) -eq 0 ] || { echo "$p group/world-writable (mode=$mode)"; return 1; }
+  return 0
+}
+
+echo "=== T-0244 seat-hardening-oracle v6 (B1c STATIC config-floor + Identitäts-/Reload-Gate) — Seats: ${SEATS[*]} ==="
+# PREFLIGHT (R8-B1): die Self-Proof-Scripts müssen das echte, unmanipulierbare Original sein.
+for c in "$CANON_PROBE" "$CANON_NET"; do
+  if msg=$(safe_canonical "$c"); then chk ok "kanonisch+root+unwritable: $c"
+  else chk fail "Self-Proof-Script manipulierbar: $msg"; fi
+done
+# PREFLIGHT (R8-B2): kein Reload-Pfad auf der Broker-Egress-Unit (sonst Policy-Lockerung per reload).
+crr=$(prop "zone-root-nft.service" CanReload)
+[ "$crr" = no ] && chk ok "zone-root-nft CanReload=no (kein Reload-Bypass)" \
+                || chk fail "zone-root-nft CanReload='$crr' (≠no → ExecReload-Drop-in möglich!)"
+
 for ns in "${SEATS[@]}"; do
   echo "--- $ns ---"
   U="zone-seat@$ns.service"
@@ -76,13 +102,16 @@ for ns in "${SEATS[@]}"; do
   { [ "$nnsp" = "/var/run/netns/$ns" ] || [ "$nnsp" = "/run/netns/$ns" ]; } \
      && chk ok "NetworkNamespacePath = $nnsp" || chk fail "NetworkNamespacePath '$nnsp' ≠ netns $ns"
 
+  # (4b) R8-B2: die Seat-nft-Unit darf keinen Reload-Pfad haben (Policy-Lockerung-Schutz)
+  crn=$(prop "zone-nft-seat@$ns.service" CanReload)
+  [ "$crn" = no ] && chk ok "zone-nft-seat@$ns CanReload=no" \
+                  || chk fail "zone-nft-seat@$ns CanReload='$crn' (≠no → ExecReload-Drop-in möglich!)"
+
   # (5) Self-Proof HART verriegelt (R6-H1): strukturiert via ExecStartPreEx (die 'Ex'-Variante
   #     exponiert flags= → 'privileged' für '+'). Der ganze Sicherheitsgewinn hängt hier dran —
   #     ein leeres `ExecStartPre=`-Override würde die Liste RESETTEN (systemd). Daher: GENAU 2
   #     Commands, exakte Reihenfolge/Pfade/Flags, KEIN grep.
-  # R7-H1: EXAKTE kanonische Vollpfade (kein Suffix-Match → kein /tmp/…-Stub-Bypass):
-  CANON_PROBE=/usr/local/sbin/zone-seat-probe.sh
-  CANON_NET=/usr/local/sbin/seat-negative-oracle.sh
+  # R7-H1: EXAKTE kanonische Vollpfade (Identität/Ownership im Preflight via safe_canonical):
   espx=$(prop "$U" ExecStartPreEx)
   mapfile -t blocks < <(grep -oE '\{[^}]*\}' <<<"$espx")
   ok5=1; reason=""
