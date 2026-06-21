@@ -6,6 +6,23 @@
 
 ---
 
+## 🔄 UPDATE 2026-06-21 ~11:25 MESZ — 4. Crash + Forensik-Durchbruch (PSU-Hypothese RUNTER)
+Seit dem Erst-Doc gab es **2 weitere Crashes** (3. = ~05:03-RTC-drift-Zeit ohne Auto-Recovery / Incident; **4. = ~11:25 MESZ**, beide AUSSERHALB des 02:00-Backup-Fensters → **Trigger ist Last/Hitze, nicht nur Backup**). Der `.241`-Collector hat den 4. Crash gefangen (f73n74ge):
+- **Spannungen BOCKSTABIL bis zuletzt: 12V=12.0–12.1, 5V=5.07, VCCM=1.19, KEIN Sag.** Tctl 68–73°C (Crit ~93°C), Last ~3,0.
+- → **PSU-Sag-Hypothese (#1) WEITGEHEND ENTKRÄFTET.** (Caveat: 1–3s-Collector kann einen Sub-Sekunden-Power-Kollaps nicht voll auflösen — aber kein Sag-Rampen-Vorlauf sichtbar.)
+
+**Neue Rangfolge:** 🥇 **RAM-/VRM-/CPU-Instabilität unter Last+Hitze**. 🥈 board-/CPU-initiierter Reset (VRM-Überstrom-Schutz / CPU-Machine-Check / Watchdog) — passt zu „instant + stabile Rails". PSU-Sag → 🥉/raus.
+**🔑 Schlüssel-Einsicht (löst das 0-MCE-Rätsel):** Das RAM ist **Kingston FURY = NON-ECC**, verbaut in einem **ECC-FÄHIGEN Board (X470D4U2-2T)** → **Speicherfehler sind SILENT** (keine ECC-Erkennung → keine CE/UE/MCE im Log). Das erklärt rasdaemon „0 Memory-Fehler" trotz möglicher RAM-Ursache. Non-ECC-Bit-Flip → Korruption → instant Crash, keine Spur.
+
+**🔑 OOB-RECOVERY GEFUNDEN:** BMC **192.168.10.28** (VLAN10, AMI/MegaRAC, Netzi via UDM-ARP; erreichbar, Redfish lebt; Chassis/Systems=401, Cred-gated; 1Password/op-connect SELBST auf .240/down). **BMC-SEL = jetzt DIE entscheidende Evidenz** (speichert Power-Fault/Thermal/Watchdog über den Reset) → `ipmitool -I lanplus -H 192.168.10.28 -U <u> -P <pw> sel list` + `sensor list`, sobald Cred/Owner-Go.
+
+**Top-Empfehlungen (verschoben):** (1) **memtest86+** (marginales non-ECC-DIMM), (2) **auf ECC-RAM wechseln** (Board kann's → beendet Silent-Error-Blindheit + loggt künftig), (3) **Thermal/VRM**: Kühlung verbessern, BIOS/AGESA-Update, cTDP/PBO auf Stock, (4) **SEL-read entscheidet** Thermal vs Watchdog vs Power-Fault. EXPO ist bereits AUS (JEDEC 2400). (5) **Interim-Mitigation:** kritische Nicht-HBA-Guests (Prod-GUI 143, op-connect 141) auf stabilen Node migrieren, sobald .240 oben — dann reißen künftige Crashes die Produktion nicht mit (PBS-VM106 geht nicht, HBA-Passthrough).
+**Härtungs-Folgepunkt (Netzi):** Recovery-Cred lag NUR im 1Password AUF .240 = zirkuläre Abhängigkeit → BMC-Cred off-node (NetBoard + off-node-Store).
+
+> Die Original-Analyse unten (§1–§7) bleibt als Evidenz-Basis gültig; die Hypothesen-Gewichtung in §4 ist durch dieses Update überschrieben (PSU↓, RAM/VRM/CPU↑).
+
+---
+
 ## 1. Symptom
 Node `proxmox`/.240 resettet **reproduzierbar hart** im nächtlichen 02:00-vzdump-Backup-Fenster. **3× in Folge**, aus der Boot-Historie des Nodes selbst verifiziert:
 
