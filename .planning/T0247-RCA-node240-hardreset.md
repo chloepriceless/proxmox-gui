@@ -12,6 +12,9 @@ Seit dem Erst-Doc gab es **2 weitere Crashes** (3. = ~05:03-RTC-drift-Zeit ohne 
 - → **PSU-Sag-Hypothese (#1) WEITGEHEND ENTKRÄFTET.** (Caveat: 1–3s-Collector kann einen Sub-Sekunden-Power-Kollaps nicht voll auflösen — aber kein Sag-Rampen-Vorlauf sichtbar.)
 
 **Neue Rangfolge:** 🥇 **RAM-/VRM-/CPU-Instabilität unter Last+Hitze**. 🥈 board-/CPU-initiierter Reset (VRM-Überstrom-Schutz / CPU-Machine-Check / Watchdog) — passt zu „instant + stabile Rails". PSU-Sag → 🥉/raus.
+
+**🎯 RCA-KONVERGENZ (2026-06-21, HW per Christins BIOS-Screenshot bestätigt):** CPU = **Ryzen 9 5950X** (kein APU — Sensornamen führten in die Irre), RAM = **4× 32GB UDIMM Dual-Rank DDR4-2400 in ALLEN 4 Slots** (128GB), XMP aus. → **Root Cause = IMC-Overload: 4× Dual-Rank-DIMM (8 Ranks über 4 Slots) auf dem AM4-Ryzen-IMC = Worst-Case-Speichercontroller-Last → klassischer no-log-Hard-Reboot-under-Load.** AM4-Ryzen garantiert mit 4×Dual-Rank offiziell nur DDR4-**2133**; 2400 stresst den IMC bereits. Deckt ALLES ab: stabile Rails (kein Power), 0 MCE (non-ECC → silent), Last/Hitze-Trigger, instant ohne Spur. PSU/XMP/Thermik alle ausgeschlossen.
+**FIX-PRIO (f73n74ge, alle Christin/Wartungsfenster):** (1) **2-DIMM-Test A2+B2 (64GB)** = schnellster Kausalitätsbeweis (halbiert IMC-Last); (2) memtest86 über Nacht; (3) falls 128GB bleiben muss: VSOC 1.10–1.15V + VDDG IOD/CCD anheben, ProcODT 40–48Ω, Timings relaxen; (4) AGESA/BIOS-Update (L4.27→neuer = bessere 4-DIMM-Stabilität); (5) BMC-IPMI scharf für Remote-Recovery/POST-Capture.
 **🔑 Schlüssel-Einsicht (löst das 0-MCE-Rätsel):** Das RAM ist **Kingston FURY = NON-ECC**, verbaut in einem **ECC-FÄHIGEN Board (X470D4U2-2T)** → **Speicherfehler sind SILENT** (keine ECC-Erkennung → keine CE/UE/MCE im Log). Das erklärt rasdaemon „0 Memory-Fehler" trotz möglicher RAM-Ursache. Non-ECC-Bit-Flip → Korruption → instant Crash, keine Spur.
 
 **🔑 OOB-RECOVERY GEFUNDEN:** BMC **192.168.10.28** (VLAN10, AMI/MegaRAC, Netzi via UDM-ARP; erreichbar, Redfish lebt; Chassis/Systems=401, Cred-gated; 1Password/op-connect SELBST auf .240/down). **BMC-SEL = jetzt DIE entscheidende Evidenz** (speichert Power-Fault/Thermal/Watchdog über den Reset) → `ipmitool -I lanplus -H 192.168.10.28 -U <u> -P <pw> sel list` + `sensor list`, sobald Cred/Owner-Go.
@@ -36,8 +39,8 @@ Andere 4 Cluster-Nodes überstehen dieselbe Backup-Welle → **lokal auf .240**.
 
 ## 2. Hardware (verifiziert)
 - **Board:** ASRock Rack **X470D4U2-2T** (Consumer-AM4, X470-Chipsatz, Dual-10G). System-DMI = „To Be Filled By O.E.M." (Whitebox).
-- **CPU:** AMD Ryzen **APU** (Sensoren VCPU/VSOC/APU_VDDP/Tctl/Tccd1).
-- **RAM:** 3× (mind.) Kingston FURY **KF3600C18D4/32GX** (DDR4-3600-rated), läuft auf **2400 MT/s / 1.2V JEDEC-Base** → **EXPO/XMP NICHT aktiv**.
+- **CPU:** AMD **Ryzen 9 5950X** (16C/32T Zen3; die Sensornamen VCPU/VSOC/APU_VDDP führten irrtümlich auf „APU" — es ist KEIN APU; per BIOS-Screenshot bestätigt).
+- **RAM:** **4× 32GB UDIMM Dual-Rank DDR4-2400 in allen 4 Slots = 128GB** (Kingston FURY, **non-ECC**; XMP/EXPO aus, läuft 2400 JEDEC). → **4× Dual-Rank = 8 Ranks = Worst-Case-IMC-Last** (s. RCA-Konvergenz oben).
 - **BMC:** ASPEED / **ASRock Rack** (NICHT HPE-iLO → kein separates IML; IPMI-SEL = das HW-Ereignislog hier).
 - **Storage-HBA:** Broadcom **LSI 9500-16i Tri-Mode** (SAS3816, FW 21.00) auf `0000:2b:00`, per **vfio-pci an PBS-VM106 durchgereicht**, treibt 5 SAS-SSDs (WD/HGST `0x5000cca087...`).
 - **Backup-Architektur:** im 02:00-Fenster schreiben **alle Cluster-Nodes konzentriert über VM106** (PBS) auf diesen HBA.
