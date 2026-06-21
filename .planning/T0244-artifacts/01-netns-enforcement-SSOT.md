@@ -114,6 +114,7 @@ for entry in "${SEATS[@]}"; do
   # p-veth in root-ns aus einem vor dem netns-move abgebrochenen Lauf, alte eth0):
   ip link del "v-$VETH" 2>/dev/null || true          # entfernt beide veth-Enden
   ip link del "p-$VETH" 2>/dev/null || true          # falls p-veth noch in root-ns hängt
+  ip -n "$NS" link del "p-$VETH" 2>/dev/null || true # Round-3 M2: stale p-veth IN der ns (crash vor rename)
   ip -n "$NS" link del eth0 2>/dev/null || true
   ip -n "$NS" addr flush dev eth0 2>/dev/null || true
   ip link add "v-$VETH" type veth peer name "p-$VETH"
@@ -215,77 +216,100 @@ Before=zone-broker-llm.service zone-broker-merkel.service zone-resolver.service
 Type=oneshot
 RemainAfterExit=yes
 ExecStart=/usr/sbin/nft -f /etc/zone/zone-root.nft
-ExecStartPost=-/usr/sbin/conntrack -F          # Lens-2-confirm #7: Flow-Reset bei jedem Apply
+# Round-3 H2: KEIN führendes '-' → ein conntrack-Fehler failt die Unit (fail-closed).
+# conntrack-tools ist harte Build-Dependency (sonst überleben Fremd-Flows den Reload):
+ExecStartPost=/usr/sbin/conntrack -F           # Flow-Reset bei jedem Apply (#7)
 ExecReload=/usr/sbin/nft -f /etc/zone/zone-root.nft
-ExecReload=-/usr/sbin/conntrack -F             # auch bei `systemctl reload`
+ExecReload=/usr/sbin/conntrack -F              # auch bei `systemctl reload`, fail-closed
 [Install]
 WantedBy=multi-user.target
 ```
-(Beim Boot mit frischem Stack ist `conntrack -F` ein No-op; nur beim Live-Reload trägt es.)
+(Beim Boot mit frischem Stack flusht `conntrack -F` eine leere Tabelle → exit 0; nur beim Live-Reload trägt es. **Build-Dep: `conntrack` MUSS installiert sein**, sonst failt die Unit absichtlich.)
+**M4 (Round-3):** Die Broker tragen `Requires=zone-root-nft.service` + `After=zone-root-nft.service` (nicht nur das `Before=` hier) → ein Broker startet NICHT, wenn der owner-match-nft fehlschlug (fail-closed gegen egress-vor-Regel).
 
 **Warum owner-match die Kern-Invariante trägt:** Selbst wenn ein Prozess in root-ns eine Route nach außen hätte, lässt die `output`-policy NUR `skuid ∈ {8001,8002,8003}` mit exakt einem Ziel-Port raus. Ein als root oder als Seat-UID laufender Prozess in root-ns → DROP+Log. Die einzige Möglichkeit, das zu umgehen, wäre, ALS Broker-UID zu laufen — was der Seat-Cap-Drop (§4) verhindert (kein `setuid` ohne Privileg, userns-Map disjunkt, `NoNewPrivileges`).
 
 ---
 
-## 4. Seat-Härtung (B1c) — `zone-seat@.service` (systemd, je Seat)
+## 4. Seat-Härtung (B1c) — gemeinsames Härtungs-Include + `zone-seat@` + `zone-seat-probe@`
+
+**H5-Strukturfix (Round-3, Schnüffi-Verstärkung 1): die Härtung ist die STRUKTURELLE Primärgarantie, KEIN Property-Listen-Vergleich.** Alle Cap-/seccomp-/userns-/Protect-Direktiven liegen in EINER kanonischen Datei `/etc/zone/zone-hardening.conf`. Sowohl `zone-seat@` (echter Seat) als auch `zone-seat-probe@` (B1c-Beweis-Fixture) ziehen sie als drop-in-**Symlink** auf DIESELBE Datei → byte-identisch by-construction (eine Liste vergisst irgendwann genau die eine load-bearing Direktive). Der Props-Vergleich im `seat-hardening-oracle.sh` ist dadurch nur noch **Drift-Detektor** obendrauf (failt, falls jemand am echten Seat ein abweichendes Override setzt).
 
 ```ini
-# /etc/systemd/system/zone-seat@.service  (instanziiert: zone-seat@seat0 ...)
-[Unit]
-Description=T-0244 zone seat %i (hardened, netns-confined)
-# Lens-2 Befund 3: 'Requires=' ohne 'After=' Broker → Seat startete vor Broker-Ready.
-# Broker MÜSSEN auch im After= stehen (Reihenfolge, nicht nur Kopplung):
-After=zone-netns-setup.service zone-nft-seat@%i.service zone-broker-llm.service zone-broker-merkel.service
-BindsTo=zone-netns-setup.service zone-nft-seat@%i.service   # B1d: kein Seat ohne netns+nft
-Requires=zone-broker-llm.service zone-broker-merkel.service
-# Pflicht-Verify am Build: `systemd-analyze verify zone-seat@seat0.service` (Lens-2 Befund 3/6)
-
+# /etc/zone/zone-hardening.conf — EINZIGE Härtungs-Quelle (Include für seat@ UND probe@)
 [Service]
-# --- in die vorbereitete Seat-netns (NICHT PrivateNetwork: die ns ist persistent gebaut) ---
-NetworkNamespacePath=/var/run/netns/%i
-
-# --- B1c Capability-Drop: KEINE der netns-/privesc-relevanten Caps ---
-CapabilityBoundingSet=
+CapabilityBoundingSet=        # leer = ALLE Caps weg (CAP_NET_ADMIN/SYS_ADMIN/SETUID/...)
 AmbientCapabilities=
 NoNewPrivileges=yes
-# explizit die gefährlichen verbieten (CapabilityBoundingSet= leert ohnehin alles):
-# CAP_NET_ADMIN CAP_SYS_ADMIN CAP_NET_RAW CAP_SYS_PTRACE CAP_SETUID CAP_SETGID CAP_BPF
-
-# --- B1c user-namespace-Map: Seat-UID disjunkt von Broker-UIDs (8001-8003) ---
 PrivateUsers=yes
-DynamicUser=yes            # ephemerer hoher UID-Bereich (≥61184), nie 8001-8003, nie 0
-                           # (Lens-2 Befund 6: leeres 'User=' entfernt — DynamicUser setzt es selbst)
-
-# --- B1c seccomp: netns-/mount-/bpf-Syscalls blocken ---
+DynamicUser=yes               # ephemerer hoher UID-Bereich (≥61184), nie 8001-8003, nie 0
 SystemCallFilter=~@mount @swap @reboot @raw-io @cpu-emulation @obsolete
 SystemCallFilter=~setns unshare clone3 bpf pivot_root mount_setattr open_tree move_mount
 SystemCallArchitectures=native
-RestrictNamespaces=yes     # blockt clone(CLONE_NEW*) hart
+RestrictNamespaces=yes        # blockt clone(CLONE_NEW*) hart
 LockPersonality=yes
 ProtectKernelTunables=yes
 ProtectKernelModules=yes
 ProtectControlGroups=yes
 RestrictSUIDSGID=yes
-MemoryDenyWriteExecute=no  # Node/Claude-CLI braucht JIT → NICHT setzen; via seccomp-@raw-io abgedeckt
-
-# --- FS: kein Schreibzugriff außer Seat-Workdir; Pseudonym-Map NICHT gemountet (Artefakt 04) ---
 ProtectSystem=strict
 ProtectHome=yes
+MemoryDenyWriteExecute=no     # Node/Claude-CLI braucht JIT → via seccomp-@raw-io abgedeckt
+
+# Beide Units ziehen es per drop-in-SYMLINK auf DIESELBE Datei (strukturelle Identität):
+#   /etc/systemd/system/zone-seat@.service.d/10-hardening.conf       -> /etc/zone/zone-hardening.conf
+#   /etc/systemd/system/zone-seat-probe@.service.d/10-hardening.conf -> /etc/zone/zone-hardening.conf
+# Pflicht-Verify am Build: `systemd-analyze verify` beide + Symlink-Ziel-Gleichheit.
+```
+
+```ini
+# /etc/systemd/system/zone-seat@.service — der ECHTE Seat (nur Instanz-Spezifika; Härtung kommt aus dem Include)
+[Unit]
+Description=T-0244 zone seat %i (hardened, netns-confined)
+# Round-3 H1: der Seat startet erst NACH den Isolations-Gates (beide Oracles):
+After=zone-netns-setup.service zone-nft-seat@%i.service zone-selftest-net.service zone-selftest-hardening.service zone-broker-llm.service zone-broker-merkel.service
+Requires=zone-selftest-net.service zone-selftest-hardening.service zone-broker-llm.service zone-broker-merkel.service
+BindsTo=zone-netns-setup.service zone-nft-seat@%i.service   # B1d: kein Seat ohne netns+nft
+[Service]
+NetworkNamespacePath=/var/run/netns/%i
 ReadWritePaths=/var/lib/zone/seats/%i
 PrivateTmp=yes
-
+# INERT bis Spawner-Handshake (Schnüffi-Verstärkung 3): der Entrypoint macht KEIN Netz,
+# bis der Spawner ihn über einen ÜBERGEBENEN UDS/FD freigibt — KEIN TCP/localhost-Handshake
+# (der wäre selbst das Egress-Loch, das die netns-Drop-Policy umgeht):
+ExecStart=/usr/local/bin/zone-seat-entrypoint %i
 Restart=on-failure
 RestartSec=5
+[Install]
+WantedBy=multi-user.target
+```
 
+```ini
+# /etc/systemd/system/zone-seat-probe@.service — B1c-Beweis-Fixture (Round-3 H6)
+# IDENTISCHE Härtung (selbes Include-Symlink), läuft VOR dem echten Seat, ExecStart = Probe.
+[Unit]
+Description=T-0244 seat-probe %i (hardening proof fixture)
+After=zone-netns-setup.service zone-nft-seat@%i.service zone-selftest-net.service
+Before=zone-selftest-hardening.service zone-seat@%i.service
+BindsTo=zone-netns-setup.service zone-nft-seat@%i.service
+[Service]
+Type=oneshot
+NetworkNamespacePath=/var/run/netns/%i            # SELBE netns wie der echte Seat
+ExecStart=/usr/local/sbin/zone-seat-probe.sh
 [Install]
 WantedBy=multi-user.target
 ```
 
 **Begründung gegen den B1-Einwand „nsenter in Broker-ns / als Broker-UID laufen":**
 - `RestrictNamespaces=yes` + seccomp-`~setns,unshare,clone3` → der Seat kann KEINE netns wechseln/erzeugen.
-- `PrivateUsers=yes`/`DynamicUser` → Seat-UID liegt im ephemeren Hoch-Bereich, in der root-ns auf `nobody`/disjunkt gemappt; `CAP_SETUID` weg + `NoNewPrivileges` → er kann NICHT zu UID 8001/8002 werden.
-- `CapabilityBoundingSet=` leer → `CAP_NET_ADMIN` weg → er kann seine eigene Seat-ns nicht umkonfigurieren (keine Route hinzufügen, keine nft-Regel ändern, kein neues veth).
-- → netns wird damit zur belastbaren Grenze; der owner-match (§3) ist nicht umgehbar.
+- `PrivateUsers=yes`/`DynamicUser` → Seat-UID im ephemeren Hoch-Bereich, disjunkt gemappt; `CAP_SETUID` weg + `NoNewPrivileges` → er kann NICHT zu UID 8001/8002 werden.
+- `CapabilityBoundingSet=` leer → `CAP_NET_ADMIN` weg → keine Route/nft/veth-Änderung in der eigenen netns.
+- **Bewiesen statt behauptet:** `zone-seat-probe.sh` (läuft unter genau diesem Include) versucht all das + inspiziert sich selbst; `seat-hardening-oracle.sh` gatet darauf VOR dem echten Seat-Start (H1).
+
+### Layer-Split — die zwei Oracles sind NICHT redundant (Schnüffi-Verstärkung 2, NICHT wegoptimieren)
+- **`seat-negative-oracle.sh`** läuft als root vom Host via `ip netns exec %i` → beweist AUSSCHLIESSLICH die **Netz-Schicht** (keine Route/kein Egress aus netns %i, nur die 2 Broker). Sagt NICHTS über die Prozess-Härtung.
+- **`seat-hardening-oracle.sh` + `zone-seat-probe.sh`** beweisen AUSSCHLIESSLICH die **Prozess/Cap-Schicht** (CapEff=0, seccomp, userns, denied-Ops). Sagt NICHTS über die Netz-Route.
+- **Keiner ersetzt den anderen.** Beide + Schnüffis Detektor-Recall = Triple-Oracle-Gate. Wer einen „weil der andere deckt's ab" entfernt, reißt eine Schicht auf.
 
 ---
 
@@ -298,12 +322,12 @@ WantedBy=multi-user.target
 # Mikrofenster bei (Re-)Load (MED-5: scoped statt 'flush ruleset').
 define LLM    = 10.99.0.1
 define MERKEL = 10.99.0.2
-# Idempotente atomare Tabellen-Ersetzung (Lens-2-confirm #1: weder 'flush table'
-# allein (failt wenn fehlend) noch 'add table' (kann versionsabhängig 'File exists')
-# sind zuverlässig). Kanonisches create-if-absent → delete → recreate, alles in
-# DERSELBEN atomaren nft -f-Transaktion (kein Mikrofenster):
-table inet zone_seat { }       # no-op wenn vorhanden, legt sonst leer an
-delete table inet zone_seat    # existiert jetzt sicher → weg
+# Idempotente atomare Tabellen-Ersetzung (Round-3 M1): 'destroy table' = delete-if-
+# exists OHNE Fehler wenn fehlend (nft ≥ 1.0.2, Debian 13 ✓) → dann frisch neu, alles
+# in DERSELBEN atomaren nft -f-Transaktion. PFLICHT-Build-Test: 2× `nft -f` nacheinander
+# muss beide Male exit 0 + identisches Ruleset ergeben (per-Reload nicht durch Lesen
+# entscheidbar — gegen die GEPINNTE nft-Version verifizieren).
+destroy table inet zone_seat   # idempotent: weg falls da, kein Fehler falls nicht
 table inet zone_seat {         # frisch neu aufbauen:
   chain output {
     type filter hook output priority 0; policy drop;
@@ -340,50 +364,66 @@ WantedBy=multi-user.target
 
 ---
 
-## 6. Boot-Ordering fail-closed (B1d) — Abhängigkeitsgraph
+## 6. Boot-Ordering fail-closed (B1d, Round-3 H1) — Gates VOR den echten Seats
+
+**H1-Redesign (Round-3):** Die Gates dürfen NICHT nach dem egress-fähigen Seat laufen (sonst Fail-open-Fenster). Schlüssel: der Negativ-Oracle braucht KEINEN Seat-Prozess (läuft via `ip netns exec` gegen die vorbereitete netns), und der Cap-Drop-Beweis läuft gegen das Probe-Fixture — beide VOR `zone-seat@`.
 
 ```
-sysctl(ip_forward=0)  ─┐
-                       ▼
-zone-netns-setup.service (oneshot, baut br-zone + alle Seat-ns, IPv6-off)
-   │  Before= alle nft + Broker + Seats
-   ├─► zone-root-nft.service (nft -f zone-root.nft; owner-match aktiv)
-   │        │ Before= Broker
-   │        ├─► zone-broker-llm.service     (uid 8001) ─┐
-   │        ├─► zone-broker-merkel.service  (uid 8002)  ├─ egress-fähig, NACH nft
-   │        └─► zone-resolver.service        (uid 8003) ─┘
-   └─► zone-nft-seat@seatN.service (je Seat, nft in Seat-ns)
-            │ Before= zone-seat@seatN
-            └─► zone-seat@seatN.service  (BindsTo netns+nft+Broker)
+sysctl(ip_forward=0) → zone-netns-setup.service (br-zone + alle Seat-ns + IPv6-off + make-shared /run/netns)
+   ├─► zone-root-nft.service (owner-match) ──► zone-broker-llm/merkel/resolver  (Requires/After root-nft; M4)
+   └─► zone-nft-seat@%i.service (nft in Seat-ns, Before zone-selftest-net)
+            │
+            ▼  GATE 1 (Netz-Schicht, KEIN Seat nötig)
+   zone-selftest-net.service  → seat-negative-oracle.sh --strict   (After nft-seat, Before probe + seat)
+            │  exit!=0 → failed → kein Probe, kein Seat
+            ▼
+   zone-seat-probe@%i.service (Fixture, IDENTISCHE Härtung, ExecStart=zone-seat-probe.sh)  (Before selftest-hardening + seat)
+            │
+            ▼  GATE 2 (Prozess/Cap-Schicht)
+   zone-selftest-hardening.service → seat-hardening-oracle.sh      (After probe, Before seat)
+            │  exit!=0 → failed → kein Seat
+            ▼
+   zone-seat@%i.service (ECHTE claude-Seats, INERT bis Spawner-UDS-Handshake)  (Requires/After beide Gates)
+            │
+            ▼
+   zone-spawner.service (After alle Seats)
 ```
 
 **Fail-closed-Garantien:**
-1. **Kein Seat startet vor seiner Seat-ns + Seat-nft:** `BindsTo=zone-netns-setup zone-nft-seat@%i` + `After=`. Fällt eine der beiden aus → Seat startet NICHT (kein fail-open-Fenster).
-2. **Kein Broker egress-fähig vor root-nft:** `zone-root-nft` `Before=` alle Broker; bis nft steht, lässt die default-policy (drop) ohnehin nichts raus.
-3. **Boot-Self-Test-Gate:** `zone-selftest.service` (`After=` alle Seats, `Before=zone-spawner.service`) ruft Artefakt 02 (Negativ-Oracle) auf; **non-zero → `zone-spawner` startet NICHT** → keine Seat-Arbeit ohne bestandenen Isolations-Beweis. Das ist der maschinelle Riegel gegen „deployt aber Enforcement still kaputt".
+1. **Beide Isolations-Gates laufen VOR jedem egress-fähigen Seat** (H1): `zone-seat@` `Requires=/After= zone-selftest-net zone-selftest-hardening`. Failt ein Gate → KEIN Seat startet. Kein Fail-open-Fenster mehr.
+2. **Kein Broker egress-fähig vor root-nft:** Broker `Requires=/After= zone-root-nft` (M4); bis nft steht, droppt die default-policy ohnehin.
+3. **Inert-Seat als Defense-in-depth:** selbst NACH den Gates macht der Seat kein Netz, bis der Spawner ihn über einen **UDS/übergebenen FD** (kein TCP/localhost) freigibt.
 
 ```ini
-# /etc/systemd/system/zone-selftest.service
+# /etc/systemd/system/zone-selftest-net.service  — GATE 1 (Netz-Isolation, vor Probe+Seat)
 [Unit]
-Description=T-0244 boot self-test — seat-negative-oracle (gate for spawner)
-After=zone-seat@seat0.service zone-seat@seat1.service zone-seat@seat2.service zone-seat@seat3.service
-Before=zone-spawner.service
+Description=T-0244 GATE 1: seat-negative-oracle (Netz-Schicht, kein Seat nötig)
+After=zone-netns-setup.service zone-nft-seat@seat0.service zone-nft-seat@seat1.service zone-nft-seat@seat2.service zone-nft-seat@seat3.service
+Before=zone-seat-probe@seat0.service zone-seat@seat0.service
 Requires=zone-netns-setup.service
 [Service]
 Type=oneshot
 # ZONE_HUB_HOST = echte Mac-Hub-IP (am Build gesetzt), sonst Hub-Proben = INVALID = FAIL:
 Environment=ZONE_HUB_HOST=192.168.20.<MAC-IP-AM-BUILD-SETZEN>
 ExecStart=/usr/local/sbin/seat-negative-oracle.sh --all-seats --strict
-# Lens-2-confirm #5b: der B1c-Hardening-Oracle MUSS auch im Boot-Gate laufen, sonst
-# ist der Cap-Drop kein Spawner-Gate. 2. ExecStart (oneshot: sequenziell, jeder
-# Non-Zero failt die Unit):
+TimeoutStartSec=120          # hängendes Ziel → Timeout = failed = fail-closed
+[Install]
+WantedBy=multi-user.target
+
+# /etc/systemd/system/zone-selftest-hardening.service  — GATE 2 (Cap-Drop, vor Seat)
+[Unit]
+Description=T-0244 GATE 2: seat-hardening-oracle (Prozess/Cap-Schicht, gegen Probe-Fixture)
+After=zone-seat-probe@seat0.service zone-seat-probe@seat1.service zone-seat-probe@seat2.service zone-seat-probe@seat3.service zone-selftest-net.service
+Before=zone-seat@seat0.service zone-seat@seat1.service zone-seat@seat2.service zone-seat@seat3.service
+Requires=zone-selftest-net.service
+[Service]
+Type=oneshot
 ExecStart=/usr/local/sbin/seat-hardening-oracle.sh
-TimeoutStartSec=180          # Refute 3d: hängendes Ziel darf das Gate nicht aufhängen
-                              # → Timeout = Unit failed = fail-closed (Spawner startet nicht)
-# beide exit==0 nötig → sonst Unit failed → zone-spawner (Requires=zone-selftest) startet nicht
+TimeoutStartSec=120
 [Install]
 WantedBy=multi-user.target
 ```
+(Beide Gates = `Requires=` von `zone-seat@` → exit!=0 ⇒ Gate failed ⇒ KEIN Seat. `zone-spawner` zusätzlich `Requires=` beide → doppelter Riegel.)
 
 ---
 
@@ -443,4 +483,23 @@ Verdikt NOT-YET. ✅ ZU bestätigt: #3 (After= Broker), #4 (Platzhalter=FAIL), #
 | 8 | conntrack -F nur Prosa | §3: kodiert als `ExecStartPost=`/`ExecReload=` in `zone-root-nft.service` |
 | 9 | Oracle ping/dns pauschal NOROUTE → NSS-Fehler als PASS | Oracle v3.1: ping-Exit 0/1/2 + getent 0/2/sonst diskriminiert |
 
-**Schnüffi recycelte nach 4 Refute-Runden** (Lens-Rezept im durablen Memory) → ihre frische Session fährt die nächste Bestätigungs-Lens. **Round-3-Lens auf diesen Fold: ausstehend (gepingt).** Default=BLOCK bis grün.
+**Schnüffi recycelte nach 4 Refute-Runden** (Lens-Rezept im durablen Memory) → frische Session fährt die nächste Lens.
+
+### Refute Round-3 — Bestätigungs-Lens (Codex/Schnüffi, 0c20a6a) — 6 HIGH + 4 MED + 3 Verstärkungen gefoldet
+Verdikt NOT-BUILD-READY. ✅ ZU: R2-#1 (daddr paarweise). Befunde — ALLE gefoldet:
+| # | Sev | Befund | Fix |
+|---|---|---|---|
+| H1 | HIGH | Boot-Gate lief NACH Seat-Start → Fail-open-Fenster | §6 Redesign: beide Gates VOR `zone-seat@` (Negativ-Oracle braucht keinen Seat; Cap-Drop gegen Probe-Fixture); `Requires=/After=` |
+| H3 | HIGH | `[ $rc -ge 128 ]` akzeptierte JEDES Signal (SIGKILL/SEGV) = 3. false-PASS | `zone-seat-probe.sh`: nur `rc -eq 159` (SIGSYS); lokal verifiziert |
+| H4 | HIGH | Hostname-TCP-Test braucht DNS → korrektes System failt (nie grün) | Oracle: TCP-Negativtests nur gegen IPs; Name nur im dns-Test |
+| H2 | HIGH | `conntrack -F` mit `-` = Fehler ignoriert (nicht fail-closed) | §3: `-` weg, conntrack harte Build-Dep |
+| H5 | HIGH | Props-Liste driftet; Probe könnte in anderer netns „gleich" sein | §4: **Shared-Include-Symlink = STRUKTURELLE Primärgarantie**; Oracle prüft DropInPaths==Canon (Primär) + erweiterte Props (Drift-Detektor) + NetworkNamespacePath |
+| H6 | HIGH | `zone-seat-probe.sh` nur auskommentiert (ungetestet) | NEU als echtes verdrahtetes Artefakt + `zone-seat-probe@.service` (§4) |
+| M1 | MED | `table{};delete;table{}`-Idempotenz nicht belastbar | §5: `destroy table` (nft≥1.0.2) + Pflicht-2×-Reload-Build-Test |
+| M2 | MED | reconcile ließ stale `p-veth` IN der ns | §2: `ip -n $NS link del p-$VETH` |
+| M3 | MED | ping-Exit 1 (gesendet, keine Antwort) als „blockiert" gewertet | Oracle: nur exit 2 (no-route)=blockiert; exit 1=Leak/inconclusiv=FAIL |
+| M4 | MED | Broker ohne `Requires=/After=zone-root-nft` | §3: Broker `Requires=/After= zone-root-nft` |
+
+**Schnüffis 3 proaktive Verstärkungen (vor-Bau) — alle übernommen:** (1) Shared-Include als STRUKTUR-Primär (s. H5); (2) **Layer-Split-Block** (§4 Ende: netns-Oracle = nur Netz-Schicht, Probe = nur Cap-Schicht, nicht redundant, keiner ersetzt den anderen); (3) **Inert-Seat-Handshake = UDS/FD, NIE TCP/localhost** (§4, sonst ist der Handshake selbst das Egress-Loch).
+
+**Round-4-Lens auf diesen Fold: ausstehend (gepingt).** Iteration konvergiert (R1: 7 → R2: 9 → R3 fängt strukturelle Design-Frage H1 + zwei Folge-false-PASS). Default=BLOCK bis grün.

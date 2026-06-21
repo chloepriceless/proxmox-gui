@@ -39,8 +39,12 @@ HUB_HOST="${ZONE_HUB_HOST:-}"      # z.B. export ZONE_HUB_HOST=192.168.20.XX vor
 
 # Negativ-Ziele { Beschreibung | typ(tcp|tcp6|udp|ping|ping6|dns) | Adresse | Port }
 NEG_TARGETS=(
-  "Anthropic-direkt          |tcp |api.anthropic.com|443"
-  "Anthropic-IP(1.1.1.1)     |tcp |1.1.1.1|443"
+  # Round-3 H4: KEIN Hostname-TCP-Test — Seats haben kein DNS → /dev/tcp/<name>
+  # scheitert an der Auflösung → OTHER → FAIL auf einem KORREKT isolierten System
+  # (Oracle nie grün). Extern-TCP-Egress wird via IP geprüft; Name-Reachability
+  # separat im dns-Test (der DARF einen Hostnamen nutzen):
+  "Extern-TCP-443(1.1.1.1)   |tcp |1.1.1.1|443"
+  "Extern-TCP-443(8.8.8.8)   |tcp |8.8.8.8|443"
   "Merkel-direkt(.81)        |tcp |192.168.20.81|8000"
   "Hub-Mac(:7890)            |tcp |__HUB__|7890"
   "Broker-Mac(:7899)         |tcp |__HUB__|7899"
@@ -106,12 +110,13 @@ classify(){
       elif [ $rc -eq 0 ];   then echo CONNECTED        # send() gelang = Route existierte → verdächtig
       else echo OTHER; fi ;;
     ping|ping6)
-      # Lens-2-confirm #9: Exit-Code unterscheiden statt pauschal NOROUTE.
-      # ping: 0=reply(erreicht), 1=kein reply(timeout/unreachable=blockiert), 2=sonstiger Fehler(inconclusiv).
+      # Round-3 M3: ping-Exit 1 ≠ blockiert! ping: 0=reply(erreicht), 2=Netz/Host
+      # unreachable=KEINE Route=blockiert, 1=gesendet aber keine Antwort=Route EXISTIERTE
+      # (=Leak/verdächtig=inconclusiv=FAIL). Nur exit 2 ist eindeutig geblockt.
       [ $have_ping -eq 1 ] || { echo TOOLERR; return; }
       local f=-4; [ "$typ" = ping6 ] && f=-6
       ip netns exec "$ns" ping $f -c1 -W"$TIMEOUT" "$addr" &>/dev/null; rc=$?
-      case $rc in 0) echo CONNECTED;; 1) echo NOROUTE;; *) echo OTHER;; esac ;;
+      case $rc in 0) echo CONNECTED;; 2) echo NOROUTE;; *) echo OTHER;; esac ;;
     dns)
       # getent: 0=aufgelöst(erreicht!), 2=not-found(kein Resolver=blockiert), sonst=Fehler(inconclusiv).
       [ $have_getent -eq 1 ] || { echo TOOLERR; return; }

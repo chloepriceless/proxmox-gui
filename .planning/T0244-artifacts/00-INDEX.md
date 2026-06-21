@@ -8,7 +8,7 @@
 |---|---|---|---|
 | **B1a** | netns/nftables nur behauptet → maschinenlesbares SSOT | `01-netns-enforcement-SSOT.md` (Topologie+nft+UIDs) | SPEC ✅ |
 | **B1b** | Oracle maß VM-Ebene+positiv → Seat-Perspektive, NEGATIV | `seat-negative-oracle.sh` v3 (false-PASS-Klassen zu, `bash -n` grün) | SPEC ✅ |
-| **B1c** | Seat-Cap-Drop/seccomp/userns (macht netns belastbar) | `01-…` §4 (`zone-seat@.service`) + **`seat-hardening-oracle.sh`** (beweist Cap-Drop am realen PID — Lens-2 #5) | SPEC ✅ |
+| **B1c** | Seat-Cap-Drop/seccomp/userns (macht netns belastbar) | `01-…` §4 (Shared-Include `/etc/zone/zone-hardening.conf`) + **`seat-hardening-oracle.sh`** (Driver) + **`zone-seat-probe.sh`** (Self-Proof-Fixture, gatet VOR dem echten Seat — Round-3 H1/H6) | SPEC ✅ |
 | **B1d** | Boot-Ordering fail-closed | `01-…` §6 (systemd-Graph + selftest-Gate) | SPEC ✅ |
 | **H1** | pz2/VM `ip_forward` L3-Bypass | `03-network-residuals.md` §H1 | SPEC ✅ |
 | **H2** | IPv6-Residual | `03-…` §H2 + Oracle-Probe | SPEC ✅ |
@@ -32,6 +32,7 @@ Artefakt 01 §1 fixiert die KONKRETE netns-Topologie (Broker-Listen-IPs/Ports `1
 - **Broker-Pivot-Restrisiko (MED-6/#10):** B1-Oracle beweist Seat-Netz-Isolation, NICHT das Egress-Gesamtrisiko (covert Exfil via erlaubtem Anthropic-Kanal). → Schnüffis positive-Allowlist-Detektor-Oracle = **CO-GATE**.
 - **🔒 TRIPLE-ORACLE-GATE (Konsens Schraubi↔Schnüffi, 2026-06-21):** Der **Spawner ist erst build-ready, wenn ALLE drei Oracles grün sind** — mein **Seat-Negativ-Oracle** (Netz, B1b) + mein **seat-hardening-oracle** (Cap-Drop, B1c) + Schnüffis **Detektor-Recall-Oracle** (Seed-PII = 100 % Block). Beidseitig verankert.
 - **Refute Round-2 (Bestätigungs-Lens, b8149bd):** NOT-YET → 9 Befunde (2 neue Bugs durch die Fixes + B1c-Oracle-Lücken) ALLE gefoldet (01 §9): daddr paarweise, `try_denied` false-PASS-Fix (nur EPERM/SIGSYS=OK), Hardening-Oracle ins Boot-Gate, uid_map alle Ranges, netns-Membership, Probe==Seat-Härtung, idempotentes Tabellen-Idiom, vollständiger Reconcile, conntrack -F kodiert, ping/dns-Exit-Code-Diskriminierung.
-- **Round-3-Bestätigungs-Lens (Schnüffi fresh-session):** ausstehend (gepingt). Iteration konvergiert.
+- **Refute Round-3 (Bestätigungs-Lens, 0c20a6a):** NOT-BUILD-READY → 6 HIGH + 4 MED + 3 proaktive Verstärkungen, ALLE gefoldet (01 §9): **H1** Boot-Gate-Redesign (beide Gates VOR den egress-fähigen Seats), **H3** 3. false-PASS (`rc>=128`→nur SIGSYS), **H4** IP-only TCP, **H5** Shared-Include als Struktur-Primärgarantie, **H6** `zone-seat-probe.sh` als echtes Fixture, H2 conntrack fail-closed, M1 `destroy table`, M2/M3/M4 + Layer-Split-Doku + UDS-Inert-Handshake.
+- **Round-4-Bestätigungs-Lens (Schnüffi):** ausstehend (gepingt). Iteration konvergiert (R1:7 → R2:9 → R3 fängt die strukturelle Design-Frage H1).
 - **Egress-fähiger Bau:** BLOCKIERT bis Triple-Oracle grün + Re-Run-Lens + Konsens Schnüffi/Schraubi/Netzi.
 - **Foundation-ohne-Egress:** refute-frei, aber infra-gated (Netzi-VLAN + Christin/Hub-Go).
