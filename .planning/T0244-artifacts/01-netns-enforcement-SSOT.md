@@ -231,7 +231,28 @@ ExecReload=/usr/sbin/conntrack -F              # auch bei `systemctl reload`, fa
 WantedBy=multi-user.target
 ```
 (Beim Boot mit frischem Stack flusht `conntrack -F` eine leere Tabelle → exit 0; nur beim Live-Reload trägt es. **Build-Dep: `conntrack` MUSS installiert sein**, sonst failt die Unit absichtlich.)
-**M4 (Round-3):** Die Broker tragen `Requires=zone-root-nft.service` + `After=zone-root-nft.service` (nicht nur das `Before=` hier) → ein Broker startet NICHT, wenn der owner-match-nft fehlschlug (fail-closed gegen egress-vor-Regel).
+**M4 (Round-3) + M3 (Round-6): Broker-Unit-Stubs (eingebettet, damit die Broker↔root-nft-Kopplung prüfbar ist).** Die Broker laufen als gehärtete In-VM-Dienste mit dedizierten UIDs; die App-Logik (RPC-Spec/PII-Gate/SNI-Pin) liefert Schnüffi. Hier nur die fail-closed-Verdrahtung:
+```ini
+# /etc/systemd/system/zone-broker-llm.service  (analog zone-broker-merkel / zone-resolver)
+[Unit]
+Description=T-0244 LLM-Broker (uid 8001, einziger egress-fähiger Anthropic-Pfad)
+After=zone-netns-setup.service zone-root-nft.service
+Requires=zone-root-nft.service          # M4: kein Broker-Egress, bevor owner-match-nft steht
+BindsTo=zone-root-nft.service           # fällt root-nft → Broker stoppt (fail-closed)
+[Service]
+User=zbroker-llm                        # uid 8001 (statisch, im owner-match referenziert)
+# Härtung analog Seat (kein DynamicUser — UID muss fix für skuid-Match sein):
+CapabilityBoundingSet=
+NoNewPrivileges=yes
+RestrictAddressFamilies=AF_UNIX AF_INET
+ProtectSystem=strict
+SystemCallArchitectures=native
+ExecStart=/usr/local/bin/zone-broker-llm   # RPC-Spec/PII-Gate/SNI-Pin = Schnüffi
+Restart=on-failure
+[Install]
+WantedBy=multi-user.target
+```
+→ ein Broker startet NICHT, wenn der owner-match-nft fehlschlug; fällt root-nft zur Laufzeit, stoppt der Broker (BindsTo). **Build-Verify:** `systemctl show -p Requires,After zone-broker-llm` enthält `zone-root-nft.service`.
 
 **Warum owner-match die Kern-Invariante trägt:** Selbst wenn ein Prozess in root-ns eine Route nach außen hätte, lässt die `output`-policy NUR `skuid ∈ {8001,8002,8003}` mit exakt einem Ziel-Port raus. Ein als root oder als Seat-UID laufender Prozess in root-ns → DROP+Log. Die einzige Möglichkeit, das zu umgehen, wäre, ALS Broker-UID zu laufen — was der Seat-Cap-Drop (§4) verhindert (kein `setuid` ohne Privileg, userns-Map disjunkt, `NoNewPrivileges`).
 
@@ -249,7 +270,7 @@ AmbientCapabilities=
 NoNewPrivileges=yes
 PrivateUsers=yes
 DynamicUser=yes               # ephemerer hoher UID-Bereich (≥61184), nie 8001-8003, nie 0
-SystemCallFilter=~@mount @swap @reboot @raw-io @cpu-emulation @obsolete
+SystemCallFilter=~@privileged @mount @swap @reboot @raw-io @cpu-emulation @obsolete   # R6-H2: @privileged ergänzt
 SystemCallFilter=~setns unshare clone3 bpf pivot_root mount_setattr open_tree move_mount
 SystemCallArchitectures=native
 RestrictNamespaces=yes        # blockt clone(CLONE_NEW*) hart
@@ -361,19 +382,21 @@ BindsTo=zone-netns-setup.service
 PartOf=zone-seat@%i.service           # Refute MED-5: Laufzeit-restart der nft-Unit
                                        # zieht den Seat mit (nicht nur Boot-Kopplung)
 Before=zone-seat@%i.service           # B1d: nft VOR dem Seat
-# Round-5 H5: ein FEHLGESCHLAGENER Reload (nft ODER conntrack -F) lässt die Unit „active"
-# (Reload-Fehler ≠ inactive) → BindsTo allein stoppt den Seat NICHT. OnFailure stoppt ihn
-# hart fail-closed. KANON: Config-Änderung = `systemctl restart` (propagiert via BindsTo/PartOf),
-# NICHT `reload` — der Reload-Pfad ist nur Notnagel + jetzt fail-closed.
+# Round-6 H3 (STRUKTURELL statt behavioral): KEIN ExecReload= für die nft-Policy. Ein
+# fehlgeschlagenes ExecReload geht bei systemd NICHT zuverlässig in 'failed' → OnFailure
+# feuert nicht garantiert (der gefährliche Pfad „nft lädt gelockert, conntrack -F scheitert,
+# Seat läuft weiter"). Ohne ExecReload ist CanReload=no → eine Config-Änderung MUSS
+# `systemctl restart` sein (propagiert via BindsTo/PartOf → Seat wird re-gated).
+# Build-Gate: `systemctl show -p CanReload zone-nft-seat@seat0` MUSS 'no' liefern.
+# OnFailure bleibt für ExecStart/ExecStartPost-Fehler (belt+suspenders).
 OnFailure=zone-seat-stop@%i.service
 [Service]
 Type=oneshot
 RemainAfterExit=yes
 ExecStart=/usr/bin/ip netns exec %i /usr/sbin/nft -f /etc/zone/zone-seat.nft
 ExecStartPost=/usr/bin/ip netns exec %i /usr/sbin/conntrack -F   # Round-4 M3: auch Seat-ns
-ExecReload=/usr/bin/ip netns exec %i /usr/sbin/nft -f /etc/zone/zone-seat.nft
-ExecReload=/usr/bin/ip netns exec %i /usr/sbin/conntrack -F      # Flow-Reset bei Reload (fail-closed)
-# fail-closed: schlägt nft fehl → Unit failed → OnFailure + BindsTo stoppen zone-seat@%i
+# KEIN ExecReload → CanReload=no (Round-6 H3). Flow-Reset passiert bei jedem (Re)Start via ExecStartPost.
+# fail-closed: schlägt nft/conntrack beim Start fehl → Unit failed → OnFailure + BindsTo stoppen zone-seat@%i
 [Install]
 WantedBy=multi-user.target
 
@@ -423,8 +446,10 @@ sysctl(ip_forward=0) → zone-netns-setup.service (br-zone + alle Seat-ns + IPv6
 [Unit]
 Description=T-0244 GATE 1: seat-negative-oracle (Netz-Schicht, kein Seat nötig)
 # H5: seatI mitgegatet. M1: Requires= (nicht nur After=) der nft-seat-Units (fail-closed).
-After=zone-netns-setup.service zone-nft-seat@seat0.service zone-nft-seat@seat1.service zone-nft-seat@seat2.service zone-nft-seat@seat3.service zone-nft-seat@seatI.service
-Requires=zone-netns-setup.service zone-nft-seat@seat0.service zone-nft-seat@seat1.service zone-nft-seat@seat2.service zone-nft-seat@seat3.service zone-nft-seat@seatI.service
+# R6-M2: AUCH die Broker (Requires/After) — die Positiv-Proben testen Seat→Broker-Erreichbarkeit,
+# also müssen die Broker oben sein, sonst failt das Gate nur deshalb = nicht grün-bootbar.
+After=zone-netns-setup.service zone-nft-seat@seat0.service zone-nft-seat@seat1.service zone-nft-seat@seat2.service zone-nft-seat@seat3.service zone-nft-seat@seatI.service zone-broker-llm.service zone-broker-merkel.service
+Requires=zone-netns-setup.service zone-nft-seat@seat0.service zone-nft-seat@seat1.service zone-nft-seat@seat2.service zone-nft-seat@seat3.service zone-nft-seat@seatI.service zone-broker-llm.service zone-broker-merkel.service
 Before=zone-seat@seat0.service zone-seat@seat1.service zone-seat@seat2.service zone-seat@seat3.service zone-seat@seatI.service
 [Service]
 Type=oneshot
@@ -561,4 +586,16 @@ Verdikt NOT-BUILD-READY, gewichtigste Runde: ZWEI echte Sicherheitslöcher + Cla
 
 **🟢 Schnüffi-Vereinfachung (vor-Bau, übernommen):** Der ExecStartPre-Self-Proof macht die separate `zone-seat-probe@`-Fixture + die ganze „probe==seat"-Identitäts-Maschinerie (Shared-Include-Gleichheit + HARDEN_PROPS-Drift) REDUNDANT → gedroppt. Die R4-H5/R5-H3-Befundklasse fällt komplett weg. `seat-hardening-oracle.sh` ist jetzt schlanker STATISCHER Floor-Check am echten Seat. **Weniger Maschinerie = kleinere Angriffsfläche (R12).** `+`-Asymmetrie load-bearing: Probe OHNE `+` (confined=gültiger Self-Proof), Netz-Oracle MIT `+` (root für ip-netns-exec).
 
-**Round-6-Lens: ausstehend (gepingt).** Konvergenz QUALITATIV: R1:7 → R2:9 → R3:6+4 → R4:5+4 → R5:5+4 (zwei echte Löcher + Architektur-Vereinfachung; jetzt prüfen wir in der TIEFE: nft-Regel-Ordering, Komposition). Default=BLOCK bis grün.
+### Refute Round-6 — Bestätigungs-Lens (Codex/Schnüffi, 5ee4feb) — 3 HIGH + 2 MED, sehr nah
+Verdikt NOT-BUILD-READY, aber **Architektur bestätigt sound** (codex verifizierte systemd-semantisch: `ExecStartPre` ohne `+` erbt volle Confinement → Self-Proof autoritativ; nfproto-ipv6-drop in allen 6 Chains bestätigt). Nur noch Verifikations-Härtung, keine neuen strukturellen Löcher. ALLE gefoldet:
+| # | Sev | Befund | Fix |
+|---|---|---|---|
+| H1 | HIGH | Self-Proof-Verriegelung zu schwach (`grep`) — leeres `ExecStartPre=`-Reset/Reorder unentdeckt; `-`/ignore-failure (Schnüffi) macht Probe wirkungslos | **STRUKTURIERTER `ExecStartPreEx`-Parse** (flags exponiert): genau 2 Cmds, Reihenfolge, Pfad-Suffix, [0]=probe OHNE privileged+OHNE ignore-failure, [1]=netz MIT privileged+OHNE ignore-failure. 4 Fälle lokal verifiziert |
+| H2 | HIGH | Floor-Inkonsistenz: `@privileged` in REQUIRED_DENIES aber NICHT in der Config → Floor failt immer | `@privileged` in zone-hardening.conf SystemCallFilter ergänzt (stärker+konsistent; Denylist rein `~`) |
+| H3 | HIGH | Reload-Pfad strukturell gefährlich: failed `ExecReload`≠`failed` → OnFailure feuert nicht garantiert | `ExecReload=` für nft KOMPLETT RAUS → `CanReload=no` → Config-Change=restart (struktureller Ausschluss); Build-Gate prüft CanReload=no |
+| M2 | MED | zone-selftest-net ohne Broker-Dep → failt nur weil Broker noch nicht oben | Broker `Requires=/After=` (Positiv-Proben brauchen Broker) |
+| M3 | MED | Broker↔root-nft-Kopplung nicht prüfbar (Stubs fehlten) | Broker-Unit-Stubs eingebettet (Requires/After/BindsTo zone-root-nft) |
+
+**MED-6 (Schnüffis Revier, sie zieht nach sobald netns-Schicht grün):** der daddr-lose UID_LLM:443-Accept delegiert bewusst an den App-Layer → nur akzeptabel mit LLM-Broker-RPC-Spec (enges RPC, SNI/Cert-Pin, server-gepinntes Modell, per-Seat-authn) + Detektor-Recall-Oracle als echtes Co-Gate.
+
+**Round-7-Lens: ausstehend (gepingt).** Trend FALLEND: R1:7 → R2:9 → R3:10 → R4:9 → R5:8 → R6:6. „Sehr nah" — keine strukturellen Löcher mehr, nur noch Verifikations-Härtung. Default=BLOCK bis grün.

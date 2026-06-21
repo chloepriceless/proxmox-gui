@@ -74,13 +74,31 @@ for ns in "${SEATS[@]}"; do
   { [ "$nnsp" = "/var/run/netns/$ns" ] || [ "$nnsp" = "/run/netns/$ns" ]; } \
      && chk ok "NetworkNamespacePath = $nnsp" || chk fail "NetworkNamespacePath '$nnsp' ≠ netns $ns"
 
-  # (5) Self-Proof verdrahtet: ExecStartPre ruft zone-seat-probe.sh (ohne '+', confined)
-  esp=$(prop "$U" ExecStartPre)
-  if grep -q 'zone-seat-probe.sh' <<<"$esp" && ! grep -qE '\+[^ ]*zone-seat-probe.sh' <<<"$esp"; then
-    chk ok "ExecStartPre-Self-Proof verdrahtet (zone-seat-probe.sh, ohne '+' = confined)"
+  # (5) Self-Proof HART verriegelt (R6-H1): strukturiert via ExecStartPreEx (die 'Ex'-Variante
+  #     exponiert flags= → 'privileged' für '+'). Der ganze Sicherheitsgewinn hängt hier dran —
+  #     ein leeres `ExecStartPre=`-Override würde die Liste RESETTEN (systemd). Daher: GENAU 2
+  #     Commands, exakte Reihenfolge/Pfade/Flags, KEIN grep.
+  espx=$(prop "$U" ExecStartPreEx)
+  mapfile -t blocks < <(grep -oE '\{[^}]*\}' <<<"$espx")
+  ok5=1; reason=""
+  if [ "${#blocks[@]}" -ne 2 ]; then
+    ok5=0; reason="ExecStartPre hat ${#blocks[@]} Commands (soll GENAU 2 — leeres Reset/Override?)"
   else
-    chk fail "ExecStartPre-Self-Proof FEHLT/falsch (zone-seat-probe.sh confined nötig): '$esp'"
+    p0=$(grep -oP 'path=\K[^ ;]+' <<<"${blocks[0]}"); f0=$(grep -oP 'flags=\K[^;]*' <<<"${blocks[0]}")
+    p1=$(grep -oP 'path=\K[^ ;]+' <<<"${blocks[1]}"); f1=$(grep -oP 'flags=\K[^;]*' <<<"${blocks[1]}")
+    # R6-H1 (+Schnüffi-Ergänzung): pro Command Pfad + privileged + ignore-failure HART.
+    # ignore-failure ('-'-Prefix) = dieselbe Klasse wie R3-H2/R5-H5: ein '-' am Probe macht
+    # einen GESCHEITERTEN Self-Proof wirkungslos → Seat startet ungeprüft (subtiler als Reset).
+    if   [[ "$p0" != */zone-seat-probe.sh ]];     then ok5=0; reason="[0] '$p0' ≠ zone-seat-probe.sh"
+    elif grep -qw privileged <<<"$f0";            then ok5=0; reason="[0] zone-seat-probe.sh hat '+'/privileged → Self-Proof ENTWERTET (muss confined sein!)"
+    elif grep -qw ignore-failure <<<"$f0";        then ok5=0; reason="[0] zone-seat-probe.sh hat '-'/ignore-failure → failt WIRKUNGSLOS, Seat startet ungeprüft!"
+    elif [[ "$p1" != */seat-negative-oracle.sh ]];then ok5=0; reason="[1] '$p1' ≠ seat-negative-oracle.sh"
+    elif ! grep -qw privileged <<<"$f1";          then ok5=0; reason="[1] seat-negative-oracle ohne '+'/privileged → braucht root für ip-netns-exec"
+    elif grep -qw ignore-failure <<<"$f1";        then ok5=0; reason="[1] seat-negative-oracle hat '-'/ignore-failure → Netz-Check wirkungslos"
+    fi
   fi
+  [ "$ok5" = 1 ] && chk ok "ExecStartPre strukturell verriegelt (probe[0] confined, netz[1] +root, genau 2, Reihenfolge)" \
+                  || chk fail "ExecStartPre-Verriegelung: $reason"
 done
 
 echo "=== Ergebnis: $((CHECKS-FAILS))/$CHECKS, $FAILS Verletzung(en) ==="
