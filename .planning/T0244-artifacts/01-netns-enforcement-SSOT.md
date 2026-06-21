@@ -517,7 +517,27 @@ TimeoutStartSec=60
 [Install]
 WantedBy=multi-user.target
 ```
-(`zone-seat@%i` `Requires=` beide Gates → exit!=0 ⇒ KEIN Seat; zusätzlich ExecStartPre-Self-Proof pro Start. `zone-spawner` `Requires=` beide Gates → doppelter Riegel. **seatI überall** — der interaktive Seat ist der sensibelste, voll vor-isoliert.)
+(`zone-seat@%i` `Requires=` beide Gates → exit!=0 ⇒ KEIN Seat; zusätzlich ExecStartPre-Self-Proof pro Start. `zone-spawner` `Requires=` ALLE DREI Gates → doppelter Riegel. **seatI überall** — der interaktive Seat ist der sensibelste, voll vor-isoliert.)
+
+### Spawner — finale 3-Gate-Verdrahtung (Round-9, beide Schichten BUILD-READY)
+Schnüffis GATE 3 (`zone-selftest-broker.service`, Detektor-Recall + Broker-RPC-Cert-Pin) ist BUILD-READY (orchestrator-security commit `e5c3a93`, 19 Codex-Refute-Runden; Deploy `/usr/local/lib/zone-broker/`). Der Spawner gatet auf ALLE DREI:
+```ini
+# /etc/systemd/system/zone-spawner.service — dispatcht Arbeit an die (inerten) Seats
+[Unit]
+Description=T-0244 zone spawner (Seat-Rotation, UDS-Handshake) — gated auf alle 3 Isolations-Oracles
+After=zone-seat@seat0.service zone-seat@seat1.service zone-seat@seat2.service zone-seat@seat3.service zone-seat@seatI.service zone-selftest-net.service zone-selftest-hardening.service zone-selftest-broker.service zone-coordinator.service
+# TRIPLE-ORACLE-GATE: ohne ALLE drei grün KEIN Seat-Dispatch (kein echtes PII-Processing):
+Requires=zone-selftest-net.service zone-selftest-hardening.service zone-selftest-broker.service zone-coordinator.service
+[Service]
+ExecStart=/usr/local/bin/zone-spawner          # Substrat §05 (Koordinator/Epoch-Fencing)
+Restart=on-failure
+[Install]
+WantedBy=multi-user.target
+```
+- **GATE 1** `zone-selftest-net` (mein `seat-negative-oracle.sh`) — Netz-Isolation B1b.
+- **GATE 2** `zone-selftest-hardening` (mein `seat-hardening-oracle.sh`) — Cap-Floor B1c + Self-Proof-Verriegelung + CanReload=no.
+- **GATE 3** `zone-selftest-broker` (Schnüffis `detector-recall-oracle.sh` + `broker-rpc-tightness-oracle.sh`) — Detektor-Recall (Seed-PII→100%-Block) + Broker-RPC-Cert-Pin (schließt den daddr-losen :443).
+→ Der Spawner (= der EINZIGE, der die inerten Seats per UDS-Handshake aktiviert) startet NUR, wenn alle drei Oracles grün sind. **Build-Verify-Plan: `06-build-verify-plan.md`.**
 
 ---
 
