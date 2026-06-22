@@ -80,10 +80,15 @@ chmod 0644 /etc/forgejo-secrets-policy/dvhub/canary-hookwatch.allow
 
 **Mechanik:** temporär den Canary-Hook durch einen Dump-Wrapper ersetzen (NUR Canary-Repo), je einmal über SSH und HTTP pushen, exakt mitschneiden was Forgejos receive-pack an den Hook übergibt. Das ist die Attestationsquelle für `.receive-pack-env`.
 
+> 🔴 **P0 (Schnüffi-Review):** Der Hook läuft als `$GIT_USER` (non-root) — er kann NICHT nach `/root` (0700 root) schreiben. Ein Dump dorthin schlägt still fehl, `exit 0` lässt den Push trotzdem durch → C-D liefert NICHTS und man merkt es erst nach dem Live-Touch. **Darum: git-user-schreibbares Dump-Dir vorab anlegen.**
+
 ```bash
+# Dump-Ziel: git-user-schreibbar (NICHT /root!) — P0-Fix
+install -d -o "$GIT_USER" -g "$GIT_USER" -m 0700 /var/tmp/canary-rpenv
+
 cat > "$CANARY_GIT/hooks/pre-receive.d/00-dump" <<'EOF'
 #!/bin/bash
-DUMP="/root/canary-rpenv.$(date +%s).$$"
+DUMP="/var/tmp/canary-rpenv/rpenv.$(date +%s).$$"
 { echo "=== ARGV ==="; printf '%q ' "$0" "$@"; echo
   echo "=== CWD ==="; pwd
   echo "=== ENV ==="; env | sort
@@ -92,15 +97,20 @@ DUMP="/root/canary-rpenv.$(date +%s).$$"
 exit 0   # Dump-Wrapper lässt durch; 50-secrets bleibt für den eigentlichen Test
 EOF
 chmod 0755 "$CANARY_GIT/hooks/pre-receive.d/00-dump"
+# Verify (BEVOR auf SSH/HTTP-Pushes vertraut wird): nach den 2 Pushes MUSS hier was liegen
 ```
 
 Dump über **SSH** (:2222) und **HTTP** (:3000) — von der dev-vm oder einem Clone in LXC 160 aus, je ein trivialer Commit-Push gegen `canary-hookwatch`. Danach:
 ```bash
 # IN LXC 160: die zwei Dumps vergleichen → Divergenz = was transport-abhängig ist
-ls -t /root/canary-rpenv.* | head -2
-diff <(grep '^GIT\|^GITEA\|^PWD' /root/canary-rpenv.<ssh>)  <(grep '^GIT\|^GITEA\|^PWD' /root/canary-rpenv.<http>)
+ls -t /var/tmp/canary-rpenv/rpenv.* | head -2     # P0-Verify: MUSS 2 Dateien zeigen, sonst Dump leer → STOP
+# P1-Fix: HOME/XDG_CONFIG_HOME/PATH sind DIE config-auflösungs-kritischen Vars (wo git global-config findet
+#         = BLOCKER2-Äquivalenz) + git-Subcommand-Resolution → MÜSSEN in diff+Analyse:
+PAT='^HOME=|^XDG_|^PATH=|^GIT|^GITEA|^PWD'
+diff <(grep -E "$PAT" /var/tmp/canary-rpenv/rpenv.<ssh>) <(grep -E "$PAT" /var/tmp/canary-rpenv/rpenv.<http>)
 ```
-> Ergebnis → die **gemeinsame, immer-präsente** env-Var-Menge wird zur attestierten `.receive-pack-env`-Allowlist (root-owned, immutabel). Transport-divergente Vars NICHT in die fail-closed-Pflichtmenge.
+> **Attestiertes `.receive-pack-env`-Set = NUR die STATISCHEN config-relevanten Vars** (`HOME`, `XDG_CONFIG_HOME`, `PATH`, `GIT_DIR`/`GIT_NAMESPACE`-artige, `GITEA_*`), die in SSH UND HTTP gleich + immer präsent sind.
+> **NICHT attestieren (dynamisch, ändern sich pro Push):** `GIT_QUARANTINE_PATH`, `GIT_OBJECT_DIRECTORY`, `GIT_ALTERNATE_OBJECT_DIRECTORIES`, `GIT_PUSH_OPTION_*`, `GIT_PUSH_CERT*`. (Das Watcher-Schema verbietet `GIT_OBJECT_DIRECTORY`/`*_ALTERNATE_*` ohnehin = korrekt — die gehören nie in eine statische Allowlist.) Transport-divergente Vars ebenfalls NICHT in die fail-closed-Pflichtmenge.
 > Danach `00-dump` wieder entfernen: `rm "$CANARY_GIT/hooks/pre-receive.d/00-dump"`.
 
 ---
@@ -130,6 +140,13 @@ lsattr -d "$CANARY_GIT"
 sudo -u "$GIT_USER" git -C "$CANARY_GIT" pack-refs --all 2>&1 | tee /root/canary-packrefs.log
 #   erwartet: schlägt fehl (kann packed-refs/.lock im immutablen Dir nicht anlegen)
 #   → das ist KEIN Push-Breaker, sondern Maintenance-Einschränkung → regenerate-Runbook (§6)
+
+# P1-Fix (Schnüffi): commondir/config.worktree-Erzeugung EXPLIZIT provozieren = positiver Beweis der
+# Präventions-Schicht gegen den commondir-BLOCKER (Pfad doppelt-quoted außen → expandiert im root-Shell,
+# single-quoted innen → schützt vor sudo-env-scrub; erwartet EPERM/non-zero, NICHT „angelegt"):
+sudo -u "$GIT_USER" sh -c "printf /tmp/x > '$CANARY_GIT/commondir'"        2>&1; echo "commondir   rc=$? (erwartet non-zero/EPERM)"
+sudo -u "$GIT_USER" sh -c "printf 'true' > '$CANARY_GIT/config.worktree'"  2>&1; echo "config.wt   rc=$? (erwartet non-zero/EPERM)"
+ls -la "$CANARY_GIT/commondir" "$CANARY_GIT/config.worktree" 2>&1   # erwartet: beide existieren NICHT
 ```
 
 **Befund-Matrix ausfüllen** (genau diese Zeilen an Schnüffi):
@@ -154,6 +171,8 @@ hook-integrity-watch.sh --once 2>&1 | tee /root/canary-watch-run.log  # erwartet
 
 ## 6. Phase C-F — Reversibilität (regenerate/upgrade-Sequenz)
 
+> ⚠️ **Abort-Safety:** Bricht der Lauf irgendwo ab §4 (C-B/C-C) ab, bleibt `repo.git/` + Surface **immutabel**. Bei JEDEM Abbruch ZUERST diese `chattr -i`-Sequenz fahren (löst auch die Voraussetzung fürs §7-Repo-Delete), bevor irgendwas anderes versucht wird.
+
 ```bash
 # Diese Sequenz ist auch das Prod-Maintenance-Runbook (forgejo admin regenerate hooks / Upgrade):
 chattr -i "$CANARY_GIT" \
@@ -173,7 +192,7 @@ chattr -i "$CANARY_GIT" \
 # alle chattr -i (siehe §6), dann Canary-Repo löschen:
 curl -sf -X DELETE "http://fleetadmin:${TOKEN}@localhost:3000/api/v1/repos/dvhub/canary-hookwatch" -w '%{http_code}\n'  # 204
 rm -f /etc/forgejo-secrets-policy/dvhub/canary-hookwatch.allow
-rm -f /root/canary-rpenv.* /root/canary-*.log
+rm -rf /var/tmp/canary-rpenv /root/canary-*.log
 # Verify planning unberührt:
 git -C "$REPO_BASE/dvhub/planning.git" rev-parse HEAD 2>/dev/null   # unverändert?
 # Secret-Echo-Check: in keinem Log darf Klartext eines (Test-)Recipients/Secrets stehen
