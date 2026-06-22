@@ -9,7 +9,7 @@
 
 ## 0. Was dieses Modell garantiert (Akzeptanzkriterium, vor allem anderen)
 Drei prüfbare Eigenschaften, gegen die das Verifikations-Oracle (§7) misst:
-- **G1 (at-rest):** Auf der **gesamten Forgejo-LXC-Disk** — Git-Objekte (inkl. unreachable/pack/reflog), **DB, LFS-Store, Attachment-/Avatar-Store, alle ref-Typen (tags/notes/refs/*)** — liegt **ausschließlich Ciphertext** für jedes Secret. Eine vollständige Forgejo-Host-Kompromittierung (App-RCE / Admin-Cred-Diebstahl / LXC-Escape) liefert **kein** lesbares Secret. *(R1: G1 umfasst jetzt explizit Non-Git-Speicher — H1 — und alle Schreibpfade, nicht nur `repo.git`+Working-Tree.)*
+- **G1 (at-rest / post-acceptance — ehrlich verengt, R2/B3):** Auf der **gesamten Forgejo-LXC-Disk** — Git-Objekte (inkl. unreachable/pack/reflog), **DB, LFS-Store, Attachment-/Avatar-Store, alle ref-Typen (tags/notes/refs/*)** — liegt im **akzeptierten (post-pre-receive) Zustand ausschließlich Ciphertext** für jedes Secret. Eine vollständige Forgejo-Host-Kompromittierung (App-RCE / Admin-Cred-Diebstahl / LXC-Escape) liefert dann **kein** lesbares Secret. **Grenze (R2/B3):** git nimmt eingehende Objekte in eine **Quarantine VOR** dem pre-receive-Hook; ein **bereits** kompromittierter Host kann ein in-flight gepushtes Klartext-Objekt lesen, **auch wenn der Hook es danach ablehnt** und der Ref nie landet. G1 schützt also den **at-rest-Zustand**, nicht ein In-Flight-Fenster auf einem schon-kompromittierten Host. → ergänzt durch **Producer-Seite (§2.6): nur vertrauenswürdige Producer mit Push-Recht, kein Klartext über den Transport** + TLS (§4). *(R1: G1 umfasst Non-Git-Speicher — H1 — und alle Schreibpfade, nicht nur `repo.git`+Working-Tree.)*
 - **G2 (Decryption-Key off-host) — Garantie auf Forgejo-Seite, DISZIPLIN auf Konsument-Seite (R1/M3, ehrlich abgestuft):** Kein age-Private-Key liegt jemals auf dem **Forgejo-Host** (das ist server-seitig erzwingbar, §1.7+M2). Beim **Konsumenten** passiert Decryption in-memory — das ist **Konsument-Disziplin + Audit**, NICHT server-seitig erzwungen (es gibt keinen pre-receive-analogen Enforcement-Punkt für „Konsument schreibt Klartext nach `/tmp`"). Echte Garantie nur mit attestierten/ephemeren Konsumenten (§1.5). Restrisiko, benannt, nicht beschönigt.
 - **G3 (kein Bootstrap-Sprawl):** Weder der Forgejo-Auth-Credential noch der age-Private-Key eines Konsumenten liegt jemals committed / im Repo / als Klartext-Env-Var auf persistenter Disk. Die Vertrauenskette bottom-out bei operator-gehaltenen Roots — **ehrlich: es sind ZWEI** (op-connect-Root für den Live-Pfad + Offline-Recovery-Root für Break-Glass, §1.6/M1), nicht einer. Beide operator-custody, nicht verstreut.
 
@@ -36,7 +36,7 @@ Alles Weitere (ACL, TLS, Egress-deny, Webhooks-off) ist Defense-in-Depth — **G
 ### 1.3 Repo-Tier-Modell (die Enforcement-Frage — load-bearing)
 Die kritische Frage ist nicht „verschlüsseln wir", sondern „**wie garantieren wir, dass NIE Klartext durchrutscht**". Zwei Tiers, nach Inhalt:
 
-- **Tier A — dedizierter Secret-Repo (`default-encrypt-all`), BEVORZUGT.** Für reine Secret-Stores (Merkel-Vault, Credential-Bündel). Regel: **JEDE Datei muss ein gültiger SOPS-Envelope sein**, Ausnahme nur eine explizite Allowlist nicht-geheimer Metadaten (`README.md`, `.sops.yaml`, `recipients/*.pub`, `LICENSE`). → „Ist Klartext erlaubt?" ist **deterministisch + fail-closed**: Default nein, Allowlist ist die Ausnahme. Stärkste, einfachste Enforcement.
+- **Tier A — dedizierter Secret-Repo (`default-encrypt-all`), BEVORZUGT.** Für reine Secret-Stores (Merkel-Vault, Credential-Bündel). Regel: **JEDE Datei muss ein gültiger SOPS-Envelope sein**, Ausnahme nur eine explizite Allowlist nicht-geheimer Metadaten (`README.md`, `.sops.yaml`, `recipients/*.pub`, `LICENSE`). → „Ist Klartext erlaubt?" ist **deterministisch + fail-closed**: Default nein, Allowlist ist die Ausnahme. Stärkste, einfachste Enforcement. **🔴 Format = SOPS-`--input-type binary`/dotenv (R2/B1):** ganzer Inhalt = EIN ENC-Blob unter `data`, KEINE sichtbaren Struktur-Keys → schließt die Klartext-in-Keys-Fläche (B1) by construction; strukturierte YAML/JSON-Envelopes (sichtbare Keys) nur, wo Diffbarkeit zwingend gebraucht wird (dann greift der Metadaten-Scan §1.4.2).
 - **Tier B — Mixed-Repo (Path-Policy + Scan).** Für `.planning`-artige Repos (überwiegend Doku mit eingebetteten Secrets, z.B. DVhubs Auslagerung). Regel: `.sops.yaml`-Creation-Rules markieren Secret-Pfade; **PLUS** ein deterministischer Secret-Pattern/Entropy-Scan (gitleaks) über ALLE Dateien, fail-closed. Tier B trägt eine **Restschwäche** (ein Secret in einem nicht-konfigurierten Pfad in novel Format kann den Scanner umgehen) — Tier A hat sie nicht.
 - **Empfehlung an Brettli/DVhub:** echte Secrets in einen Tier-A-`dvhub/secrets`-Repo splitten, aus dem (Tier-B-oder-privat) Planning-Repo referenzieren. Brettli entscheidet den Split; ich liefere beide Mechanismen.
 
@@ -47,12 +47,17 @@ Client-seitige SOPS-Disziplin (pre-commit-Hook) ist **notwendig, aber nicht hinr
 
 **Was er prüft — deterministisch + positiv-bestätigend (R32):**
 1. **Über ALLE ref-Tripel `<old> <new> <refname>` iterieren (R1/H3)** — nicht nur `refs/heads/*`: explizit `refs/tags/*` (inkl. **annotated-tag-Message-Bodies**, nicht nur Blobs), `refs/notes/*` (git notes = Klartext-Kanal), und JEDER unbekannte ref-Namespace → **default-deny REJECT**. Pro Ref die Diff-Objekte enumerieren.
-2. **Vollverschlüsselung statt Partial (R1/B2 — der täuschbare Punkt):** SOPS unterstützt `encrypted_regex`/`unencrypted_suffix`/`mac_only_encrypted` → ein **strukturell gültiger** Envelope kann das Secret als **Klartext-Leaf** enthalten, wenn der Ersteller die Encryption-Rule so wählt. Der Hook prüft daher NICHT „jeder *verschlüsselte* Leaf ist ENC[...]" (vacuously true bei 0 verschlüsselten Leaves), sondern erzwingt **positiv: JEDER nicht-allowlisted Leaf-Wert MUSS `ENC[AES256_GCM,data:…,iv:…,tag:…,type:…]` sein.** Envelopes mit `unencrypted_suffix`/`unencrypted_regex`/partiellem `encrypted_regex`, die irgendeinen Secret-Leaf im Klartext lassen → **REJECT**. (Tier A: alles außer Allowlist. Tier B: alle policy-Secret-Pfade.)
-3. **Envelope-Struktur:** Top-Level-`sops:` mit `mac`, `lastmodified`, `age:`-Recipients; binary/dotenv analog (`sops_*`-Meta + ENC[...]-Daten). Nicht parsebar → REJECT.
-4. **Recipient-Containment aus OUT-OF-BAND-Policy (R1/B3 — Self-Auth geschlossen):** die erlaubte-Recipients-Menge stammt **NICHT** aus der vom Konsumenten gepushten `.sops.yaml` (= Self-Authorization), sondern aus einer **admin-gepflegten, konsument-nicht-beschreibbaren Quelle**: `/etc/forgejo-secrets-policy/<org>/<repo>.allow` auf der LXC (root-only). `sops.age[].recipient` MUSS ⊆ dieser admin-Liste sein UND der **Recovery-Recipient MUSS enthalten** sein (sonst REJECT). `.sops.yaml` aus dem Repo wird höchstens GEGEN die admin-Policy validiert, ist nie selbst die Autorität.
-5. **Privkey-Detektor über ALLE Dateien (R1/M2), inkl. Allowlist:** jede Datei (auch `recipients/*.pub`, README etc.) wird auf `AGE-SECRET-KEY-`-Muster (+ PEM `BEGIN OPENSSH/RSA/EC PRIVATE KEY`) geprüft → Treffer = **REJECT**. `recipients/*.pub` wird zusätzlich positiv als **age-Pubkey** (`age1…`, X25519-Recipient) validiert — Format-Fehler = REJECT. Schließt „Privkey statt Pubkey committed".
-6. **Tier-B-Zusatz:** gitleaks-Pattern/Entropy-Scan über ALLE Dateien (auch die Klartext-Leaves von „SOPS"-Dateien, R1/B2) → Treffer = REJECT.
-7. **Fail-CLOSED, ausnahmslos:** Datei/Tool/Policy-Fehler, fehlende admin-Policy, fehlender Recovery-Recipient, unbekannter ref-Typ → **REJECT**. Nie fail-open.
+2. **🔴 Klartext in Git-METADATEN, nicht nur Leaf-Werten (R2/B1 — schärfster R2-Befund):** SOPS verschlüsselt **nur Werte**, lässt **Keys/Struktur/Pfade Klartext** (per Design). Ein Secret als **Dateiname / Verzeichnisname (Tree-Pfadsegment) / Refname / Commit-Message / Author-/Committer-Feld / YAML-KEY** besteht die „jeder Leaf=ENC[]"-Regel, landet aber **Klartext** auf Disk. → Der Hook scannt zusätzlich **Commit-Objekte (Message + Author/Committer-Identity), Tree-Pfadsegmente (Datei-/Verzeichnisnamen), Refnamen und die Struktur-Keys** jeder Datei auf Secret-Pattern/Marker (gitleaks) → Treffer = REJECT. **Tier-A-Empfehlung daher: SOPS-`--input-type binary`/dotenv** (ganzer Datei-Inhalt = EIN ENC-Blob unter `data`, KEINE sichtbaren Keys/Struktur) statt strukturierter YAML/JSON-Envelopes — eliminiert die Klartext-Key-Fläche by construction.
+3. **Vollverschlüsselung statt Partial (R1/B2):** SOPS-`encrypted_regex`/`unencrypted_suffix`/`mac_only_encrypted` → strukturell gültiger Envelope kann Secret als **Klartext-Leaf** enthalten. Hook erzwingt **positiv: JEDER nicht-allowlisted Leaf-Wert MUSS `ENC[AES256_GCM,data:…,iv:…,tag:…,type:…]` sein.** Partial-Configs, die irgendeinen Leaf Klartext lassen → REJECT.
+4. **Nur native age, KEINE Zusatz-Backends (R2/B2 — Containment-Umgehung):** SOPS kann **PGP/AWS-KMS/GCP-KMS/Azure-KV/hc_vault/SSH-age als ZUSÄTZLICHE Master-Keys** tragen. Ein Angreifer fügt einen eigenen PGP/KMS-Recipient hinzu → die `age[]`-Liste bleibt admin-konform, aber ein **2. Decrypt-Pfad** ist offen. → Hook erzwingt: die `sops`-Stanza-Felder `pgp`/`kms`/`gcp_kms`/`azure_kv`/`hc_vault` MÜSSEN **leer/abwesend** sein; **nur `age:` mit `age1…`-Recipients erlaubt** → sonst REJECT. Negativtest ins Oracle.
+5. **Strikter SOPS-Parser statt ad-hoc-YAML+regex (R2/MED-7):** der Hook nutzt **SOPS' eigenen Parse-/Metadata-Pfad** zur Envelope-Validierung (nicht handgeschnitztes YAML+grep) ODER lehnt unsupported Konstrukte hart ab: **YAML-Anchors/Merge-Keys (`<<`), duplicate Keys, top-level-Arrays, leere Dateien** → REJECT (sie können den ad-hoc-Parser täuschen, gleiche Klasse wie die systemd-Inline-`#`-Falle aus T-0244-Stufe-1).
+6. **Envelope-Struktur:** Top-Level-`sops:` mit `mac`, `lastmodified`, `age:`-Recipients; binary/dotenv analog (`sops_*`-Meta + ENC[...]-Daten). Nicht parsebar → REJECT.
+7. **Recipient-Containment aus OUT-OF-BAND-Policy (R1/B3 — Self-Auth geschlossen):** die erlaubte-Recipients-Menge stammt **NICHT** aus der gepushten `.sops.yaml` (= Self-Authorization), sondern aus **admin-gepflegter, konsument-nicht-beschreibbarer Quelle** `/etc/forgejo-secrets-policy/<org>/<repo>.allow` (root-only). `sops.age[].recipient` MUSS ⊆ admin-Liste sein UND der **Recovery-Recipient MUSS enthalten** sein (sonst REJECT). `.sops.yaml` wird höchstens GEGEN die admin-Policy validiert, ist nie selbst Autorität.
+8. **Privkey-Detektor über ALLE Dateien (R1/M2), inkl. Allowlist:** jede Datei auf `AGE-SECRET-KEY-` (+ PEM `BEGIN OPENSSH/RSA/EC PRIVATE KEY`) → Treffer = REJECT. `recipients/*.pub` zusätzlich positiv als age-Pubkey (`age1…`) validiert.
+9. **Tier-B-Zusatz:** gitleaks-Pattern/Entropy-Scan über ALLE Dateien (auch Klartext-Leaves von „SOPS"-Dateien) → Treffer = REJECT.
+10. **Fail-CLOSED, ausnahmslos:** Datei/Tool/Policy-Fehler, fehlende admin-Policy, fehlender Recovery-Recipient, unbekannter ref-Typ, Zusatz-Backend, unsupported YAML → **REJECT**. Nie fail-open.
+
+**🔴 REJECT-Message darf NIE den Klartext echoen (R2/HIGH-6):** der Hook gibt bei Ablehnung nur Datei/Ref/Regel-ID aus, **nie den getroffenen Secret-Wert** — sonst landet das Secret im Forgejo-Push-Log/journald (= genau der Non-Disk-Leak, den HIGH-6 adressiert).
 
 **🔴 Hook-Integritäts-Wache (R1/B4 — der Hook überlebt `regenerate hooks`/Upgrade NICHT garantiert):** `forgejo admin regenerate hooks`, Repo-Migration oder ein Forgejo-Upgrade kann den `.d/`-Security-Hook **lautlos entfernen** → Instanz fällt **fail-OPEN**. Gegenmaßnahme: ein **externer systemd-Timer (außerhalb Forgejo)** prüft minütlich Existenz+sha256+exec-bit des Security-Hooks UND der Haupt-`pre-receive` in JEDEM Secret-Repo; bei Abweichung → Repo/Instanz **read-only schalten + alarmieren**, bis der Hook re-provisioniert ist. Upgrades nur mit Hook-Re-Provision+Verify-Schritt (Runbook).
 
@@ -76,6 +81,7 @@ Der pre-receive-Hook feuert NUR bei `git push`/`receive-pack`. Andere Pfade schr
 - **LFS AUS (R1/H1):** ein LFS-Push legt nur einen **Pointer** ins Git-Objekt; der echte Blob geht in den LFS-Store → Hook blind. → `[lfs] ENABLED=false` instanzweit; ein LFS-Pointer im Push = REJECT.
 - **Non-Git-Content-Surfaces HART AUS — Teil von G1, nicht „später härten" (R1/H1):** Issues/PRs/Wiki/Attachments/Avatare/Packages/Web-Editor/Releases-Attachments persistieren in DB/Attachment-Store, NIE über den Hook. Auf einem reinen Secrets-Store sind sie reine Angriffsfläche → **deaktivieren** (`[repository] DISABLE_*`, `[attachment] ENABLED=false`, Packages aus, Web-Editor aus). (Schnüffi §4 listete sie als Defense-in-Depth — R1 zieht sie in G1 hoch: solange aktiv, sind sie Klartext-Landeplätze.)
 - **Unreachable-Objekte / Force-Push-History (R1/H2):** ein einmal akzeptiertes (oder über Multi-Ref-Push durchgerutschtes) Klartext-Objekt bleibt nach Überschreiben als unreachable pack-Objekt lesbar bis `gc --prune`. → nach jedem Force-Push auf Secret-Repos **`git gc --prune=now`** (Automatik+Runbook). **Ein versehentlich gelandetes Klartext-Secret gilt als kompromittiert → ROTATION, nicht nur Löschung.**
+- **🔴 Repo-/Org-Erzeugung gesperrt — sonst Governance-Bypass (R2/HIGH-5):** legt ein Konsument ein **NEUES** Repo/eine neue Org an (oder importiert/fork't/migriert eins), ist der pre-receive-Hook **dort nicht installiert** → Klartext-Push landet ungeprüft. → Konsumenten dürfen **keine** Orgs/Repos **erzeugen/importieren/forken/migrieren/mirror-en** (Forgejo-Org-Member-Rechte minimal: nur push auf admin-vorprovisionierte Repos; `MAX_CREATION_LIMIT=0` für Konsument-Accounts, Org-`Repo-Admin`-Recht entzogen). Repos werden **ausschließlich admin per Template** angelegt (Hook + admin-Policy schon installiert). Die **Integritäts-Wache (§1.4) wird erweitert:** sie entdeckt **neue/umbenannte Repos ohne Security-Hook** und schaltet sie **sofort read-only + alarmiert** (default-deny auf Repo-Existenz-Ebene).
 
 ---
 
@@ -89,9 +95,9 @@ Beide sind selbst Secrets. Klartext im Repo/Env jedes Agenten = Sprawl nur versc
 
 ### 2.2 Root-of-Trust: op-connect (primär) + Deploy-Zeit-Injektion (Fallback)
 **Primär — 1Password op-connect Runtime-Broker (T-0206).** Die Fleet hat op-connect bereits (LXC 141). Modell:
-- age-Privkeys + Forgejo-Deploy-Key-Privhälften liegen als **op-Items**, pro Konsument in einem eigenen Vault/Item.
-- Konsument authentisiert sich an op-connect mit einem **op-connect-Service-Account-Token, item-scoped auf NUR seine eigenen Items** (Konsument A liest nur As Deploy-Key + As age-Key). Fetch zur Laufzeit (`op read` / Connect-API) direkt in Env/tmpfs.
-- **Dieser SA-Token ist DER Bootstrap-Secret des Konsumenten.**
+- age-Privkeys + Forgejo-Deploy-Key-Privhälften liegen als op-Items in einem **eigenen Vault PRO Konsument** (Konsument A → Vault `forgejo-A`, B → `forgejo-B`; KEIN geteilter Vault).
+- **🔴 VAULT-scoped, nicht „item-scoped" (R2/B4 — korrigiert):** die 1Password-Connect-API ist **vault-orientiert** — ein Connect-Token gewährt Zugriff auf die ihm zugewiesenen **Vaults**, nicht feingranular auf einzelne Items innerhalb eines geteilten Vaults. „Item-scoped" wäre also nicht garantiert, wenn A+B im selben Vault lägen. Darum: jeder Konsument bekommt einen **eigenen Connect-Token + eigenen Vault**, read-only; A's Token kann B's Vault **nicht** lesen (cross-Vault = 403). Konsistent mit §2.5.2. Fetch zur Laufzeit (`op read`/Connect-API) direkt in Env/tmpfs.
+- **Dieser Connect-Token ist DER Bootstrap-Secret des Konsumenten.**
 
 **Fallback — Deploy-Zeit-Injektion.** Wo op-connect nicht erreichbar/erwünscht: der Spawn-/Deploy-Prozess injiziert Deploy-Key + age-Key zur Spawn-Zeit in Env/tmpfs des Konsumenten (aus operator-gehaltener Quelle), Konsument persistiert nichts. Session-lebensdauer-gebunden.
 
@@ -113,7 +119,13 @@ Beide sind selbst Secrets. Klartext im Repo/Env jedes Agenten = Sprawl nur versc
    - **Mitigation (ii):** laufende Konsumenten cachen ihren Key in tmpfs für die Session → überleben transiente Ausfälle NUR solange der Prozess lebt. **Greift NICHT bei Neustart/Spawn/Reboot eines Konsumenten während .240 down** (R1/H5) — dann kein Fetch → tot. Darum reicht (ii) allein nicht, (i) ist nötig.
    - **🔴 Mitigation (iii) = Break-Glass MUSS GEÜBT sein, nicht Papier (R1/H5):** der Offline-Recovery-Pfad (§1.6/§6) wird **vor** dem ersten echten Secret **end-to-end getestet** (Recovery-Key entschlüsselt Canary von einem op-connect-UNABHÄNGIGEN Host) und als Oracle-Kriterium (§7) geführt. Ungeübter Break-Glass = in der Krise wertlos.
    - **Deadlock-Check (R1/H5):** der op-connect-Root-Injektionspfad (wer hält `1password-credentials.json`+Connect-Token, woher beim allerersten Bootstrap) MUSS **Forgejo- UND op-connect-unabhängig** sein — der op-connect-Root und der Forgejo-Admin-Token dürfen sich nicht gegenseitig gaten (sonst Zirkel: Recovery braucht ein Secret aus dem System, das gerade down ist). Explizit als zirkelfrei dokumentieren (§2.4) + im Oracle prüfen.
-2. **op-connect wird zur neuen Krone:** wer op-connect kompromittiert, fetcht alle dort gehaltenen age-Privkeys → entschlüsselt alles, was die abdecken. **Ehrliche Restkonzentration** (= der zweite Root neben Recovery, G3 ist NICHT „ein Root"). Mitigation: per-Konsument-Service-Accounts mit **Item-Level-Scoping** (A liest NUR As Items — in 1Password Connect via getrennte Vaults pro Konsument + SA-Token mit Vault-Scope erzwingbar; NICHT wishful, aber Konfig-Disziplin → Oracle §7.4 testet „A kann B's Item nicht lesen = 403"), op-connect gehärtet, Audit. **Strikt besser als Klartext-Env-Sprawl**, aber die Konzentration gehört in Bizzis/Schnüffis Risiko-Register.
+2. **op-connect wird zur neuen Krone:** wer op-connect kompromittiert, fetcht alle dort gehaltenen age-Privkeys → entschlüsselt alles, was die abdecken. **Ehrliche Restkonzentration** (= der zweite Root neben Recovery, G3 ist NICHT „ein Root"). Mitigation: **per-Konsument eigener Vault + eigener Connect-Token (Vault-Scoping, R2/B4)** — A's Token kann B's Vault nicht lesen (cross-Vault = 403); die Connect-API ist vault-orientiert, also ist Vault-Trennung das erzwingbare Granular, NICHT Item-Scoping in einem geteilten Vault. Oracle §7.4 testet „A liest B's Vault = 403". op-connect gehärtet + Audit. **Strikt besser als Klartext-Env-Sprawl**, aber die Konzentration gehört in Bizzis/Schnüffis Risiko-Register.
+
+### 2.6 Producer-Seite (R2/B3 — In-Flight-Klartext schließen)
+G1 schützt at-rest (§0/B3), nicht ein In-Flight-Quarantine-Fenster auf einem schon-kompromittierten Host. Ergänzend producer-seitig:
+- **Nur vertrauenswürdige Producer mit Push-Recht** (per-Repo Deploy-Key write, §2.3) — kein anonymer/breiter Push.
+- **Kein Klartext über den Transport:** Producer verschlüsselt SOPS **vor** dem Push (lokal), pusht nur Ciphertext; selbst das In-Flight-Quarantine-Objekt ist dann Ciphertext. + **TLS** (§4) gegen LAN-Sniffing des Push-Streams.
+- Damit ist auch das In-Flight-Fenster ciphertext-only, solange der Producer diszipliniert verschlüsselt (= dieselbe Producer-Disziplin-Klasse wie G2-Konsument-Seite, ehrlich benannt; der Hook ist die fail-closed-Netz dahinter, das un-verschlüsselten Push ablehnt).
 
 ---
 
@@ -163,22 +175,32 @@ Aus Schnüffi §3+§4 — Defense-in-Depth, NACH G1–G3:
 ## 7. Verifikations-Oracle (PROOF des Gates VOR dem ersten echten Secret) — R1-gehärtet
 End-to-End-Dry-Run auf einem **Canary** (Fake-Secret mit eindeutigem Marker), bevor irgendein echtes Secret landet. **Kern (R1/H4): gegen ein UNABHÄNGIGES Vollplatten-Signal messen, nicht nur dort suchen, wo Ciphertext erwartet wird** (sonst false-PASS = Selbstbestätigung). Erfolgskriterien als Zahlen/Artefakte:
 
-1. **G1-at-rest (Vollplatten-grep, R1/H4+H1+H2):** Canary an A-Recipient + per-Tenant-Recovery verschlüsseln, pushen. Dann **grep auf den Fake-Marker über die GESAMTE Forgejo-LXC-Disk** — `/var/lib/forgejo` komplett **inkl. DB-Datei, LFS-Store, Attachment-/Avatar-Store** PLUS `git cat-file --batch-all-objects | grep` (erfasst **unreachable** Objekte) PLUS Working-Trees → **Treffer-Zahl == 0**. Nur `repo.git`+Working-Tree zu prüfen (alte §7-Fassung) wäre genau das false-PASS-Loch.
-2. **G2-key-off-host:** clone von einem Host OHNE A's age-Key (z.B. Forgejo-Host) → `sops -d` **MUSS scheitern**. Auf A's Host: Key aus op-connect → Env → `sops -d` **MUSS** den Marker liefern. Disk-Check auf A: age-Key nicht persistent (nur Env/tmpfs).
-3. **Enforcement-Negativ-Matrix — JEDER muss REJECT (R1/B1-B4+H1+H3+M2):**
+1. **G1-at-rest (Vollplatten-Signal — R1/H4 + R2/HIGH-6, jetzt ALLE Oberflächen):** Canary an A-Recipient + per-Tenant-Recovery verschlüsseln, pushen. `grep`/`zgrep` auf den Fake-Marker über **alles**, wo Klartext landen könnte — Treffer-Zahl **== 0**:
+   - `/var/lib/forgejo` komplett (Git-Repos, **DB-Datei**, LFS-Store, Attachment-/Avatar-Store);
+   - `git cat-file --batch-all-objects | grep` (**unreachable** Objekte);
+   - **SQLite-WAL/-SHM** (`*-wal`/`*-shm` — committed-aber-noch-nicht-gemergt);
+   - **journald** (`journalctl | grep`, inkl. komprimierter Rotates) — fängt einen Hook-REJECT, der den Klartext echote (→ §1.4-REJECT-echo-Verbot);
+   - **Swap** (`swapoff -a` für den Test bzw. kein fstab-Swap auf der Secrets-LXC) + **coredumps** (`coredumpctl`);
+   - **`/tmp`,`/run`,Process-Memory** (`lsof +L1` = deleted-but-open; `/proc/<forgejo-pid>/maps`-Heuristik) → Forgejo hält keinen Klartext im RAM.
+2. **G2-key-off-host:** clone von einem Host OHNE A's age-Key → `sops -d` **MUSS scheitern**. Auf A's Host: Key aus op-connect → Env → `sops -d` **MUSS** den Marker liefern. Disk-Check auf A: age-Key nicht persistent.
+3. **Enforcement-Negativ-Matrix — JEDER muss REJECT (R1+R2):**
    - (a) Klartext-Datei in Secret-Repo → REJECT.
-   - (b) SOPS-Datei an NICHT-erlaubten Recipient (aus admin-Policy, nicht `.sops.yaml`) → REJECT (B3).
-   - (c) **partial-encrypted Envelope** (`unencrypted_suffix`/`encrypted_regex` lässt Secret-Leaf Klartext) → REJECT (B2).
-   - (d) **self-authored `.sops.yaml`** mit zusätzlichem Angreifer-Recipient → REJECT (B3).
-   - (e) **Tag-Message-Klartext + `refs/notes/*`-Klartext** → REJECT (H3).
-   - (f) **LFS-Pointer / Mirror-Pull-Klartext** → REJECT bzw. Mirror ist deaktiviert (B1+H1).
-   - (g) **Privkey** (`AGE-SECRET-KEY-`) in beliebiger Datei inkl. `recipients/*.pub` → REJECT (M2).
+   - (b) SOPS an NICHT-erlaubten Recipient (admin-Policy) → REJECT (B3).
+   - (c) partial-encrypted Envelope (`unencrypted_suffix`) → REJECT (R1/B2).
+   - (d) self-authored `.sops.yaml` + Angreifer-Recipient → REJECT (B3).
+   - (e) Tag-Message-Klartext + `refs/notes/*`-Klartext → REJECT (H3).
+   - (f) LFS-Pointer / Mirror-Pull-Klartext → REJECT / Mirror deaktiviert (B1+H1).
+   - (g) Privkey (`AGE-SECRET-KEY-`) in beliebiger Datei inkl. `recipients/*.pub` → REJECT (M2).
    - (h) gitleaks-Pattern in Tier-B → REJECT.
-4. **G3-bootstrap + Item-Scoping:** auf A's Host kein persistenter Klartext von age-/Deploy-Key; **op-connect-SA item-scoped: A liest B's Item NICHT → 403** (R1/H5 Punkt 2).
-5. **Hook-Survival (R1/B4):** nach `forgejo admin regenerate hooks` UND nach einem simulierten Forgejo-Upgrade → Security-Hook noch vorhanden+aktiv (sonst Integritäts-Wache schaltet read-only) → Negativ-Push danach noch REJECT. **Wiederkehrende** PASS-Bedingung, nicht einmalig.
-6. **Break-Glass-Drill (R1/H5):** per-Tenant-Recovery-Key entschlüsselt den Canary von einem **op-connect-unabhängigen** Host → Marker geliefert. Beweist: Recovery-Pfad operabel ohne op-connect, kein Zirkel.
+   - **(i) Secret im DATEINAMEN / Verzeichnis / Commit-Message / Author-Feld / YAML-KEY (R2/B1)** → REJECT.
+   - **(j) SOPS-Envelope mit ZUSATZ-Backend** (`pgp:`/`kms:`/`gcp_kms:` neben `age:`) → REJECT (R2/B2).
+   - **(k) unsupported YAML** (Anchor/Merge/duplicate-Key/top-level-Array/leere Datei) → REJECT (R2/MED-7).
+   - **(l) Push in NEU angelegtes/umbenanntes Repo ohne Hook (R2/HIGH-5)** → Repo ist read-only / Push REJECT (Wache greift).
+4. **G3-bootstrap + VAULT-Scoping (R2/B4):** auf A's Host kein persistenter Klartext von age-/Deploy-Key; **A's Connect-Token liest B's VAULT NICHT → 403** (cross-Vault, nicht „item-scoped").
+5. **Hook-Survival (R1/B4):** nach `forgejo admin regenerate hooks` UND simuliertem Forgejo-Upgrade → Security-Hook noch aktiv (sonst Wache → read-only) → Negativ-Push danach noch REJECT. **Wiederkehrende** PASS-Bedingung.
+6. **Break-Glass-Drill (R1/H5 + R2/M1):** per-Tenant-Recovery entschlüsselt Canary von einem **op-connect-unabhängigen** Host → Marker. **Bei m-of-n Shamir: die REKONSTRUKTION selbst drillen** (m Shares zusammenführen → Key → decrypt), nicht nur Single-Key — sonst ist die Schwelle ungetestet.
 
-**Sign-off-Bedingung:** alle 6 grün + Schnüffis GPT-codex-Lens findet keinen build-blockierenden Befund + Schnüffi-Sign-off. Analog zum T-0244-Triple-Oracle-Gate.
+**Sign-off-Bedingung:** alle 6 Kriterien grün (inkl. der erweiterten 12-Punkt-Negativ-Matrix) + Schnüffis GPT-codex-Bestätigungs-Lens findet keinen build-blockierenden Befund + Schnüffi-Sign-off. Analog zum T-0244-Triple-Oracle-Gate.
 
 ---
 
@@ -186,7 +208,7 @@ End-to-End-Dry-Run auf einem **Canary** (Fake-Secret mit eindeutigem Marker), be
 - **🔴 op-connect-Migration weg von .240 (R1/H5) = Pre-Sign-off-Vorbedingung, nicht „interim akzeptieren":** stabiler Node ODER zweite unabhängige Connect-Instanz. Kapazität → proxmox-master; Timing → Operator. Bis dahin BLOCK für den Live-Decrypt-Pfad.
 - **🔴 Recovery-Key-Custody (R1/M1) = vor Sign-off festnageln:** per-Tenant getrennt + **m-of-n Shamir-Schwelle** + konkretes Medium (HW-Token/Offline) + Custodians. Operator-Entscheid.
 - **DVhub Tier-A-Split:** legt Brettli echte Secrets in einen `dvhub/secrets`-Tier-A-Repo (default-encrypt-all, stärkste Enforcement), oder Mixed-Tier-B mit Scan (Restschwäche)? → Brettli/DVhub.
-- **Codex-Refute-Lens:** `codex-worker` ist in diesem Harness NICHT als Subagent-Typ verfügbar → fresh-context Claude-Lens (mein Refute, R26 — Runde 1 unten gefoldet) + Schnüffis echte GPT-codex-Lens (ihr Side). Etablierter T-0244-Pattern.
+- **Codex-Refute-Lens:** `codex-worker` ist in diesem Harness NICHT als Subagent-Typ verfügbar → fresh-context Claude-Lens (mein Refute, R26 — §9 gefoldet) + Schnüffis echte GPT-codex-Lens (§10 gefoldet, modell-divers). Etablierter T-0244-Pattern. **Stand: R1+R2 konvergent NOT-READY → beide gefoldet; Schnüffis Bestätigungs-Lens (R3) ausstehend.**
 
 ---
 
@@ -206,4 +228,20 @@ Verdikt der Lens: **NOT SECRET-LANDING-READY** → 4 BLOCKER + 5 HIGH + 3 MED, A
 - **M3** G2-Konsument-Disziplin ≠ Garantie → §0+§1.5 ehrlich abgestuft (Restrisiko, nicht erfüllte Garantie).
 
 **Saubere Achse:** Krypto-Wahl SOPS+age selbst (Primitive korrekt; Bruch lag in Enforcement + Bootstrap-Root, nicht in age).
-**Nächster Gate-Schritt:** Schnüffis GPT-codex-Lens auf diese R1-gefoldete Fassung (2. konvergente Lens, R22 Default=BLOCK) + ihr Sign-off.
+
+---
+
+## 10. Refute-Round-2 (Schnüffi GPT-codex-Lens, modell-divers) — gefoldet (2026-06-22)
+Verdikt: **NOT-READY, KONVERGIERT mit R1** → R22-Default=BLOCK hält. GPT-codex fand **4 BLOCKER + 2 HIGH + 1 MED, die die R1-Claude-Lens übersah** — alle primärquellen-belegt (SOPS-Doku / git-hooks / 1Password-Connect-API). Genau der Cross-Lab-Wert (modell-diverse 2. Lens). ALLE in den Body gefoldet:
+- **B1 (schärfster)** Klartext in Git-METADATEN, nicht nur Leaf-Werten (SOPS verschlüsselt nur Werte → Dateiname/Refname/Commit-Message/Author/YAML-KEY bleiben Klartext) → §1.4.2 Metadaten-Scan (Commit/Identity/Tree-Pfade/Refnames/Struktur-Keys) + §1.3 Tier-A → SOPS-`binary` (keine sichtbaren Keys).
+- **B2** Zusatz-SOPS-Backends (PGP/KMS/…) umgehen den age-Containment-Check → §1.4.4 pgp/kms/gcp_kms/azure_kv/hc_vault MÜSSEN leer/abwesend = REJECT, nur native age.
+- **B3** Quarantine/in-flight: schon-kompromittierter Host liest Objekte VOR pre-receive → §0 G1-Wording ehrlich auf at-rest/post-acceptance verengt + §2.6 Producer-Trust (nur Ciphertext über Transport).
+- **B4** 1Password „item-scoped" nicht belegt (Connect-API ist VAULT-orientiert) → §2.2/§2.5.2 durchgängig per-Konsument eigener Vault + vault-scoped Token; §7.4 cross-Vault-403.
+- **HIGH-5** Repo/Org-Erzeugung = Governance-Bypass (neues Repo ohne Hook) → §1.7 Konsumenten dürfen keine Repos/Orgs erzeugen/importieren/mirror-en; Wache schaltet neue/umbenannte Repos read-only.
+- **HIGH-6** §7-Oracle zu schmal (journald/swap/proc-mem/SQLite-WAL/deleted-but-open/coredump fehlten + Hook-REJECT-echo) → §7.1 ALLE Oberflächen + §1.4 REJECT-Message echot nie Klartext.
+- **MED-7** ad-hoc-YAML+regex täuschbar → §1.4.5 strikter SOPS-Parser / reject Anchors/Merge/duplicate-Keys/top-level-Arrays/leere Dateien (gleiche Klasse wie die systemd-Inline-#-Falle aus T-0244).
+
+**Schnüffis Antworten gefoldet:** (b) Co-Gate-MECHANISMUS trägt nicht (Forgejo decrypted nie, kein Egress-Detektor), aber das META-Pattern 1:1 — positive-Allowlist-fail-closed (=pre-receive) + non-vacuous-Oracle-gegen-unabhängiges-Signal (=§7); B1/B2/MED/HIGH-6 sind genau ihre T-0244-Failure-Modes. (c) §7 als Sign-off-Gate endorsed, Negativ-Matrix auf 12 Punkte gewachsen. **H5** (op-connect weg von .240) = harte Pre-Sign-off-Vorbedingung (Verfügbarkeit IST Art-32-Sicherheit), **M1** m-of-n + **Rekonstruktion gedrillt** (§7.6).
+
+**Saubere Achse (bestätigt, R1+R2 konvergent):** age + Gesamt-Architektur sound; der Bruch liegt durchweg in Enforcement-Vollständigkeit + Bootstrap-Scope, nicht im Primitiv.
+**Nächster Gate-Schritt:** Schnüffis Bestätigungs-Lens (T-0244 R2…R19-Stil) auf diese R2-gefoldete Fassung. Kein Klartext-Secret vor grünem §7-Oracle + Sign-off.
