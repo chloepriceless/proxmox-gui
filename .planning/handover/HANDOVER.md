@@ -1,13 +1,13 @@
 # HANDOVER — Proxmox-GUI Head / Infra-LEAD ("Schraubi")
 
-**Updated:** 2026-06-21 ~17:55Z (Respawn-Session). **Branch:** `fix/release-review-blockers` @ `505d814` (pushed, clean tree, in sync).
-**⚠️ Dieses Doc ist sekundär — die KANONISCHE Resume-Quelle ist `project-open-tasks.md` (oberster T-0244-Block, voll aktuell). Hier nur der Kurz-Stand.**
-**Peer-IDs (2026-06-21):** Hub-Sub=`f73n74ge`, Schnüffi(Security)=`9ux20vst`, Bizzi(Compliance)=`lnfo8eyv`, Netzi(Netz/VLAN)=`fqj85asg`, Tapsi(Backup)=`eib2hvyt`, Sentinel=`hgm1sq49`. Tüftli (Continuity) aktuell offline. Hub-Key=`vm-deployment-gui`.
+**Updated:** 2026-06-22 ~05:45Z (Respawn-Session). **Branch:** `fix/release-review-blockers` @ `b28256c` (pushed, clean tree, in sync).
+**⚠️ Dieses Doc ist sekundär — die KANONISCHE Resume-Quelle ist `project-open-tasks.md` (oberster FORGEJO-Block, voll aktuell). Hier nur der Kurz-Stand.**
+**Peer-IDs (2026-06-22):** Hub-Sub=`f73n74ge`, Schnüffi(Security)=`per6ezmd`, Bizzi(Compliance)=`lnfo8eyv`, Netzi(Netz/VLAN)=`fqj85asg`, Tapsi(Backup)=`eib2hvyt`, Sentinel=`hgm1sq49`, Brettli(dashboard)=`r3uw9iuv`, DVhub=`oqklpiue`. Hub-Key=`vm-deployment-gui`.
 
-## 🔵 AKTUELLER STAND (2026-06-21 ~17:55Z, Respawn-Session)
-**T-0244 AVV-Zone (ich = BAU-LEAD): BEIDE Isolations-Schichten BUILD-READY + Integration beidseitig verifiziert.** netns/Prozess-Schicht nach 9 Cross-Lab-Refute-Runden R22-grün (commits bd4692a→0c02b4d, 8 Artefakt-Dateien). Schnüffis GATE-3 (Detektor-Recall 76/76, Broker-RPC-Tightness 23/23) nach 19 Runden BUILD-READY (e5c3a93). **3-Gate-Triple-Oracle-Spawner verdrahtet + gemeinsamer `06-build-verify-plan.md`** (commit 505d814, 9 Artefakt-Dateien). **Schnüffi (per6ezmd) hat die Integration read-only gegen 505d814 verifiziert (17:54Z): Triple-Oracle-Gate vollständig + konsistent, keine neuen Befunde — beide durch.** **autonomous_open=0.**
-**Verbleibend an T-0244 = alles blocked/extern:** (1) gemeinsamer LIVE-Build-Verify (erst beim echten Bau — gated); (2) egress-fähiger Bau = Netzi-VLAN50 + Christin/Hub-Go + R3-Merkel + V1-Upstream-Pin (Bedrock vs Vertex); (3) Substrat-DDL-Finalisierung mit Tüftli (offline). **KEIN Live-pz2/UDM-Touch ohne Christin/Hub-Go.**
-**Beim Neustart:** `project-open-tasks.md` oberster Block lesen (kanonisch). T-0244 ist FERTIG/BUILD-READY, beidseitig bestätigt — nichts autonom Offenes. Auf neue Refute-Befunde reagieren (einfolden wie R1-R9) ODER egress-Go. Andere Stränge (unten) bleiben blockiert.
+## 🔵 AKTUELLER STAND (2026-06-22 ~05:45Z)
+**AKTIV — FORGEJO Secrets-Server SOPS-Modell:** Base steht (LXC 160 @ pz3, .59:3000). SOPS+age + Bootstrap-Cred-Modell designt → `.planning/FORGEJO-SECRETS-SOPS-MODEL.md` (commit b28256c). **Refute-R1 (R26 Claude-Lens) DURCH: 4 BLOCKER+5 HIGH+3 MED, alle gefoldet.** **Schnüffi-Lens-2 LÄUFT** (sie bestätigte 05:42Z, fährt GPT-codex-Lens, R22 Default=BLOCK). **Nächster autonomer Schritt = ihre Befunde folden (T-0244-Stil), dann Sign-off → Implementierungs-Artefakte + Härtung.** Details: `project-open-tasks.md` oberster Block.
+**T-0244 AVV-Zone: STUFE 1 APPLIED + verifiziert** (commit 8a1ebf5). VM 159 läuft netz-los auf pz2, alle 18 Isolations-Artefakte via cicustom vendor= deployt, Serial-verifiziert (netns-Topologie läuft, 5 Seat-netns). Beide Isolations-Schichten waren nach 9+19 Cross-Lab-Refute-Runden R22-grün. **Stufe 2 = alles extern/gated** (Netzi VLAN50 + Provider-Pin V1 + Schnüffi-Broker + R3-Merkel + Christin-DSFA-GO-LIVE-STOP). KEIN Live-Touch ohne Go.
+**Beim Neustart:** `project-open-tasks.md` oberster FORGEJO-Block lesen (kanonisch). Wenn Schnüffis Lens-2-Verdikt da ist → folden wie T-0244 R1-R9. Sonst extern-gated. Andere Stränge (unten) bleiben blockiert.
 
 ---
 
