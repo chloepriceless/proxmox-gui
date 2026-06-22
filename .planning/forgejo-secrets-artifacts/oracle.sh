@@ -20,9 +20,11 @@ WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
 POLICY_DIR="$WORK/policy"; mkdir -p "$POLICY_DIR/test"
 LIBDIR="$WORK/lib"; mkdir -p "$LIBDIR"; cp "$VALIDATOR" "$LIBDIR/sops-envelope-validate.py"
 
-# admin out-of-band Policy fuer Repo "test/secrets": ein erlaubter + ein Recovery-Recipient
-RCPT='age1validrecipientxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx0'
-RECOV='age1recoveryxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx1'
+# admin out-of-band Policy fuer Repo "test/secrets": ein erlaubter + ein Recovery-Recipient.
+# Recipients real-FORMATIERT (age1 + 58 [0-9a-z]) wegen echter age-Regex im Validator (P0-5).
+RCPT="age1$(printf 'r%.0s' $(seq 1 58))"
+RECOV="age1$(printf 's%.0s' $(seq 1 58))"
+ATTACKER="age1$(printf 't%.0s' $(seq 1 58))"   # valides Format, NICHT in Policy -> Containment-Reject
 # DOKUMENTIERTES Format: Recovery-Recipient steht NUR auf der @recovery-Zeile (eine Zeile
 # gewaehrt UND markiert). Frueher zusaetzlich redundant plain gelistet -> pappte BUG-1 zu
 # (Validator-Containment-False-Reject). Jetzt testet der Harness das echte Format. (LIVE-ORACLE-FINDINGS.md)
@@ -36,6 +38,7 @@ cat > "$BARE/hooks/pre-receive" <<EOF
 export FORGEJO_SECRETS_POLICY_DIR="$POLICY_DIR"
 export FORGEJO_SECRETS_SCAN_DIR="$LIBDIR"
 export FORGEJO_SECRETS_REPO_KEY="test/secrets"
+export FORGEJO_SECRETS_TEST_MODE=1
 exec "$HOOK"
 EOF
 chmod +x "$BARE/hooks/pre-receive"
@@ -68,7 +71,7 @@ s_plaintext()   { echo "TOPSECRET=hunter2"   > "$1/secret.json"; git -C "$1" add
 s_partial()     { printf '{"data":"ENC[AES256_GCM,data:a]","leak":"PLAINTEXTHERE","sops":{"mac":"x","lastmodified":"2026","age":[{"recipient":"%s","enc":"x"},{"recipient":"%s","enc":"x"}]}}' "$RCPT" "$RECOV" > "$1/secret.json"; git -C "$1" add -A; git -C "$1" commit -qm x; }
 s_pgp()         { printf '{"data":"ENC[AES256_GCM,data:a]","sops":{"mac":"x","lastmodified":"2026","pgp":[{"fp":"AA"}],"age":[{"recipient":"%s","enc":"x"},{"recipient":"%s","enc":"x"}]}}' "$RCPT" "$RECOV" > "$1/secret.json"; git -C "$1" add -A; git -C "$1" commit -qm x; }
 s_keygroups()   { printf '{"data":"ENC[AES256_GCM,data:a]","sops":{"mac":"x","lastmodified":"2026","key_groups":[{"age":[]}],"age":[{"recipient":"%s","enc":"x"},{"recipient":"%s","enc":"x"}]}}' "$RCPT" "$RECOV" > "$1/secret.json"; git -C "$1" add -A; git -C "$1" commit -qm x; }
-s_attacker()    { printf '{"data":"ENC[AES256_GCM,data:a]","sops":{"mac":"x","lastmodified":"2026","age":[{"recipient":"age1ATTACKERxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx9","enc":"x"}]}}' > "$1/secret.json"; git -C "$1" add -A; git -C "$1" commit -qm x; }
+s_attacker()    { printf '{"data":"ENC[AES256_GCM,data:a]","sops":{"mac":"x","lastmodified":"2026","age":[{"recipient":"%s","enc":"x"},{"recipient":"%s","enc":"x"}]}}' "$ATTACKER" "$RECOV" > "$1/secret.json"; git -C "$1" add -A; git -C "$1" commit -qm x; }
 s_norecovery()  { printf '{"data":"ENC[AES256_GCM,data:a]","sops":{"mac":"x","lastmodified":"2026","age":[{"recipient":"%s","enc":"x"}]}}' "$RCPT" > "$1/secret.json"; git -C "$1" add -A; git -C "$1" commit -qm x; }
 s_privkey()     { echo "$(good_sops aaa)" > "$1/secret.json"; echo "AGE-SECRET-KEY-1QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ" > "$1/leak.json"; git -C "$1" add -A; git -C "$1" commit -qm x; }
 s_secretname()  { echo "$(good_sops aaa)" > "$1/AKIAIOSFODNN7EXAMPLE.json"; git -C "$1" add -A; git -C "$1" commit -qm x; }
@@ -93,19 +96,19 @@ run "Tier-A README-only (Metadaten, ACCEPT)" ACCEPT s_emptyok
 # ---- Ref-Op + push-options (Direct-Invoke gegen den Hook) ------------------
 # (q) push-option vorhanden -> REJECT
 echo "0000000000000000000000000000000000000000 1111111111111111111111111111111111111111 refs/heads/main" \
-  | env GIT_PUSH_OPTION_COUNT=1 FORGEJO_SECRETS_POLICY_DIR="$POLICY_DIR" FORGEJO_SECRETS_SCAN_DIR="$LIBDIR" FORGEJO_SECRETS_REPO_KEY=test/secrets \
+  | env GIT_PUSH_OPTION_COUNT=1 FORGEJO_SECRETS_POLICY_DIR="$POLICY_DIR" FORGEJO_SECRETS_SCAN_DIR="$LIBDIR" FORGEJO_SECRETS_REPO_KEY=test/secrets FORGEJO_SECRETS_TEST_MODE=1 \
     bash "$HOOK" >/dev/null 2>&1 && r=ACCEPT || r=REJECT
 [ "$r" = REJECT ] && { pass=$((pass+1)); RESULTS+=("PASS  [REJECT] (q) push-option gesetzt"); } || { fail=$((fail+1)); RESULTS+=("FAIL  [got=$r want=REJECT] (q) push-option gesetzt"); }
 
 # (7c) reine Ref-Op ohne Quarantine (Ref-Delete) -> ACCEPT (kein GIT_QUARANTINE_PATH)
 echo "1111111111111111111111111111111111111111 0000000000000000000000000000000000000000 refs/heads/old" \
-  | env -u GIT_QUARANTINE_PATH GIT_PUSH_OPTION_COUNT=0 FORGEJO_SECRETS_POLICY_DIR="$POLICY_DIR" FORGEJO_SECRETS_SCAN_DIR="$LIBDIR" FORGEJO_SECRETS_REPO_KEY=test/secrets \
+  | env -u GIT_QUARANTINE_PATH GIT_PUSH_OPTION_COUNT=0 FORGEJO_SECRETS_POLICY_DIR="$POLICY_DIR" FORGEJO_SECRETS_SCAN_DIR="$LIBDIR" FORGEJO_SECRETS_REPO_KEY=test/secrets FORGEJO_SECRETS_TEST_MODE=1 \
     bash "$HOOK" >/dev/null 2>&1 && r=ACCEPT || r=REJECT
 [ "$r" = ACCEPT ] && { pass=$((pass+1)); RESULTS+=("PASS  [ACCEPT] (7c) legit Null-Objekt Ref-Delete"); } || { fail=$((fail+1)); RESULTS+=("FAIL  [got=$r want=ACCEPT] (7c) legit Ref-Delete"); }
 
 # (7c') Secret-Refname trotz Ref-Op -> REJECT
 echo "0000000000000000000000000000000000000000 1111111111111111111111111111111111111111 refs/heads/ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" \
-  | env -u GIT_QUARANTINE_PATH GIT_PUSH_OPTION_COUNT=0 FORGEJO_SECRETS_POLICY_DIR="$POLICY_DIR" FORGEJO_SECRETS_SCAN_DIR="$LIBDIR" FORGEJO_SECRETS_REPO_KEY=test/secrets \
+  | env -u GIT_QUARANTINE_PATH GIT_PUSH_OPTION_COUNT=0 FORGEJO_SECRETS_POLICY_DIR="$POLICY_DIR" FORGEJO_SECRETS_SCAN_DIR="$LIBDIR" FORGEJO_SECRETS_REPO_KEY=test/secrets FORGEJO_SECRETS_TEST_MODE=1 \
     bash "$HOOK" >/dev/null 2>&1 && r=ACCEPT || r=REJECT
 [ "$r" = REJECT ] && { pass=$((pass+1)); RESULTS+=("PASS  [REJECT] (7c') Secret im Refname trotz Ref-Op"); } || { fail=$((fail+1)); RESULTS+=("FAIL  [got=$r want=REJECT] (7c') Secret-Refname"); }
 
@@ -114,7 +117,7 @@ Qd="$WORK/qbroken"; mkdir -p "$Qd/ab"; : > "$Qd/ab/cdef0000000000000000000000000
 # kuenstlich: setze QUARANTINE auf einen Pfad mit pack/ ohne .idx
 mkdir -p "$Qd/pack"; : > "$Qd/pack/pack-deadbeef.pack"   # .pack ohne .idx -> Enumeration kaputt
 echo "0000000000000000000000000000000000000000 1111111111111111111111111111111111111111 refs/heads/main" \
-  | env GIT_QUARANTINE_PATH="$Qd" GIT_PUSH_OPTION_COUNT=0 FORGEJO_SECRETS_POLICY_DIR="$POLICY_DIR" FORGEJO_SECRETS_SCAN_DIR="$LIBDIR" FORGEJO_SECRETS_REPO_KEY=test/secrets \
+  | env GIT_QUARANTINE_PATH="$Qd" GIT_PUSH_OPTION_COUNT=0 FORGEJO_SECRETS_POLICY_DIR="$POLICY_DIR" FORGEJO_SECRETS_SCAN_DIR="$LIBDIR" FORGEJO_SECRETS_REPO_KEY=test/secrets FORGEJO_SECRETS_TEST_MODE=1 \
     bash "$HOOK" >/dev/null 2>&1 && r=ACCEPT || r=REJECT
 [ "$r" = REJECT ] && { pass=$((pass+1)); RESULTS+=("PASS  [REJECT] (7d) broken-enum .pack ohne .idx"); } || { fail=$((fail+1)); RESULTS+=("FAIL  [got=$r want=REJECT] (7d) broken-enum"); }
 
@@ -122,8 +125,8 @@ echo "0000000000000000000000000000000000000000 111111111111111111111111111111111
 # (B3 self-auth) gepushte .sops.yaml behauptet Attacker-Recipient erlaubt -> admin-Policy
 # ist die Autoritaet (Validator liest $ALLOW_FILE, NICHT die gepushte .sops.yaml) -> REJECT
 s_selfauth() {
-  printf '%s\n' 'creation_rules:' '  - age: age1ATTACKERxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx9' > "$1/.sops.yaml"
-  printf '{"data":"ENC[AES256_GCM,data:a]","sops":{"mac":"x","lastmodified":"2026","age":[{"recipient":"age1ATTACKERxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx9","enc":"x"}]}}' > "$1/secret.json"
+  printf '%s\n' 'creation_rules:' "  - age: $ATTACKER" > "$1/.sops.yaml"
+  printf '{"data":"ENC[AES256_GCM,data:a]","sops":{"mac":"x","lastmodified":"2026","age":[{"recipient":"%s","enc":"x"},{"recipient":"%s","enc":"x"}]}}' "$ATTACKER" "$RECOV" > "$1/secret.json"
   git -C "$1" add -A; git -C "$1" commit -qm x
 }
 run "(B3) self-authored .sops.yaml mit Attacker-Recipient" REJECT s_selfauth
@@ -137,14 +140,14 @@ W="$(mktemp -d)"; ( set -e; cd "$W"; git init -q -b main; git config user.email 
 
 # (e) refs/notes/* -> REJECT (default-deny ref-Namespace, Klartext-Kanal)
 echo "0000000000000000000000000000000000000000 1111111111111111111111111111111111111111 refs/notes/commits" \
-  | env -u GIT_QUARANTINE_PATH GIT_PUSH_OPTION_COUNT=0 FORGEJO_SECRETS_POLICY_DIR="$POLICY_DIR" FORGEJO_SECRETS_SCAN_DIR="$LIBDIR" FORGEJO_SECRETS_REPO_KEY=test/secrets \
+  | env -u GIT_QUARANTINE_PATH GIT_PUSH_OPTION_COUNT=0 FORGEJO_SECRETS_POLICY_DIR="$POLICY_DIR" FORGEJO_SECRETS_SCAN_DIR="$LIBDIR" FORGEJO_SECRETS_REPO_KEY=test/secrets FORGEJO_SECRETS_TEST_MODE=1 \
     bash "$HOOK" >/dev/null 2>&1 && r=ACCEPT || r=REJECT
 [ "$r" = REJECT ] && { pass=$((pass+1)); RESULTS+=("PASS  [REJECT] (e) refs/notes/* default-deny"); } || { fail=$((fail+1)); RESULTS+=("FAIL  [got=$r want=REJECT] (e) refs/notes"); }
 
 # (10) fail-closed-on-tool-error: Validator fehlt (leerer SCAN_DIR) -> REJECT, NICHT skip
 EMPTY="$(mktemp -d)"
 echo "0000000000000000000000000000000000000000 1111111111111111111111111111111111111111 refs/heads/main" \
-  | env -u GIT_QUARANTINE_PATH GIT_PUSH_OPTION_COUNT=0 FORGEJO_SECRETS_POLICY_DIR="$POLICY_DIR" FORGEJO_SECRETS_SCAN_DIR="$EMPTY" FORGEJO_SECRETS_REPO_KEY=test/secrets \
+  | env -u GIT_QUARANTINE_PATH GIT_PUSH_OPTION_COUNT=0 FORGEJO_SECRETS_POLICY_DIR="$POLICY_DIR" FORGEJO_SECRETS_SCAN_DIR="$EMPTY" FORGEJO_SECRETS_REPO_KEY=test/secrets FORGEJO_SECRETS_TEST_MODE=1 \
     bash "$HOOK" >/dev/null 2>&1 && r=ACCEPT || r=REJECT
 [ "$r" = REJECT ] && { pass=$((pass+1)); RESULTS+=("PASS  [REJECT] (10) Validator fehlt = fail-closed"); } || { fail=$((fail+1)); RESULTS+=("FAIL  [got=$r want=REJECT] (10) tool-error fail-closed"); }
 
@@ -156,16 +159,33 @@ BAD="$(printf 'plaintext-leak AKIAIOSFODNN7EXAMPLE' | git -C "$SC" hash-object -
 QP="$(mktemp -d)"; mkdir -p "$QP/pack"
 ( cd "$SC" && { git rev-list --objects "$COMMIT" | awk '{print $1}'; echo "$BAD"; } | git pack-objects "$QP/pack/pack" ) >/dev/null 2>&1
 ( cd "$SC" && echo "0000000000000000000000000000000000000000 $COMMIT refs/heads/main" \
-  | env GIT_QUARANTINE_PATH="$QP" GIT_OBJECT_DIRECTORY="$QP" GIT_PUSH_OPTION_COUNT=0 FORGEJO_SECRETS_POLICY_DIR="$POLICY_DIR" FORGEJO_SECRETS_SCAN_DIR="$LIBDIR" FORGEJO_SECRETS_REPO_KEY=test/secrets \
+  | env GIT_QUARANTINE_PATH="$QP" GIT_OBJECT_DIRECTORY="$QP" GIT_PUSH_OPTION_COUNT=0 FORGEJO_SECRETS_POLICY_DIR="$POLICY_DIR" FORGEJO_SECRETS_SCAN_DIR="$LIBDIR" FORGEJO_SECRETS_REPO_KEY=test/secrets FORGEJO_SECRETS_TEST_MODE=1 \
     bash "$HOOK" ) >/dev/null 2>&1 && r=ACCEPT || r=REJECT
 [ "$r" = REJECT ] && { pass=$((pass+1)); RESULTS+=("PASS  [REJECT] (7b) UNREACHABLE-bad-blob im Pack (Vollbeweis)"); } || { fail=$((fail+1)); RESULTS+=("FAIL  [got=$r want=REJECT] (7b) unreachable-bad-blob"); }
 
 # (7d-loose) loose-Objekt present aber unlesbar/garbage -> REJECT (raw_presence=true, cat-file failt)
 Ql="$(mktemp -d)"; mkdir -p "$Ql/ab"; printf 'garbage-no-git-object' > "$Ql/ab/cccccccccccccccccccccccccccccccccccccc"
 echo "0000000000000000000000000000000000000000 abcccccccccccccccccccccccccccccccccccccc refs/heads/main" \
-  | env GIT_QUARANTINE_PATH="$Ql" GIT_OBJECT_DIRECTORY="$Ql" GIT_PUSH_OPTION_COUNT=0 FORGEJO_SECRETS_POLICY_DIR="$POLICY_DIR" FORGEJO_SECRETS_SCAN_DIR="$LIBDIR" FORGEJO_SECRETS_REPO_KEY=test/secrets \
+  | env GIT_QUARANTINE_PATH="$Ql" GIT_OBJECT_DIRECTORY="$Ql" GIT_PUSH_OPTION_COUNT=0 FORGEJO_SECRETS_POLICY_DIR="$POLICY_DIR" FORGEJO_SECRETS_SCAN_DIR="$LIBDIR" FORGEJO_SECRETS_REPO_KEY=test/secrets FORGEJO_SECRETS_TEST_MODE=1 \
     bash "$HOOK" >/dev/null 2>&1 && r=ACCEPT || r=REJECT
 [ "$r" = REJECT ] && { pass=$((pass+1)); RESULTS+=("PASS  [REJECT] (7d-loose) loose-Objekt unlesbar"); } || { fail=$((fail+1)); RESULTS+=("FAIL  [got=$r want=REJECT] (7d-loose) loose unlesbar"); }
+
+# ---- P0-Fold Direct-Validator-Tests (Schnueffi-Refute 544bba3) -------------
+vdt() { # $1 label  $2 expect  $3 allowfile-content  $4 envelope-json
+  tn=$((tn+1)); printf '%s' "$3" > "$WORK/vdt.allow"
+  if printf '%s' "$4" | python3 "$VALIDATOR" "$WORK/vdt.allow" >/dev/null 2>&1; then g=ACCEPT; else g=REJECT; fi
+  if [ "$g" = "$2" ]; then pass=$((pass+1)); RESULTS+=("PASS  [$g] $1"); else fail=$((fail+1)); RESULTS+=("FAIL  [got=$g want=$2] $1"); fi
+}
+ENVRR="$(good_sops aaa)"  # Envelope an RCPT+RECOV
+ENVR="$(printf '{"data":"ENC[AES256_GCM,data:a]","sops":{"mac":"x","lastmodified":"2026","age":[{"recipient":"%s","enc":"x"}]}}' "$RCPT")"  # nur RCPT
+POL_OK="$(printf '%s\n@recovery %s\n' "$RCPT" "$RECOV")"
+POL_INDENT="$(printf '%s\n   @recovery %s\n' "$RCPT" "$RECOV")"   # eingerueckte @recovery-Zeile
+vdt "(P0-1) Policy OHNE @recovery -> REJECT"                       REJECT "$RCPT" "$ENVRR"
+vdt "(P0-1) einger. @recovery + Env MIT R -> ACCEPT"              ACCEPT "$POL_INDENT" "$ENVRR"
+vdt "(P0-1 fail-open-Guard) einger. @recovery + Env OHNE R -> REJECT" REJECT "$POL_INDENT" "$ENVR"
+vdt "(P0-5) malformed-age in Policy -> REJECT"                    REJECT "$(printf 'age1tooshort\n@recovery %s\n' "$RECOV")" "$ENVRR"
+vdt "(P0-5) malformed-age in Envelope -> REJECT"                  REJECT "$POL_OK" "$(printf '{"data":"ENC[AES256_GCM,data:a]","sops":{"mac":"x","lastmodified":"2026","age":[{"recipient":"age1BAD","enc":"x"},{"recipient":"%s","enc":"x"}]}}' "$RECOV")"
+vdt "(P1-7) Tier-A unencrypted_suffix present -> REJECT"          REJECT "$POL_OK" "$(printf '{"data":"ENC[AES256_GCM,data:a]","sops":{"mac":"x","lastmodified":"2026","unencrypted_suffix":"_pub","age":[{"recipient":"%s","enc":"x"},{"recipient":"%s","enc":"x"}]}}' "$RCPT" "$RECOV")"
 
 # ---- Report ----------------------------------------------------------------
 echo "=== §7-Oracle (lokal, echte git-push-Quarantine + Direct-Invoke) ==="

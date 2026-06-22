@@ -50,19 +50,44 @@ command -v python3 >/dev/null || reject "python3 fehlt (strikter SOPS-Parser)"
 [ -d "$POLICY_DIR" ]          || reject "admin-Policy-Dir fehlt: $POLICY_DIR"
 
 # Repo-Identitaet fuer die out-of-band-Policy (NICHT vom Pusher beeinflussbar).
-# PATH-PRIMAER: der physische bare-Repo-Pfad (.../<owner>/<repo>.git), den Forgejo als
-# cwd/GIT_DIR server-seitig setzt, ist die Quelle der Wahrheit — env-naming-ROBUST.
-# (Forgejo 15 setzt GITEA_REPO_USER_NAME, NICHT GITEA_REPO_OWNER_NAME; eine env-var-Name-
-#  Annahme hat die Policy-Aufloesung gebrochen — Pfad vermeidet diese Brittleness ganz.)
-# Live gemessen am Canary (LXC 160): GIT_QUARANTINE_PATH + cwd == bare-Repo-Pfad. (LIVE-ORACLE-FINDINGS.md)
-_repo_dir="$(git rev-parse --absolute-git-dir 2>/dev/null || echo "${PWD:-}")"
-[ -n "$_repo_dir" ] || reject "Repo-Pfad nicht aufloesbar (fail-closed)"
-_path_owner="$(basename "$(dirname "$_repo_dir")")"
-_path_repo="$(basename "$_repo_dir" .git)"
-REPO_KEY="${FORGEJO_SECRETS_REPO_KEY:-${_path_owner}/${_path_repo}}"
-case "$REPO_KEY" in ''|/|*/'') reject "Repo-Key nicht aufloesbar: '${REPO_KEY}' (fail-closed)" ;; esac
+# PATH-PRIMAER (env-naming-ROBUST): der physische bare-Repo-Pfad (.../<owner>/<repo>.git),
+# den Forgejo als cwd/GIT_DIR server-seitig setzt, ist die Quelle der Wahrheit.
+# (Forgejo 15 setzt GITEA_REPO_USER_NAME, NICHT GITEA_REPO_OWNER_NAME — Pfad vermeidet die
+#  env-var-Name-Brittleness ganz; live am Canary LXC 160 verifiziert, LIVE-ORACLE-FINDINGS.md.)
+# env-Override NUR im expliziten Test-Modus (P0-3, Schnueffi-Refute 544bba3) — sonst Policy-Confusion.
+if [ "${FORGEJO_SECRETS_TEST_MODE:-0}" = "1" ] && [ -n "${FORGEJO_SECRETS_REPO_KEY:-}" ]; then
+  REPO_KEY="$FORGEJO_SECRETS_REPO_KEY"
+else
+  _repo_dir="$(git rev-parse --absolute-git-dir 2>/dev/null || echo "${PWD:-}")"
+  [ -n "$_repo_dir" ] || reject "Repo-Pfad nicht aufloesbar (fail-closed)"
+  REPO_KEY="$(basename "$(dirname "$_repo_dir")")/$(basename "$_repo_dir" .git)"
+fi
+# REPO_KEY traversal-sicher: EXAKT 2 Segmente, Segment != '.'/'..' , safe-charset (P0-2 — '.'-im-
+# Regex-Charset-Loch geschlossen: '..' als ganzes Segment explizit verboten, nicht per Charset).
+IFS='/' read -r _k_owner _k_repo _k_extra <<EOF
+$REPO_KEY
+EOF
+{ [ -n "$_k_owner" ] && [ -n "$_k_repo" ] && [ -z "${_k_extra:-}" ]; } || reject "REPO_KEY nicht exakt owner/repo (fail-closed)"
+for _seg in "$_k_owner" "$_k_repo"; do
+  case "$_seg" in .|..) reject "REPO_KEY-Segment '.'/'..' (Traversal, fail-closed)" ;; esac
+  printf '%s' "$_seg" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]*$' || reject "REPO_KEY-Segment unsicheres Zeichen (fail-closed)"
+done
+REPO_KEY="$_k_owner/$_k_repo"
 ALLOW_FILE="$POLICY_DIR/${REPO_KEY}.allow"
-[ -r "$ALLOW_FILE" ] || reject "admin-Recipient-Policy fehlt fuer Repo (out-of-band): ${REPO_KEY}"
+
+# Policy-INTEGRITAET (P1-6): kein Symlink, root-owned, NICHT group/other-writable — sonst koennte
+# der git-User (Hook-Kontext) die Recipient-Liste selbst setzen = Self-Authorization-Bypass (haebelt R1/B3 aus).
+# if-Form (NICHT '[ ] && reject' — das feuert unter set -e+ERR-Trap im Gut-Fall einen False-Reject, s. Z.41).
+if [ -L "$ALLOW_FILE" ]; then reject "Policy ist Symlink (verboten, fail-closed)"; fi
+[ -f "$ALLOW_FILE" ] || reject "admin-Recipient-Policy fehlt fuer Repo (out-of-band): ${REPO_KEY}"
+[ -r "$ALLOW_FILE" ] || reject "admin-Recipient-Policy nicht lesbar: ${REPO_KEY}"
+# root-owned nur im PROD-Pfad erzwingen (im Test-Modus kann der non-root-Harness nicht chown'en;
+# die root-owned-Eigenschaft wird live als root authoritativ getestet). Writability/Symlink bleiben IMMER.
+if [ "${FORGEJO_SECRETS_TEST_MODE:-0}" != "1" ]; then
+  [ "$(stat -c '%u' "$ALLOW_FILE" 2>/dev/null)" = "0" ] || reject "Policy nicht root-owned (fail-closed)"
+fi
+if [ -n "$(find "$ALLOW_FILE" -maxdepth 0 -perm /022 2>/dev/null)" ]; then reject "Policy group/other-writable (Self-Auth-Bypass, fail-closed)"; fi
+if [ -n "$(find "$POLICY_DIR" -maxdepth 0 -perm /022 2>/dev/null)" ]; then reject "Policy-Dir group/other-writable (fail-closed)"; fi
 
 # --- 1. IMMER: push-options sperren (R4/HIGH-2, Log-Leak) --------------------
 if [ "${GIT_PUSH_OPTION_COUNT:-0}" != "0" ]; then

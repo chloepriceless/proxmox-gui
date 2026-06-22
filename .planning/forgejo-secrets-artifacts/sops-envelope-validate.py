@@ -15,6 +15,7 @@
 
 import sys
 import json
+import re
 
 ENC_PREFIX = "ENC[AES256_GCM,"
 KNOWN_SOPS_FIELDS = {  # erlaubte Top-Level-Felder der sops-Stanza (rekursive Whitelist, R5/HIGH-1)
@@ -23,6 +24,10 @@ KNOWN_SOPS_FIELDS = {  # erlaubte Top-Level-Felder der sops-Stanza (rekursive Wh
 }
 FORBIDDEN_BACKENDS = ("pgp", "kms", "gcp_kms", "azure_kv", "hc_vault")  # R2/B2 + R4/B3
 KNOWN_AGE_FIELDS = {"recipient", "enc"}  # R5/HIGH-1: sops.age[]-Eintrag exakt {recipient, enc}
+AGE_RE = re.compile(r"^age1[0-9a-z]{58}$")  # echte native-X25519-age-Recipient-Validierung (P0-5), nicht startswith
+# Tier-A = default-encrypt-ALL: KEINE partial-encryption-Felder (P1-7) — present mit truthy Wert => REJECT
+TIER_A_NO_PARTIAL = ("unencrypted_suffix", "encrypted_suffix", "unencrypted_regex",
+                     "encrypted_regex", "mac_only_encrypted")
 
 
 def reject(msg: str):
@@ -112,25 +117,38 @@ def main():
     if len(sys.argv) != 2:
         reject("usage: sops-envelope-validate.py <allow_recipients_file>")
     allow_path = sys.argv[1]
+    # SINGLE-PASS Policy-Parser (P0-1+P0-4, Schnueffi-Refute 544bba3): allowed UND recovery aus
+    # EINEM Read, konsistent gestrippt + age-validiert. KEIN 2. Read (TOCTOU), KEIN skip-on-empty
+    # (das war das fail-OPEN: leeres recovery-Set uebersprang die Break-Glass-Pflicht).
     try:
         with open(allow_path, "r", encoding="utf-8") as f:
-            allowed = set()
-            for ln in f:
-                ln = ln.strip()
-                if not ln or ln.startswith("#"):
-                    continue
-                # "@recovery age1..." gewaehrt UND markiert den Recovery-Recipient in EINER
-                # Zeile (dokumentiertes Format, Spec §Z.65). Prefix strippen, sonst faellt der
-                # nackte age1... aus dem Containment (Z.169) -> fail-closed-False-Reject jedes
-                # legitimen Pushes (Recovery ist Pflicht je Datei). Siehe LIVE-ORACLE-FINDINGS.md BUG-1.
-                if ln.startswith("@recovery "):
-                    ln = ln.split(None, 1)[1].strip()
-                if ln:
-                    allowed.add(ln)
+            policy_lines = f.read().splitlines()
     except Exception:
         reject("admin-Recipient-Policy nicht lesbar (fail-closed)")
+    allowed = set()
+    recovery = set()
+    for raw_ln in policy_lines:
+        ln = raw_ln.strip()
+        if not ln or ln.startswith("#"):
+            continue
+        is_recovery = False
+        if ln.startswith("@recovery"):  # nach strip(): kein Indent-Bypass mehr (war BUG-1-Folgefehler)
+            parts = ln.split(None, 1)
+            if len(parts) != 2:
+                reject("@recovery-Zeile ohne Recipient (fail-closed)")
+            ln = parts[1].strip()
+            is_recovery = True
+        if not AGE_RE.match(ln):
+            reject("Policy-Recipient kein valider age1-Recipient (fail-closed)")
+        allowed.add(ln)
+        if is_recovery:
+            recovery.add(ln)
     if not allowed:
         reject("admin-Recipient-Policy leer (fail-closed)")
+    if not recovery:
+        # Break-Glass-Recovery ist PFLICHT je Datei (§1.6/M1) -> Policy OHNE @recovery = REJECT,
+        # NICHT still ueberspringen (P0-1 fail-OPEN).
+        reject("admin-Policy ohne @recovery-Recipient (Break-Glass Pflicht, fail-closed)")
 
     raw = sys.stdin.buffer.read()
     doc = StrictLoader.load(raw)
@@ -155,6 +173,11 @@ def main():
     st = sops.get("shamir_threshold")
     if st not in (None, 0):
         reject("shamir_threshold muss absent/0 sein")
+    # Tier-A: keine partial-encryption-Ausnahmefelder (P1-7) — present mit truthy Wert => REJECT
+    for fld in TIER_A_NO_PARTIAL:
+        v = sops.get(fld)
+        if v not in (None, "", False):
+            reject("Tier-A verbietet partial-encryption-Feld: " + fld)
 
     # 2) Pflichtfelder Envelope-Struktur
     for req in ("mac", "lastmodified"):
@@ -173,18 +196,17 @@ def main():
             if k not in KNOWN_AGE_FIELDS:
                 reject("unbekanntes Feld in sops.age[]: " + str(k))  # R5/HIGH-1 nested
         rcpt = entry.get("recipient")
-        if not isinstance(rcpt, str) or not rcpt.startswith("age1"):
-            reject("age-Recipient kein age1...-String")
+        if not isinstance(rcpt, str) or not AGE_RE.match(rcpt):
+            reject("age-Recipient kein valider age1-Recipient (fail-closed)")
         recips.add(rcpt)
 
     # 4) Recipient-Containment gegen admin out-of-band Policy (R1/B3)
     if not recips.issubset(allowed):
         reject("Recipient nicht in admin-Policy (Containment verletzt)")
-    # Recovery-Recipient MUSS enthalten sein: die Policy markiert ihn mit fuehrendem '@recovery '
-    recovery = {ln.split(None, 1)[1] for ln in open(allow_path, encoding="utf-8")
-               .read().splitlines() if ln.startswith("@recovery ")}
-    if recovery and not (recovery & recips):
-        reject("per-Tenant-Recovery-Recipient fehlt (Break-Glass)")
+    # Recovery-Recipient MUSS im Envelope enthalten sein (recovery aus Single-Pass-Parser oben,
+    # garantiert nicht-leer -> kein skip-on-empty fail-OPEN mehr, P0-1).
+    if not (recovery & recips):
+        reject("per-Tenant-Recovery-Recipient fehlt im Envelope (Break-Glass, fail-closed)")
 
     # 5) Vollverschluesselung (R1/B2): JEDER nicht-sops, nicht-allowlisted Leaf MUSS ENC[...] sein.
     #    Tier-A binary: data: "ENC[...]". Strukturierte Envelopes: jeder Daten-Leaf ENC[...].

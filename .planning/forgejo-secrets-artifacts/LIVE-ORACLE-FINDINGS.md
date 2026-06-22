@@ -125,3 +125,27 @@ Forgejo nach Änderung sauber neugestartet (`is-active=active`, API antwortet). 
 - REPO_KEY-Pfadableitung (BUG-2-Fix) löst korrekt auf `dvhub/<repo>` ✓
 - YAML-Tier (pyyaml) funktioniert live ✓ · push-options werden von Forgejo advertised UND vom Hook geblockt ✓
 - kein Secret-Echo in Rejects (R2/HIGH-6) ✓
+
+## Schnüffi R22/R31-Cross-Refute der Fix-Diffs → NOT-ARM-READY → GEFOLDET (2026-06-22, reviews/2026-06-22-forgejo-gate-armfix-r22-cross-refute.md @ 544bba3)
+Schnüffi + GPT-codex konvergent: meine 3 Bug-Fixes hatten eine **fail-OPEN-Klasse**. Alle 5 P0 + 2 P1 gefoldet:
+- **P0-1 (kritisch):** Recovery-Presence fiel fail-OPEN — Validator las die Policy 2× (TOCTOU), der 2. Read ohne
+  strip() → eingerückte/inkonsistente `@recovery`-Zeile → recovery-Set leer → `if recovery and` übersprang die
+  Pflicht → Datei OHNE Recovery-Recipient (Break-Glass §1.6/M1) wäre gelandet = gebricktes Secret.
+  **Fix:** SINGLE-PASS-Parser (allowed+recovery aus 1 Read, konsistent strip), `if not recovery: reject` statt skip.
+- **P0-2:** REPO_KEY nicht traversal-sicher → final-validiert: exakt 2 Segmente, Segment ∉ {`.`,`..`}, safe-charset
+  (das `.`-im-Regex-Charset-Loch via Whole-Segment-Verbot geschlossen).
+- **P0-3:** `FORGEJO_SECRETS_REPO_KEY`-Override nur noch bei `FORGEJO_SECRETS_TEST_MODE=1` (Prod = path-only).
+- **P0-4:** TOCTOU (2× Policy-Read) → Single-Pass schließt es.
+- **P0-5:** echte age-Regex `^age1[0-9a-z]{58}$` für Policy- UND sops.age[]-Recipients (statt `startswith`).
+- **P1-6:** Policy-Integrität erzwungen: kein Symlink, root-owned (prod), NICHT group/other-writable (`find -perm /022`),
+  POLICY_DIR dito — schließt git-writable-Policy = Self-Auth-Bypass (B3).
+- **P1-7:** Tier-A verbietet partial-encryption-Felder (unencrypted_suffix/regex, encrypted_suffix/regex, mac_only_encrypted) present.
+- **Selbst-Catch beim Bau:** `[ ] && reject` hätte unter set-e+ERR-Trap im Gut-Fall False-Reject gefeuert → auf if-Form umgestellt.
+
+### Re-Verify GEMESSEN (nach Fold)
+- **Lokal `oracle.sh` 28/28** (22 alt + 6 neue P0-Fold inkl. fail-open-Guard: eingerückte @recovery + Envelope OHNE Recovery → REJECT).
+- **Live-Oracle v2 16/16** (Forgejo echter Push-Pfad + Root-only-Integrität):
+  Part A (10): SOPS-JSON/YAML/README ACCEPT; plaintext/missing-recovery/privkey/foreign-recipient/push-option/**Tier-A-unencrypted_suffix**/**malformed-age** REJECT (Gründe asserted).
+  Part B (6): `../evil`→REJECT (`..`-Segment), deep-traversal→REJECT, **non-root-owned Policy**→REJECT, **group-writable Policy**→REJECT, **Symlink-Policy**→REJECT, Restore→ACCEPT.
+  Kein Secret-Echo. md5 deployed==repo (hook 53e1955c.., val f8dc6d29..). Canary gelöscht, planning unberührt.
+- **Status:** wartet auf Schnüffis RE-Review der gefoldeten Diffs + gemessenen Zahlen → DANN Scharf-Schalt-Freigabe. §8-Landing weiter operator-gated.
