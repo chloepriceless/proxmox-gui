@@ -112,7 +112,34 @@ Mit Datei-Zugriff. Bash-Korrektheit BESTÄTIGT (nameref ok, kein exit-Masking, A
   --includes --show-origin` + Origin-Integritäts-Prüfung. **HIGH** unsichere git-erreichbare Global-Config
   ohne aktiven Wert (Race-Enabler) → config_fail.
 
-## Akzeptanz-Oracle — GEMESSEN 31/31 GRÜN (R31, lokal TEST_MODE)
+## Codex-Fold R3+R4 (gpt-5-codex, 2026-06-22 ~09:50/10:20Z) — git-config-Bypass-Fläche
+Architektur (Immutabilitäts-VERIFY) in beiden Runden erneut BESTÄTIGT korrekt; keine neuen
+gefährlichen config-keys außer der core.hooksPath/procReceiveRefs-Klasse. Gefoldet:
+- **R3:** include-Origin-Neutralisierung (`neutralize_keys_in_chain` unsetzt in ALLEN Origin-Dateien
+  der `--includes`-Kette); **effektiver Verify als git-User im GITDIR-Kontext** (`runuser -u git env
+  GIT_DIR=.. git config --includes` = exakt was receive-pack auflöst → fängt repo-local+global+include+
+  includeIf.gitdir in EINEM autoritativen Check); Global-Config-Creation-Race (`global-missing-creatable`
+  + ~git-Surfaces immutabel verlangen); exit-4-Priorität auch im Global-Bypass-Pfad.
+- **R4:** **leerer `core.hooksPath=""`** deaktiviert Hooks, `--get-all` liefert aber Leerstring →
+  Präsenz jetzt per **EXIT-Status** (nicht non-empty Wert); **durable Lockdown** (writable repo-config
+  nach Lockdown re-redirectbar → `authoritative_lockdown` chattr +i't Redirect-Surface in prod + verify
+  verlangt config sicher, sonst LOCKDOWN-FAILED/exit4).
+- **Verbleibende R4-Punkte (Schnüffi/Canary/Deploy):** include-target-creation-race (declared-aber-fehlende
+  git-writable include-Datei) + includeIf-Neutralisierung im Repo-Kontext sind im aktuellen Code
+  **LAUT-fehlschlagend (LOCKDOWN-FAILED, KEIN stiller Bypass)** und werden durch die comprehensive
+  Deploy-Immutabilität (s.u.) geschlossen — nicht durch mehr Watcher-Code.
+
+## Vollständige config-Bypass-Attack-Surface (Cross-Lab-Map, 4 Codex-Runden)
+Ein git-User (kein root, Forgejo-Push-/Shell-Kontext) kann den 50-secrets-Hook umgehen über:
+core.hooksPath (repo-local · git-user-global · system · **leer=""** · via `[include]` · via
+`[includeIf gitdir]`) · receive.procReceiveRefs · Directory-Entry-REPLACE (`mv config config.root`) ·
+Global-Config-Creation-Race · missing-include-target-creation. **Gemeinsame Wurzel:** git hat
+schreibbare config-/Verzeichnis-Surfaces. **Einzige durable Schließung:** OS-Level-Immutabilität
+(`chattr +i`) der GESAMTEN config-Surface + keine git-writable Erzeugungspunkte. Der Watcher
+VERIFIZIERT das (prod, effektiv aus git-User/GITDIR-Sicht); der DEPLOY erzwingt es; der CANARY
+validiert Forgejo-Toleranz.
+
+## Akzeptanz-Oracle — GEMESSEN 32/32 GRÜN (R31, lokal TEST_MODE)
 `hook-integrity-watch-oracle.sh`: 7 Design-Fälle + V1a Dispatcher-fail-fast + V1b authoritativer deny-all
 blockt + V1c/d + V2a-e Config-Integrität + V3 Kuma up/down + V5 kein-Secret-im-Marker + C1 core.hooksPath
 + C2 repo-config + C3 global-bypass+source-neutralize + C4/C5 include-bypass (repo+global) + LF1 exit4.
@@ -127,15 +154,21 @@ LIVE-Canary-Lauf als root auf LXC 160.
 2. **Canary-Live-Verifikation (kann ich nicht autonom, gated):** verträgt Forgejo 15.0.3 immutable
    `repo.git/config` + `hooks/` (bleibt Push grün)? Unterstützt das LXC-FS `chattr +i`? regenerate/upgrade-
    Runbook mit `chattr -i` → re-harden. → Live als root auf LXC 160 (reversibel, Canary).
-3. **Deploy-Runbook-Ergänzung:** chattr +i auf config/hooks/pre-receive/pre-receive.d/50-secrets;
-   Dispatcher root-chown; git-user-global config root-owned/immutable; secret-orgs/golden/violations/
-   .kuma-push-url root-owned; systemd .service/.timer enabled; Kuma-Push-Monitor anlegen.
+3. **Deploy-Runbook — COMPREHENSIVE config-Surface-Immutabilität (= durable Schließung der gesamten
+   Bypass-Map):** `chattr +i` auf je Secret-Repo: `repo.git/config`, `hooks/`, `hooks/pre-receive`,
+   `hooks/pre-receive.d/`, `50-secrets`. **git-user-global Surfaces immutabel-LEER anlegen**
+   (`~git/.gitconfig`, `~git/.config/git/config` + Parent-Dirs nicht-git-writable) — schließt
+   Creation-Race + include/includeIf-Injektion (git kann dann keine config/includes mehr setzen).
+   Dispatcher root-chown; `/etc/gitconfig` root-owned ohne core.hooksPath/procReceiveRefs;
+   secret-orgs/golden/violations/.kuma-push-url root-owned; regenerate/upgrade-Runbook (chattr -i →
+   als root → re-harden → chattr +i); systemd .service/.timer enabled; Uptime-Kuma-Push-Monitor anlegen.
 
 ## Status
 - [x] Schnüffi R22-Design-Refute (29b6f40): Grundwahl sound, B endorsed, 1 BLOCKER → gefoldet (inv #6).
 - [x] Watcher + systemd-Units + Oracle GEBAUT (`hook-integrity-watch.{sh,service,timer}` + `-oracle.sh`).
-- [x] Codex R22-Refute R1 + R2 gefoldet; Oracle 31/31 grün; bash -n grün.
-- [ ] Codex R22-Refute R3 (Konvergenz-Check) — läuft.
-- [ ] **Schnüffi: R22-Arm-Gate-Entscheidung (Enforcement-Modell A/B) + Review der gefoldeten Watcher-Artefakte.**
-- [ ] **LIVE-Canary-Verifikation als root auf LXC 160** (Forgejo-Immutabilitäts-Toleranz + Oracle inkl. inv #9).
+- [x] Codex R22-Refute R1–R4 gefoldet; Oracle 32/32 grün; bash -n grün; kein stiller Bypass im Verifier.
+- [ ] **Schnüffi: R22-Arm-Gate (Enforcement-Modell A/B) + comprehensive Deploy-Immutabilitäts-Baseline (#3) +
+      Review der gefoldeten Watcher-Artefakte + Entscheid include-target/includeIf-Restpunkte (deploy-gedeckt?).**
+- [ ] **LIVE-Canary als root auf LXC 160:** Forgejo-Toleranz von immutable config/hooks/global-config
+      (bleibt Push grün?) + Oracle-Lauf inkl. inv #9 (chattr) + effective_forbidden (runuser+GIT_DIR).
 - Entkoppelt vom Arm-Fix; beide vor erstem echten Secret.
