@@ -16,6 +16,7 @@
 import sys
 import json
 import re
+import os
 
 ENC_PREFIX = "ENC[AES256_GCM,"
 KNOWN_SOPS_FIELDS = {  # erlaubte Top-Level-Felder der sops-Stanza (rekursive Whitelist, R5/HIGH-1)
@@ -120,8 +121,20 @@ def main():
     # SINGLE-PASS Policy-Parser (P0-1+P0-4, Schnueffi-Refute 544bba3): allowed UND recovery aus
     # EINEM Read, konsistent gestrippt + age-validiert. KEIN 2. Read (TOCTOU), KEIN skip-on-empty
     # (das war das fail-OPEN: leeres recovery-Set uebersprang die Break-Glass-Pflicht).
+    # TOCTOU-fest (Schnueffi-RE-Review): O_NOFOLLOW (kein Symlink) + fstat auf DEMSELBEN fd, der
+    # gelesen wird -> Ownership/Perm-Check und Read auf identischer Inode, kein stat->open-Fenster.
+    _test_mode = os.environ.get("FORGEJO_SECRETS_TEST_MODE", "0") == "1"
     try:
-        with open(allow_path, "r", encoding="utf-8") as f:
+        _fd = os.open(allow_path, os.O_RDONLY | os.O_NOFOLLOW)
+    except Exception:
+        reject("admin-Recipient-Policy nicht oeffenbar (Symlink/fehlt? fail-closed)")
+    _st = os.fstat(_fd)
+    if not _test_mode and _st.st_uid != 0:
+        reject("admin-Recipient-Policy nicht root-owned (fail-closed)")
+    if _st.st_mode & 0o022:
+        reject("admin-Recipient-Policy group/other-writable (fail-closed)")
+    try:
+        with os.fdopen(_fd, "r", encoding="utf-8") as f:
             policy_lines = f.read().splitlines()
     except Exception:
         reject("admin-Recipient-Policy nicht lesbar (fail-closed)")
@@ -175,9 +188,8 @@ def main():
         reject("shamir_threshold muss absent/0 sein")
     # Tier-A: keine partial-encryption-Ausnahmefelder (P1-7) — present mit truthy Wert => REJECT
     for fld in TIER_A_NO_PARTIAL:
-        v = sops.get(fld)
-        if v not in (None, "", False):
-            reject("Tier-A verbietet partial-encryption-Feld: " + fld)
+        if fld in sops:  # PRAESENZ allein -> REJECT: leeres unencrypted_suffix:"" matcht ALLE Keys
+            reject("Tier-A verbietet partial-encryption-Feld (present): " + fld)
 
     # 2) Pflichtfelder Envelope-Struktur
     for req in ("mac", "lastmodified"):

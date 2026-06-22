@@ -173,7 +173,7 @@ echo "0000000000000000000000000000000000000000 abccccccccccccccccccccccccccccccc
 # ---- P0-Fold Direct-Validator-Tests (Schnueffi-Refute 544bba3) -------------
 vdt() { # $1 label  $2 expect  $3 allowfile-content  $4 envelope-json
   tn=$((tn+1)); printf '%s' "$3" > "$WORK/vdt.allow"
-  if printf '%s' "$4" | python3 "$VALIDATOR" "$WORK/vdt.allow" >/dev/null 2>&1; then g=ACCEPT; else g=REJECT; fi
+  if printf '%s' "$4" | env FORGEJO_SECRETS_TEST_MODE=1 python3 "$VALIDATOR" "$WORK/vdt.allow" >/dev/null 2>&1; then g=ACCEPT; else g=REJECT; fi
   if [ "$g" = "$2" ]; then pass=$((pass+1)); RESULTS+=("PASS  [$g] $1"); else fail=$((fail+1)); RESULTS+=("FAIL  [got=$g want=$2] $1"); fi
 }
 ENVRR="$(good_sops aaa)"  # Envelope an RCPT+RECOV
@@ -186,6 +186,15 @@ vdt "(P0-1 fail-open-Guard) einger. @recovery + Env OHNE R -> REJECT" REJECT "$P
 vdt "(P0-5) malformed-age in Policy -> REJECT"                    REJECT "$(printf 'age1tooshort\n@recovery %s\n' "$RECOV")" "$ENVRR"
 vdt "(P0-5) malformed-age in Envelope -> REJECT"                  REJECT "$POL_OK" "$(printf '{"data":"ENC[AES256_GCM,data:a]","sops":{"mac":"x","lastmodified":"2026","age":[{"recipient":"age1BAD","enc":"x"},{"recipient":"%s","enc":"x"}]}}' "$RECOV")"
 vdt "(P1-7) Tier-A unencrypted_suffix present -> REJECT"          REJECT "$POL_OK" "$(printf '{"data":"ENC[AES256_GCM,data:a]","sops":{"mac":"x","lastmodified":"2026","unencrypted_suffix":"_pub","age":[{"recipient":"%s","enc":"x"},{"recipient":"%s","enc":"x"}]}}' "$RCPT" "$RECOV")"
+vdt "(P1-7 fail-open) unencrypted_suffix:\"\" -> REJECT"         REJECT "$POL_OK" "$(printf '{"data":"ENC[AES256_GCM,data:a]","sops":{"mac":"x","lastmodified":"2026","unencrypted_suffix":"","age":[{"recipient":"%s","enc":"x"},{"recipient":"%s","enc":"x"}]}}' "$RCPT" "$RECOV")"
+vdt "(P1-7 fail-open) unencrypted_suffix:false -> REJECT"        REJECT "$POL_OK" "$(printf '{"data":"ENC[AES256_GCM,data:a]","sops":{"mac":"x","lastmodified":"2026","unencrypted_suffix":false,"age":[{"recipient":"%s","enc":"x"},{"recipient":"%s","enc":"x"}]}}' "$RCPT" "$RECOV")"
+
+# (P0-2) REPO_KEY mit Newline -> REJECT (heredoc-read-Zeile-1-Bypass zu)
+tn=$((tn+1))
+echo "0000000000000000000000000000000000000000 1111111111111111111111111111111111111111 refs/heads/main" \
+  | env -u GIT_QUARANTINE_PATH GIT_PUSH_OPTION_COUNT=0 FORGEJO_SECRETS_POLICY_DIR="$POLICY_DIR" FORGEJO_SECRETS_SCAN_DIR="$LIBDIR" FORGEJO_SECRETS_TEST_MODE=1 FORGEJO_SECRETS_REPO_KEY="$(printf 'test/secrets\njunk')" \
+    bash "$HOOK" >/dev/null 2>&1 && r=ACCEPT || r=REJECT
+[ "$r" = REJECT ] && { pass=$((pass+1)); RESULTS+=("PASS  [REJECT] (P0-2) REPO_KEY mit Newline"); } || { fail=$((fail+1)); RESULTS+=("FAIL  [got=$r want=REJECT] (P0-2) REPO_KEY Newline"); }
 
 # ---- Report ----------------------------------------------------------------
 echo "=== §7-Oracle (lokal, echte git-push-Quarantine + Direct-Invoke) ==="

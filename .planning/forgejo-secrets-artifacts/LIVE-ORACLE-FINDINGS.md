@@ -156,5 +156,16 @@ löschen+ersetzen (= Invariante-#6-Klasse, Self-Auth-Bypass). **Fix:** Hook prü
 (POLICY_DIR + `<owner>`-Dir) auf root-owned (prod) + nicht-group/other-writable + kein-Symlink.
 **GEMESSEN live (Forgejo echter Push, 6/6):** baseline ACCEPT; owner-dir git-owned/group-writable/Symlink → REJECT;
 base-dir git-owned → REJECT; restore → ACCEPT. Hook-md5 deployed==repo (90b421cd..).
-- **Status:** Arm-Fix vollständig (7 Folds + Rest-Befund), lokal 28/28 + live 16/16 + dirchain 6/6. Wartet auf
-  Schnüffis finalen Codex-Pass/Sign-off → DANN Scharf-Schalt-Freigabe. §8-Landing weiter operator-gated.
+### Schnüffi RE-Review-Runde 2 (64e4b7c, NOT-YET) → 3 Befunde GEFOLDET + live-verifiziert
+Codex-Pass fand 3 Arming-Blocker (P0-1/3/4/5 waren korrekt zu):
+- **Befund 1 (kritisch, fail-OPEN):** mein P1-7-Fold `if v not in (None,"",False)` ließ `unencrypted_suffix:""`
+  (matcht ALLE Keys = alles Klartext) + `:false`/`:null` DURCH. **Fix:** `if fld in sops: reject` (Präsenz allein).
+- **Befund 2 (TOCTOU):** Dir-Ownership war schon in cddca68; offen war shell-stat→python-read-Fenster. **Fix:**
+  Validator `os.open(O_NOFOLLOW)+fstat` auf DEMSELBEN fd (Check+Read auf identischer Inode, kein Fenster; Symlink-tot).
+- **Befund 3 (P0-2):** heredoc-`read` las nur Zeile 1 → `owner/repo\njunk` normalisierte still. **Fix:** case-basiert
+  (`*[!A-Za-z0-9/._-]*`→Newline/Control-REJECT, `*/*/*`→>2-Segmente-REJECT, leeres/`.`/`..`-Segment-REJECT).
+**GEMESSEN:** lokal `oracle.sh` **31/31** (inkl. unencrypted_suffix:""→REJECT, :false→REJECT, REPO_KEY-Newline→REJECT)
++ **Live-Oracle v3 19/19** (Forgejo echter Push: t11/t12 unencrypted_suffix-fail-open→REJECT; Part B b6 REPO_KEY-Newline→REJECT,
+b4/b4b Traversal→REJECT, non-root/writable/symlink-Policy→REJECT). hook-md5 deployed==repo (5fae5f05..).
+- **Status:** Arm-Fix vollständig über 2 RE-Review-Runden (P0-1..5 + P1-6/6b/7 + 3 Codex-Befunde + TOCTOU). Wartet auf
+  Schnüffis finalen Sign-off → DANN Scharf-Schalt-Freigabe. §8-Landing weiter operator-gated. Parallel: Watcher-Bau (GO).

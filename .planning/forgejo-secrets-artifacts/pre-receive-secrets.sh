@@ -64,13 +64,19 @@ else
 fi
 # REPO_KEY traversal-sicher: EXAKT 2 Segmente, Segment != '.'/'..' , safe-charset (P0-2 — '.'-im-
 # Regex-Charset-Loch geschlossen: '..' als ganzes Segment explizit verboten, nicht per Charset).
-IFS='/' read -r _k_owner _k_repo _k_extra <<EOF
-$REPO_KEY
-EOF
-{ [ -n "$_k_owner" ] && [ -n "$_k_repo" ] && [ -z "${_k_extra:-}" ]; } || reject "REPO_KEY nicht exakt owner/repo (fail-closed)"
+# case-basiert statt heredoc-`read` (Schnueffi-Befund-3): `read` las nur Zeile 1 -> 'owner/repo\njunk'
+# haette still zu owner/repo normalisiert. case faengt Newline/Control/unsichere Zeichen im GANZEN String.
+case "$REPO_KEY" in
+  *[!A-Za-z0-9/._-]*) reject "REPO_KEY unsicheres Zeichen/Newline (fail-closed)" ;;
+esac
+case "$REPO_KEY" in
+  */*/*) reject "REPO_KEY mehr als 2 Segmente (fail-closed)" ;;   # >=2 slashes
+  */*)   : ;;                                                      # genau 1 slash
+  *)     reject "REPO_KEY kein owner/repo (fail-closed)" ;;        # 0 slashes
+esac
+_k_owner="${REPO_KEY%/*}"; _k_repo="${REPO_KEY#*/}"
 for _seg in "$_k_owner" "$_k_repo"; do
-  case "$_seg" in .|..) reject "REPO_KEY-Segment '.'/'..' (Traversal, fail-closed)" ;; esac
-  printf '%s' "$_seg" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]*$' || reject "REPO_KEY-Segment unsicheres Zeichen (fail-closed)"
+  case "$_seg" in ''|.|..) reject "REPO_KEY-Segment leer/'.'/'..' (Traversal, fail-closed)" ;; esac
 done
 REPO_KEY="$_k_owner/$_k_repo"
 ALLOW_FILE="$POLICY_DIR/${REPO_KEY}.allow"
