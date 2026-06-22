@@ -1,0 +1,26 @@
+# /etc/systemd/system/hook-integrity-watch.service  (LXC 160 forgejo-sec)
+# Backstop-Detektor fuer den Forgejo-Secrets pre-receive-Hook. Type=oneshot, vom .timer getrieben.
+# Laeuft als ROOT: muss root-owned 50-secrets/Hook-Dirs pruefen + bei VIOLATION 00-LOCKDOWN in
+# root-owned Hook-Dirs injizieren + Marker schreiben + Kuma-Egress. exit!=0 -> Unit "failed"
+# (im Dashboard sichtbar) UND Kuma bereits=down.
+[Unit]
+Description=Forgejo-Secrets hook-integrity-watch (Backstop-Detektor)
+Documentation=file:///root/forgejo-secrets-artifacts/HOOK-INTEGRITY-WATCH-DESIGN.md
+After=forgejo.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/forgejo-secrets/hook-integrity-watch.sh
+# Hardening, das den Schreib-/Egress-Bedarf NICHT bricht:
+NoNewPrivileges=true
+ProtectHome=true
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectKernelTunables=true
+RestrictSUIDSGID=true
+# KEIN ProtectSystem=strict — der Watcher MUSS in /var/lib/<forgejo-repos>/.../hooks/ schreiben.
+TimeoutStartSec=120
+
+[Install]
+WantedBy=multi-user.target

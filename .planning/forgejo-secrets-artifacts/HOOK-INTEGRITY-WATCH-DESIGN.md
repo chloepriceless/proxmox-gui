@@ -85,10 +85,57 @@ aber LÖSCHUNG hängt am VERZEICHNIS — git-writable `hooks/`bzw.`pre-receive.d
 - **Frage 2 (60s vs inotify):** **60s-Timer REICHT** — da der Hook (root-owned Dir) git-UNLÖSCHBAR ist, kann Drift
   nur durch root/admin/regenerate entstehen = KEIN Angreifer-Push-Race. inotify nicht nötig (nur optionales Enhancement).
 
+## Codex-Fold R1 (gpt-5-codex, 2026-06-22 ~09:10Z) — GEBAUT + gefoldet
+Voller R22-Refute des GEBAUTEN Watchers. Codex fand echte Bypass-Klassen, die der Design-Refute übersah:
+- **BLOCKER core.hooksPath:** git-User kann in der git-writable Repo-Config `core.hooksPath` auf ein
+  leeres Dir setzen → `git receive-pack` sucht den Hook woanders → weder Dispatcher noch 50-secrets
+  noch Lockdown laufen, OHNE 50-secrets zu berühren. → **inv #7** core.hooksPath absent (repo-local
+  + git-user-global, da `git config` als root `~git/.gitconfig` NICHT sieht) + beim Lockdown neutralisieren.
+- **Authoritativer Lockdown:** ein `pre-receive.d/00-LOCKDOWN` ist wirkungslos, wenn der Dispatcher
+  selbst gebrochen/umgangen ist → Lockdown ersetzt jetzt **top-level `hooks/pre-receive` selbst** durch
+  einen root-owned deny-all + neutralisiert Redirect-Config.
+- **inv #8** repo.git/config root-owned + nicht-git-writable. **ACL-aware** `runuser -u git test -w`
+  (mode-check ist ACL-blind). **inv #1b** Dispatcher root-owned (git-owned Dispatcher = in-place-rewritebar).
+
+## Codex-Fold R2 (gpt-5-codex, 2026-06-22 ~09:25Z) — Architektur-Fold
+Mit Datei-Zugriff. Bash-Korrektheit BESTÄTIGT (nameref ok, kein exit-Masking, Arrays sauber). 4 tiefere BLOCKER:
+- **BLOCKER#2 Directory-Entry-REPLACE-Race (Kern):** auch wenn jede DATEI root-owned ist, kann git im
+  writable `repo.git/` Einträge UMBENENNEN: `mv config config.root; echo evil>config; push; restore`.
+  Der 60s-Timer schließt den sub-60s-Race NICHT. → **Architektur-Konsequenz:** der Watcher ist ein
+  **VERIFIER eines DEPLOY-erzwungenen Immutabilitäts-Baselines, nicht der Erzeuger** der Immutabilität.
+  **inv #9:** integritätskritische Einträge (config, hooks/, pre-receive.d/, Dispatcher, 50-secrets)
+  sind `chattr +i` (immutable) → git kann sie weder modifizieren noch umbenennen noch unlinken. Der
+  Watcher VERIFIZIERT das (lsattr); der DEPLOY setzt es. Das macht den 60s-Timer erst sound.
+- **BLOCKER#1** globaler core.hooksPath erkannt aber nicht neutralisiert → `neutralize_global()` entschärft
+  die SOURCE vor LOCK-ALL. **BLOCKER#3** Lockdown-Erfolg nicht verifiziert → `verify_lockdown()` +
+  exit4 `LOCKDOWN-FAILED` (Kuma "REPOS EVTL. OFFEN"). **BLOCKER#4** include-Bypass → `git config
+  --includes --show-origin` + Origin-Integritäts-Prüfung. **HIGH** unsichere git-erreichbare Global-Config
+  ohne aktiven Wert (Race-Enabler) → config_fail.
+
+## Akzeptanz-Oracle — GEMESSEN 31/31 GRÜN (R31, lokal TEST_MODE)
+`hook-integrity-watch-oracle.sh`: 7 Design-Fälle + V1a Dispatcher-fail-fast + V1b authoritativer deny-all
+blockt + V1c/d + V2a-e Config-Integrität + V3 Kuma up/down + V5 kein-Secret-im-Marker + C1 core.hooksPath
++ C2 repo-config + C3 global-bypass+source-neutralize + C4/C5 include-bypass (repo+global) + LF1 exit4.
+**Immutabilität (inv #9) + Root-Ownership + ACL = prod-only** (TEST_MODE skippt, da non-root) → separater
+LIVE-Canary-Lauf als root auf LXC 160.
+
+## 🔴 R22-ARM-GATE — Architektur-Entscheidung für Schnüffi (vor Scharf-Schalten)
+1. **Enforcement-Modell** (load-bearing): **(A) chattr-Immutabilität** der per-repo-Einträge [GEWÄHLT,
+   implementiert — least-invasive, per-Eintrag, Watcher verifiziert via lsattr] vs. **(B) git-Wrapper
+   forced `-c core.hooksPath=<root-dir>`** (zentral, command-line schlägt jede config, aber Forgejo-
+   Launch-Integration + upgrade-brittle). Schnüffis Call.
+2. **Canary-Live-Verifikation (kann ich nicht autonom, gated):** verträgt Forgejo 15.0.3 immutable
+   `repo.git/config` + `hooks/` (bleibt Push grün)? Unterstützt das LXC-FS `chattr +i`? regenerate/upgrade-
+   Runbook mit `chattr -i` → re-harden. → Live als root auf LXC 160 (reversibel, Canary).
+3. **Deploy-Runbook-Ergänzung:** chattr +i auf config/hooks/pre-receive/pre-receive.d/50-secrets;
+   Dispatcher root-chown; git-user-global config root-owned/immutable; secret-orgs/golden/violations/
+   .kuma-push-url root-owned; systemd .service/.timer enabled; Kuma-Push-Monitor anlegen.
+
 ## Status
-- [x] Schnüffi R22-Design-Refute (29b6f40): Grundwahl sound, B endorsed, 1 BLOCKER.
-- [x] BLOCKER am Canary verifiziert + gefoldet (Invariante #6 Hook-DIR-Ownership; 60s reicht; Dispatcher fail-fast OK).
-- [ ] Schnüffis Bestätigung des BLOCKER-Folds (kurzer Re-Look).
-- [ ] DANN bauen (`hook-integrity-watch.sh` + systemd-Timer + secret-orgs/golden/violations root-owned) +
-      voller R22-Codex-Refute des gebauten Watchers + 9-Fall-Akzeptanz-Oracle (inkl. V1 Dispatcher, V2 Enum-Integrität, V3 Kuma-egress).
-- Entkoppelt vom Arm-Fix; beide parallel, beide vor erstem echten Secret.
+- [x] Schnüffi R22-Design-Refute (29b6f40): Grundwahl sound, B endorsed, 1 BLOCKER → gefoldet (inv #6).
+- [x] Watcher + systemd-Units + Oracle GEBAUT (`hook-integrity-watch.{sh,service,timer}` + `-oracle.sh`).
+- [x] Codex R22-Refute R1 + R2 gefoldet; Oracle 31/31 grün; bash -n grün.
+- [ ] Codex R22-Refute R3 (Konvergenz-Check) — läuft.
+- [ ] **Schnüffi: R22-Arm-Gate-Entscheidung (Enforcement-Modell A/B) + Review der gefoldeten Watcher-Artefakte.**
+- [ ] **LIVE-Canary-Verifikation als root auf LXC 160** (Forgejo-Immutabilitäts-Toleranz + Oracle inkl. inv #9).
+- Entkoppelt vom Arm-Fix; beide vor erstem echten Secret.

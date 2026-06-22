@@ -1,0 +1,15 @@
+# /etc/systemd/system/hook-integrity-watch.timer  (LXC 160 forgejo-sec)
+# 60s-Takt reicht (Design-Self-Refute + Schnueffi Frage-2): der Hook sitzt in root-owned, fuer git
+# UNLOESCHBAREN Dirs (inv #6 canary-verifiziert) -> Drift kann nur durch root/admin/regenerate
+# entstehen = KEIN Angreifer-Push-Race. inotify waere nur optionales Enhancement.
+[Unit]
+Description=Timer fuer hook-integrity-watch (alle 60s + 30s nach Boot)
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=60s
+AccuracySec=5s
+Unit=hook-integrity-watch.service
+
+[Install]
+WantedBy=timers.target

@@ -16,8 +16,21 @@
 - admin out-of-band Policy → `/etc/forgejo-secrets-policy/<org>/<repo>.allow` — **root-owned, Mode `0644`** (oder `0640 root:git`) — der Hook+Validator laufen als User **git** und MÜSSEN sie LESEN; „root-only" meint nur root-WRITABLE (Inhalt = age-**Public**-Recipients, nicht geheim). Dirs `0755` (git-traversierbar). **`chmod 600` bricht JEDEN Push fail-closed** (BUG-3, LIVE-ORACLE-FINDINGS.md). Format: eine `age1…`-Zeile je erlaubtem Recipient; der Recovery-Recipient als EINE Zeile `@recovery age1…` (gewährt UND markiert — Validator strippt den Prefix).
 - `[security] DISABLE_GIT_HOOKS=true`, `[mirror] ENABLED=false`, `[lfs] ENABLED=false`, Issues/Wiki/Attachments/Packages/Web-Editor aus, **`receive.procReceiveRefs` absent verifizieren** (R6/R7-MED).
 
+## Gebaut — `hook-integrity-watch` (2026-06-22, Codex-R22 R1+R2 gefoldet, Oracle 31/31)
+- **`hook-integrity-watch.sh`** (systemd oneshot `hook-integrity-watch.service` + 60s-`.timer`, beide
+  enabled): Backstop-DETEKTOR + VERIFIER je Secret-Repo. Invarianten #1-#9: Dispatcher (exist/exec/
+  iteriert-pre-receive.d/root-owned), 50-secrets (exist/exec/sha==golden/root-owned), Hook-DIRS +
+  repo.git/config root-owned + **chattr-immutabel** (inv #9, Race-Schließung), `core.hooksPath` +
+  `receive.procReceiveRefs` absent (inkl. `--includes`-Kette + Origin-Integrität), git-user-global config.
+  Bei VIOLATION: **authoritativer** top-level deny-all (verifiziert) + Redirect-Neutralisierung + Marker +
+  journald + Uptime-Kuma-Push. Global-Bypass → source-neutralize + LOCK-ALL (exit3). Lockdown-Fehlschlag
+  → exit4 (Kuma "REPOS EVTL. OFFEN"). Config-Bruch → alarm-only (exit2). REJECT echoet NIE einen Secret-Wert.
+- **`hook-integrity-watch-oracle.sh`** — 31/31 grün TEST_MODE. **Immutabilität/Root-Ownership/ACL = prod-only**
+  (separater LIVE-Canary-Lauf als root auf LXC 160). Design+Arm-Gate: `HOOK-INTEGRITY-WATCH-DESIGN.md`.
+- **OFFEN (Schnüffi R22-Arm-Gate):** Enforcement-Modell (A chattr [gewählt] vs. B git-Wrapper) + Forgejo-
+  Immutabilitäts-Toleranz live verifizieren + Deploy-Runbook (chattr +i, regenerate-as-root, Kuma-Monitor).
+
 ## Noch zu bauen (nächste Schritte)
-1. **`hook-integrity-watch`** (systemd-Timer, §1.4-B4): minütlich sha256+exec-bit des Hooks + Haupt-`pre-receive` je Secret-Repo; Drift → Repo/Instanz read-only + Alarm; **neue/umbenannte Repos ohne Hook** read-only (HIGH-5-Backstop). + **real auslösen** nach `forgejo admin regenerate hooks`/Upgrade (R7-MED).
 2. **Oracle-Harness** (`oracle.sh`) — §7, 7 Kriterien + **20-Punkt-Negativ-Matrix a–t**, mit echten Fixtures (`git pack-objects`+`receive-pack`):
    - Krit.7 load-bearing: (a) objekttragend count>0, (b) **Positiv-Kontrolle** unreachable-bad-blob+push-cert in PHYS_OIDS→REJECT, (c) legit Null-Objekt-Push passt + Secret-Refname geblockt, (d) **broken-enum** — BEIDE Fälle: Glob künstlich 0 UND realistisch `.pack` present/`.idx` fehlt-korrupt → raw_presence=true + REJECT (Schnüffi-Hint).
    - G1-Vollplatten-grep (journald/WAL/swap/coredump/`cat-file --batch-all-objects`), G2/G3/B4-Vault-403/Break-Glass-Drill (m-of-n-Rekonstruktion).
