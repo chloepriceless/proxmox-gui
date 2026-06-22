@@ -87,7 +87,19 @@ if [ "${FORGEJO_SECRETS_TEST_MODE:-0}" != "1" ]; then
   [ "$(stat -c '%u' "$ALLOW_FILE" 2>/dev/null)" = "0" ] || reject "Policy nicht root-owned (fail-closed)"
 fi
 if [ -n "$(find "$ALLOW_FILE" -maxdepth 0 -perm /022 2>/dev/null)" ]; then reject "Policy group/other-writable (Self-Auth-Bypass, fail-closed)"; fi
-if [ -n "$(find "$POLICY_DIR" -maxdepth 0 -perm /022 2>/dev/null)" ]; then reject "Policy-Dir group/other-writable (fail-closed)"; fi
+# Policy-DIR-KETTE (POLICY_DIR + <owner>-Zwischen-Dir) muss ebenfalls integer sein
+# (Schnueffi-Rest-Befund, Invariante-#6-Klasse): ein git-OWNED Dir ist fuer git schreibbar TROTZ
+# -perm /022 (owner-write zaehlt nicht in /022) -> git koennte die root-owned .allow loeschen+ersetzen.
+# Daher Dir-OWNERSHIP (root, prod) + Symlink-Verbot + group/other-writable je Dir der Kette pruefen.
+_owner_dir="$(dirname "$ALLOW_FILE")"
+for _d in "$POLICY_DIR" "$_owner_dir"; do
+  if [ -L "$_d" ]; then reject "Policy-Dir ist Symlink (verboten, fail-closed)"; fi
+  [ -d "$_d" ] || reject "Policy-Dir fehlt: $_d (fail-closed)"
+  if [ "${FORGEJO_SECRETS_TEST_MODE:-0}" != "1" ]; then
+    [ "$(stat -c '%u' "$_d" 2>/dev/null)" = "0" ] || reject "Policy-Dir nicht root-owned (fail-closed)"
+  fi
+  if [ -n "$(find "$_d" -maxdepth 0 -perm /022 2>/dev/null)" ]; then reject "Policy-Dir group/other-writable (fail-closed)"; fi
+done
 
 # --- 1. IMMER: push-options sperren (R4/HIGH-2, Log-Leak) --------------------
 if [ "${GIT_PUSH_OPTION_COUNT:-0}" != "0" ]; then

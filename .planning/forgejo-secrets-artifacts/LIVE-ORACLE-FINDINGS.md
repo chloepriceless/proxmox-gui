@@ -148,4 +148,13 @@ Schnüffi + GPT-codex konvergent: meine 3 Bug-Fixes hatten eine **fail-OPEN-Klas
   Part A (10): SOPS-JSON/YAML/README ACCEPT; plaintext/missing-recovery/privkey/foreign-recipient/push-option/**Tier-A-unencrypted_suffix**/**malformed-age** REJECT (Gründe asserted).
   Part B (6): `../evil`→REJECT (`..`-Segment), deep-traversal→REJECT, **non-root-owned Policy**→REJECT, **group-writable Policy**→REJECT, **Symlink-Policy**→REJECT, Restore→ACCEPT.
   Kein Secret-Echo. md5 deployed==repo (hook 53e1955c.., val f8dc6d29..). Canary gelöscht, planning unberührt.
-- **Status:** wartet auf Schnüffis RE-Review der gefoldeten Diffs + gemessenen Zahlen → DANN Scharf-Schalt-Freigabe. §8-Landing weiter operator-gated.
+### Schnüffi-RE-Review Rest-Befund (P1-6b, Dir-Ownership-Kette) → GEFOLDET + live-verifiziert
+Schnüffi verifizierte die 7 Folds zeilenweise (alle korrekt), fand 1 Rest-Befund: P1-6 prüfte die `.allow`-Datei
++ POLICY_DIR nur via `-perm /022`, aber NICHT die Dir-OWNERSHIP noch das `<owner>`-Zwischen-Dir. Ein git-OWNED
+Dir ist für git schreibbar TROTZ /022 (owner-write zählt nicht in /022) → git könnte die root-owned `.allow`
+löschen+ersetzen (= Invariante-#6-Klasse, Self-Auth-Bypass). **Fix:** Hook prüft jetzt die DIR-KETTE
+(POLICY_DIR + `<owner>`-Dir) auf root-owned (prod) + nicht-group/other-writable + kein-Symlink.
+**GEMESSEN live (Forgejo echter Push, 6/6):** baseline ACCEPT; owner-dir git-owned/group-writable/Symlink → REJECT;
+base-dir git-owned → REJECT; restore → ACCEPT. Hook-md5 deployed==repo (90b421cd..).
+- **Status:** Arm-Fix vollständig (7 Folds + Rest-Befund), lokal 28/28 + live 16/16 + dirchain 6/6. Wartet auf
+  Schnüffis finalen Codex-Pass/Sign-off → DANN Scharf-Schalt-Freigabe. §8-Landing weiter operator-gated.
