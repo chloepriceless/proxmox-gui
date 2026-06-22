@@ -129,17 +129,46 @@ gefährlichen config-keys außer der core.hooksPath/procReceiveRefs-Klasse. Gefo
   **LAUT-fehlschlagend (LOCKDOWN-FAILED, KEIN stiller Bypass)** und werden durch die comprehensive
   Deploy-Immutabilität (s.u.) geschlossen — nicht durch mehr Watcher-Code.
 
-## Vollständige config-Bypass-Attack-Surface (Cross-Lab-Map, 4 Codex-Runden)
+## Schnüffi-R5-Fold (unabhängige 5. GPT-codex-Lens, andere Seeds, 2026-06-22 ~10:40Z) — Oracle 36/36
+Schnüffis R22-Arm-Gate-Verdikt war **NOT-YET** (reviews/2026-06-22-forgejo-hook-integrity-watch-R22-ARM-GATE.md,
+commit 0fcdd00). Ihre Lens fand 2 BLOCKER + HIGH, die meine 4 gleichgetriebenen Runden + ihr Read übersahen
+— alle gefoldet:
+- **BLOCKER1 worktreeConfig-Creation-Race:** `extensions.worktreeConfig` aktiviert `$GIT_DIR/config.worktree`
+  als ZUSÄTZLICHE git-writable Redirect-Surface (Lücke in meiner Bypass-Map). → `extensions.worktreeConfig`
+  in FORBIDDEN_KEYS (hart verboten+neutralisiert) + `config.worktree` als Surface auditiert/neutralisiert/gehärtet.
+- **BLOCKER2 effective_forbidden ≠ receive-pack:** mein Check setzte nur GIT_DIR, nicht die volle env
+  (HOME/XDG/GIT_CONFIG_*). → effektiver Check läuft jetzt in **attestierter env** (`env -i` aus root-owned
+  immutabler `.receive-pack-env`); prod fail-closed wenn Attestation fehlt/unsicher. **Canary muss die echte
+  receive-pack-env dumpen** (= Attestations-Quelle).
+- **HIGH Control-TCB:** POLICY_DIR + `.kuma-push-url` immutabel verlangt; TCB-Bruch (Alarm-Kanal evtl. selbst
+  umgebogen) → **LOCK-ALL + journald-loud (exit5)** statt nur Kuma-Alarm.
+
+## B-Feasibility-Recherche (Schnüffis A→B-als-Root-Frage) — [LIKELY, Sekundärquellen]
+Forgejo/Gitea invoziert git-receive-pack **intern** (Go: `git.NewCommand "receive-pack"` → Hooks via
+`hooks/pre-receive` → `pre-receive.d/gitea` ruft `forgejo hook pre-receive`). Hooks sind an per-repo
+`$GIT_DIR/hooks` gepinnt; es gibt **KEINEN admin-Config-Injektionspunkt für forced `git -c core.hooksPath`**.
+→ **B-als-Root ist KEIN config-Drop-in**, bräuchte einen git-Wrapper-Binary (Forgejo ruft `git` via PATH) =
+machbar, aber fragil + upgrade-/wartungslastig + zusätzliche TCB. **Repo-local `core.hooksPath` (in repo.git/config)
+honoriert git-receive-pack hingegen IMMER** → defeated 50-secrets UND Forgejos eigenen gitea-Hook gleichermaßen
+(Forgejo schützt NICHT davor). **Vorläufige Empfehlung (entgegen der B-Tendenz, ehrlich):** **A
+(chattr-Immutabilität der per-repo config-Surface) bleibt der praktische Enforcer**; B-Wrapper nur, falls der
+Canary ihn als sauber+upgrade-stabil bestätigt. **Authoritativ erst per Forgejo-Source-Read + Canary auf LXC 160.**
+Quellen: forgejo.org/docs config-cheat-sheet · go-gitea/gitea#16204 (global core.hooksPath „works not") · git-scm githooks.
+
+## Vollständige config-Bypass-Attack-Surface (Cross-Lab-Map, 4 Codex-Runden + Schnüffi-R5)
 Ein git-User (kein root, Forgejo-Push-/Shell-Kontext) kann den 50-secrets-Hook umgehen über:
 core.hooksPath (repo-local · git-user-global · system · **leer=""** · via `[include]` · via
-`[includeIf gitdir]`) · receive.procReceiveRefs · Directory-Entry-REPLACE (`mv config config.root`) ·
-Global-Config-Creation-Race · missing-include-target-creation. **Gemeinsame Wurzel:** git hat
-schreibbare config-/Verzeichnis-Surfaces. **Einzige durable Schließung:** OS-Level-Immutabilität
-(`chattr +i`) der GESAMTEN config-Surface + keine git-writable Erzeugungspunkte. Der Watcher
-VERIFIZIERT das (prod, effektiv aus git-User/GITDIR-Sicht); der DEPLOY erzwingt es; der CANARY
-validiert Forgejo-Toleranz.
+`[includeIf gitdir]` · via **`extensions.worktreeConfig`+`config.worktree`**) · receive.procReceiveRefs ·
+Directory-Entry-REPLACE (`mv config config.root`) · Global-Config-Creation-Race · missing-include-target-
+creation · **receive-pack-env-Divergenz** (Watcher sieht anderen Config-Zustand als der echte Push) ·
+**Control-TCB** (`.kuma-push-url`/POLICY_DIR umbiegen = Alarm/Policy untergraben). **Gemeinsame Wurzel:**
+git hat schreibbare config-/Verzeichnis-Surfaces + der Verifier-Kontext muss receive-pack-äquivalent sein.
+**Einzige durable Schließung:** OS-Level-Immutabilität (`chattr +i`) der GESAMTEN config-Surface (inkl.
+config.worktree + Control-TCB) + keine git-writable Erzeugungspunkte + attestierte receive-pack-env. Der
+Watcher VERIFIZIERT das (prod, effektiv in attestierter env aus git-User/GITDIR-Sicht); der DEPLOY erzwingt
+es; der CANARY validiert Forgejo-Toleranz.
 
-## Akzeptanz-Oracle — GEMESSEN 32/32 GRÜN (R31, lokal TEST_MODE)
+## Akzeptanz-Oracle — GEMESSEN 36/36 GRÜN (R31, lokal TEST_MODE)
 `hook-integrity-watch-oracle.sh`: 7 Design-Fälle + V1a Dispatcher-fail-fast + V1b authoritativer deny-all
 blockt + V1c/d + V2a-e Config-Integrität + V3 Kuma up/down + V5 kein-Secret-im-Marker + C1 core.hooksPath
 + C2 repo-config + C3 global-bypass+source-neutralize + C4/C5 include-bypass (repo+global) + LF1 exit4.
@@ -147,10 +176,11 @@ blockt + V1c/d + V2a-e Config-Integrität + V3 Kuma up/down + V5 kein-Secret-im-
 LIVE-Canary-Lauf als root auf LXC 160.
 
 ## 🔴 R22-ARM-GATE — Architektur-Entscheidung für Schnüffi (vor Scharf-Schalten)
-1. **Enforcement-Modell** (load-bearing): **(A) chattr-Immutabilität** der per-repo-Einträge [GEWÄHLT,
-   implementiert — least-invasive, per-Eintrag, Watcher verifiziert via lsattr] vs. **(B) git-Wrapper
-   forced `-c core.hooksPath=<root-dir>`** (zentral, command-line schlägt jede config, aber Forgejo-
-   Launch-Integration + upgrade-brittle). Schnüffis Call.
+1. **Enforcement-Modell** (load-bearing, Schnüffi-R5-revidiert zu Hybrid): **(A) chattr-Immutabilität**
+   der per-repo config-Surface [implementiert, Watcher verifiziert via lsattr] vs. **(B) git-Wrapper
+   forced `-c core.hooksPath=<root>` als Root** + A als Drift-Backstop. **B-Feasibility-Recherche (s.o.):
+   Forgejo invoziert git intern ohne Injektionspunkt → B = fragiler git-Wrapper, KEIN config-Drop-in →
+   vorläufig spricht das für A als praktischen Enforcer** [LIKELY; Source-Read+Canary authoritativ]. Schnüffis Call.
 2. **Canary-Live-Verifikation (kann ich nicht autonom, gated):** verträgt Forgejo 15.0.3 immutable
    `repo.git/config` + `hooks/` (bleibt Push grün)? Unterstützt das LXC-FS `chattr +i`? regenerate/upgrade-
    Runbook mit `chattr -i` → re-harden. → Live als root auf LXC 160 (reversibel, Canary).
@@ -160,15 +190,21 @@ LIVE-Canary-Lauf als root auf LXC 160.
    (`~git/.gitconfig`, `~git/.config/git/config` + Parent-Dirs nicht-git-writable) — schließt
    Creation-Race + include/includeIf-Injektion (git kann dann keine config/includes mehr setzen).
    Dispatcher root-chown; `/etc/gitconfig` root-owned ohne core.hooksPath/procReceiveRefs;
-   secret-orgs/golden/violations/.kuma-push-url root-owned; regenerate/upgrade-Runbook (chattr -i →
-   als root → re-harden → chattr +i); systemd .service/.timer enabled; Uptime-Kuma-Push-Monitor anlegen.
+   secret-orgs/golden/violations/**.kuma-push-url/POLICY_DIR+Parents/config.worktree** root-owned+immutabel;
+   **`.receive-pack-env` attestieren** (Canary dumpt echte receive-pack-env → root-owned immutabel);
+   regenerate/upgrade-Runbook (chattr -i → als root → re-harden → chattr +i); systemd .service/.timer enabled;
+   Uptime-Kuma-Push-Monitor anlegen.
 
 ## Status
 - [x] Schnüffi R22-Design-Refute (29b6f40): Grundwahl sound, B endorsed, 1 BLOCKER → gefoldet (inv #6).
 - [x] Watcher + systemd-Units + Oracle GEBAUT (`hook-integrity-watch.{sh,service,timer}` + `-oracle.sh`).
-- [x] Codex R22-Refute R1–R4 gefoldet; Oracle 32/32 grün; bash -n grün; kein stiller Bypass im Verifier.
-- [ ] **Schnüffi: R22-Arm-Gate (Enforcement-Modell A/B) + comprehensive Deploy-Immutabilitäts-Baseline (#3) +
-      Review der gefoldeten Watcher-Artefakte + Entscheid include-target/includeIf-Restpunkte (deploy-gedeckt?).**
+- [x] Codex R22-Refute R1–R4 gefoldet; bash -n grün; kein stiller Bypass im Verifier.
+- [x] Schnüffi R22-Arm-Gate (NOT-YET, 0fcdd00): R5-Lens-Befunde (worktreeConfig, env-attestation, Control-TCB)
+      gefoldet; Oracle **36/36** grün; B-Feasibility recherchiert.
+- [ ] **Schnüffi: Bestätigungs-Lens auf R5-Fold (commit-getrieben) + finale Enforcement-Modell-Entscheidung
+      (A vs Hybrid, mit B-Feasibility-Befund) + Entscheid Restpunkte.**
+- [ ] **LIVE-Canary als root auf LXC 160:** Forgejo-Toleranz immutable config/hooks + receive-pack-env-Dump
+      (Attestations-Quelle) + B-Wrapper-Feasibility + Oracle inkl. inv #9/effective_forbidden.
 - [ ] **LIVE-Canary als root auf LXC 160:** Forgejo-Toleranz von immutable config/hooks/global-config
       (bleibt Push grün?) + Oracle-Lauf inkl. inv #9 (chattr) + effective_forbidden (runuser+GIT_DIR).
 - Entkoppelt vom Arm-Fix; beide vor erstem echten Secret.
