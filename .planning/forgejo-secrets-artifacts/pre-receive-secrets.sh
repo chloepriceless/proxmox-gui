@@ -129,69 +129,72 @@ if [ "${#PHYS_OIDS[@]}" -gt "$MAX_OBJECTS" ]; then
   reject "zu viele Objekte (>$MAX_OBJECTS) — Perf-Limit"
 fi
 
-# --- 5. jedes physische Objekt nach Typ scannen (R4/B1+B2, NUL-sicher) -------
-GIT_PUSH_CERT="${GIT_PUSH_CERT:-}"
-cert_seen=false
-
 scan_text_for_secret() {  # $1=Kontext-Label (kein Secret), stdin=Inhalt
   if grep -Eq "$SECRET_RE"; then reject "Secret-Pattern in $1"; fi
 }
 
+# --- 5. Reachable-Tree-Walk: allowlisted Blob-OIDs SAMMELN + pub-Format (R1/M2)
+# Die Pfad-Allowlist ist die EINZIGE Ausnahme von der Blob-SOPS-Pflicht (Section 6).
+# Pfadbasiert (nur reachable); alles andere (inkl. UNREACHABLE) faellt in Section 6.
+declare -A ALLOW_BLOBS=()
+for tip in "${NEW_TIPS[@]:-}"; do
+  if [ -z "$tip" ]; then continue; fi
+  ttyp="$(git cat-file -t "$tip" 2>/dev/null || true)"
+  if [ "$ttyp" != commit ]; then continue; fi
+  while IFS= read -r -d '' line; do
+    boid="${line%%$'\t'*}"; boid="${boid##* }"   # "<mode> <type> <oid>\t<path>"
+    path="${line#*$'\t'}"
+    if printf '%s' "$path" | grep -Eq "$ALLOWLIST_RE"; then
+      ALLOW_BLOBS["$boid"]=1
+      case "$path" in
+        recipients/*.pub)
+          pub="$(git cat-file -p "$boid" 2>/dev/null || true)"
+          if printf '%s' "$pub" | grep -Eq 'AGE-SECRET-KEY-'; then reject "Privkey in recipients/*.pub"; fi
+          if ! printf '%s' "$pub" | grep -Eq '(^|[^A-Za-z0-9])age1[0-9a-z]{20,}'; then reject "recipients/*.pub kein age-Pubkey"; fi
+          ;;
+      esac
+    fi
+  done < <(git ls-tree -r -z "$tip" 2>/dev/null)
+done
+
+# --- 6. JEDES physische Objekt nach Typ scannen (R4/B1+B2 + R5-Review-7b) -----
+# Blob-Pflicht ist PFAD-UNABHAENGIG: jeder Blob = allowlisted-Metadaten ODER SOPS-Envelope.
+# Schliesst den unreachable-Plaintext-Blob (7b): kein Pfad -> nicht allowlisted -> SOPS-Pflicht.
+GIT_PUSH_CERT="${GIT_PUSH_CERT:-}"
+cert_seen=false
 for oid in "${PHYS_OIDS[@]}"; do
   typ="$(git cat-file -t "$oid" 2>/dev/null)" || reject "Objekt-Typ nicht lesbar (fail-closed)"
   case "$typ" in
     commit|tag)
-      # komplettes rohes Objekt: Header/tagger/gpgsig/mergetag/Message/Identity
       git cat-file -p "$oid" 2>/dev/null | scan_text_for_secret "Commit/Tag-Objekt"
       if [ "$typ" = tag ] && [ -n "$GIT_PUSH_CERT" ] && [ "$oid" = "$GIT_PUSH_CERT" ]; then cert_seen=true; fi
       ;;
     tree)
-      # Tree-Namen/Gitlink-Pfade/.gitmodules (R4/B1), NUL-getrennt
       git ls-tree -r -z "$oid" 2>/dev/null \
-        | tr '\0' '\n' \
-        | awk '{ $1=$2=$3=""; sub(/^   /,""); print }' \
+        | tr '\0' '\n' | awk '{ $1=$2=$3=""; sub(/^   /,""); print }' \
         | scan_text_for_secret "Tree-Pfad/Name"
       ;;
     blob)
       sz="$(git cat-file -s "$oid" 2>/dev/null)" || reject "Blob-Groesse nicht lesbar"
       if [ "$sz" -gt "$MAX_BLOB_BYTES" ]; then reject "Blob zu gross (>$MAX_BLOB_BYTES) — Perf-Limit"; fi
       content="$(git cat-file -p "$oid" 2>/dev/null)" || reject "Blob nicht lesbar"
-      # 5a. Privkey-Detektor ueber JEDEN Blob, inkl. spaeter Allowlist (R1/M2)
-      if printf '%s' "$content" | grep -Eq "$PRIVKEY_RE"; then
-        reject "Private-Key in Blob/Datei"
+      if printf '%s' "$content" | grep -Eq "$PRIVKEY_RE"; then reject "Private-Key in Blob/Datei"; fi
+      if [ -n "$GIT_PUSH_CERT" ] && [ "$oid" = "$GIT_PUSH_CERT" ]; then
+        cert_seen=true
+        # push-cert: secret-scan, aber kein SOPS-Zwang (ist kein Inhalt-Blob)
+        if printf '%s' "$content" | grep -Eq "$SECRET_RE"; then reject "Secret-Pattern im push-cert"; fi
+      elif [ -n "${ALLOW_BLOBS[$oid]:-}" ]; then
+        # allowlisted Metadaten: kein SOPS-Zwang, aber kein Secret-Pattern drin
+        if printf '%s' "$content" | grep -Eq "$SECRET_RE"; then reject "Secret-Pattern in allowlisted Metadaten"; fi
+      else
+        # nicht-allowlisted (reachable-Secret ODER UNREACHABLE) -> MUSS SOPS-Envelope (7b)
+        if ! printf '%s' "$content" | python3 "$SOPS_VALIDATE" "$ALLOW_FILE"; then
+          reject "Blob kein konformer SOPS-Envelope (auch unreachable) — fail-closed"
+        fi
       fi
-      # push-cert-Blob mitscannen (R4/B2)
-      if [ -n "$GIT_PUSH_CERT" ] && [ "$oid" = "$GIT_PUSH_CERT" ]; then cert_seen=true; fi
       ;;
     *) reject "unbekannter Objekt-Typ: $typ" ;;
   esac
-done
-
-# --- 6. Pfad/Inhalt-Policy je Datei im NEUEN Tree (Tier-A default-encrypt-all)
-# Fuer jeden erreichbaren neuen Commit-Tip: jede Datei = Allowlist ODER SOPS-Envelope.
-for tip in "${NEW_TIPS[@]:-}"; do
-  if [ -z "$tip" ]; then continue; fi
-  ttyp="$(git cat-file -t "$tip" 2>/dev/null || true)"
-  if [ "$ttyp" != commit ]; then continue; fi
-  while IFS= read -r -d '' path; do
-    # Pfad-Allowlist?
-    if printf '%s' "$path" | grep -Eq "$ALLOWLIST_RE"; then
-      # recipients/*.pub MUSS age-Pubkey sein, KEIN Privkey (R1/M2)
-      case "$path" in
-        recipients/*.pub)
-          pub="$(git cat-file -p "$tip:$path" 2>/dev/null || true)"
-          if printf '%s' "$pub" | grep -Eq 'AGE-SECRET-KEY-'; then reject "Privkey in recipients/*.pub"; fi
-          if ! printf '%s' "$pub" | grep -Eq '(^|[^A-Za-z0-9])age1[0-9a-z]{20,}'; then reject "recipients/*.pub kein age-Pubkey"; fi
-          ;;
-      esac
-      continue   # allowlisted Metadaten — kein SOPS-Zwang
-    fi
-    # sonst: MUSS gueltiger SOPS-Envelope an erlaubte Recipients sein
-    if ! git cat-file -p "$tip:$path" 2>/dev/null \
-         | python3 "$SOPS_VALIDATE" "$ALLOW_FILE"; then
-      reject "Datei ist kein konformer SOPS-Envelope (Tier-A): ${path}"
-    fi
-  done < <(git ls-tree -r -z --name-only "$tip" 2>/dev/null)
 done
 
 # --- 7. signed-push: GIT_PUSH_CERT MUSS in PHYS_OIDS sein + gescannt (R4/B2) -

@@ -115,6 +115,55 @@ echo "0000000000000000000000000000000000000000 111111111111111111111111111111111
     bash "$HOOK" >/dev/null 2>&1 && r=ACCEPT || r=REJECT
 [ "$r" = REJECT ] && { pass=$((pass+1)); RESULTS+=("PASS  [REJECT] (7d) broken-enum .pack ohne .idx"); } || { fail=$((fail+1)); RESULTS+=("FAIL  [got=$r want=REJECT] (7d) broken-enum"); }
 
+# ---- R5-Review-Schaerfungen (Schnueffi) ------------------------------------
+# (B3 self-auth) gepushte .sops.yaml behauptet Attacker-Recipient erlaubt -> admin-Policy
+# ist die Autoritaet (Validator liest $ALLOW_FILE, NICHT die gepushte .sops.yaml) -> REJECT
+s_selfauth() {
+  printf '%s\n' 'creation_rules:' '  - age: age1ATTACKERxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx9' > "$1/.sops.yaml"
+  printf '{"data":"ENC[AES256_GCM,data:a]","sops":{"mac":"x","lastmodified":"2026","age":[{"recipient":"age1ATTACKERxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx9","enc":"x"}]}}' > "$1/secret.json"
+  git -C "$1" add -A; git -C "$1" commit -qm x
+}
+run "(B3) self-authored .sops.yaml mit Attacker-Recipient" REJECT s_selfauth
+
+# (m) annotated-Tag mit Secret in der Tag-MESSAGE -> REJECT (Roh-Objekt-Scan)
+W="$(mktemp -d)"; ( set -e; cd "$W"; git init -q -b main; git config user.email t@t; git config user.name t
+  echo "$(good_sops aaa)" > secret.json; git add -A; git commit -qm x
+  git tag -a -m "leak AKIAIOSFODNN7EXAMPLE" v1 ) >/dev/null 2>&1
+( cd "$W" && git push -q "$BARE" v1:refs/tags/v1 ) >/dev/null 2>&1 && r=ACCEPT || r=REJECT; rm -rf "$W"
+[ "$r" = REJECT ] && { pass=$((pass+1)); RESULTS+=("PASS  [REJECT] (m) annotated-Tag Secret in Message"); } || { fail=$((fail+1)); RESULTS+=("FAIL  [got=$r want=REJECT] (m) Tag-Message-Secret"); }
+
+# (e) refs/notes/* -> REJECT (default-deny ref-Namespace, Klartext-Kanal)
+echo "0000000000000000000000000000000000000000 1111111111111111111111111111111111111111 refs/notes/commits" \
+  | env -u GIT_QUARANTINE_PATH GIT_PUSH_OPTION_COUNT=0 FORGEJO_SECRETS_POLICY_DIR="$POLICY_DIR" FORGEJO_SECRETS_SCAN_DIR="$LIBDIR" FORGEJO_SECRETS_REPO_KEY=test/secrets \
+    bash "$HOOK" >/dev/null 2>&1 && r=ACCEPT || r=REJECT
+[ "$r" = REJECT ] && { pass=$((pass+1)); RESULTS+=("PASS  [REJECT] (e) refs/notes/* default-deny"); } || { fail=$((fail+1)); RESULTS+=("FAIL  [got=$r want=REJECT] (e) refs/notes"); }
+
+# (10) fail-closed-on-tool-error: Validator fehlt (leerer SCAN_DIR) -> REJECT, NICHT skip
+EMPTY="$(mktemp -d)"
+echo "0000000000000000000000000000000000000000 1111111111111111111111111111111111111111 refs/heads/main" \
+  | env -u GIT_QUARANTINE_PATH GIT_PUSH_OPTION_COUNT=0 FORGEJO_SECRETS_POLICY_DIR="$POLICY_DIR" FORGEJO_SECRETS_SCAN_DIR="$EMPTY" FORGEJO_SECRETS_REPO_KEY=test/secrets \
+    bash "$HOOK" >/dev/null 2>&1 && r=ACCEPT || r=REJECT
+[ "$r" = REJECT ] && { pass=$((pass+1)); RESULTS+=("PASS  [REJECT] (10) Validator fehlt = fail-closed"); } || { fail=$((fail+1)); RESULTS+=("FAIL  [got=$r want=REJECT] (10) tool-error fail-closed"); }
+
+# (7b) UNREACHABLE-bad-blob im Pack -> Non-Vacuity-VOLLBEWEIS (Enum erfasst nicht-ref-erreichbare Objekte)
+SC="$(mktemp -d)"; git -C "$SC" init -q; git -C "$SC" config user.email t@t; git -C "$SC" config user.name t
+echo "$(good_sops zzz)" > "$SC/secret.json"; git -C "$SC" add -A; git -C "$SC" commit -qm clean
+COMMIT="$(git -C "$SC" rev-parse HEAD)"
+BAD="$(printf 'plaintext-leak AKIAIOSFODNN7EXAMPLE' | git -C "$SC" hash-object -w --stdin)"   # NICHT von Ref erreichbar
+QP="$(mktemp -d)"; mkdir -p "$QP/pack"
+( cd "$SC" && { git rev-list --objects "$COMMIT" | awk '{print $1}'; echo "$BAD"; } | git pack-objects "$QP/pack/pack" ) >/dev/null 2>&1
+( cd "$SC" && echo "0000000000000000000000000000000000000000 $COMMIT refs/heads/main" \
+  | env GIT_QUARANTINE_PATH="$QP" GIT_OBJECT_DIRECTORY="$QP" GIT_PUSH_OPTION_COUNT=0 FORGEJO_SECRETS_POLICY_DIR="$POLICY_DIR" FORGEJO_SECRETS_SCAN_DIR="$LIBDIR" FORGEJO_SECRETS_REPO_KEY=test/secrets \
+    bash "$HOOK" ) >/dev/null 2>&1 && r=ACCEPT || r=REJECT
+[ "$r" = REJECT ] && { pass=$((pass+1)); RESULTS+=("PASS  [REJECT] (7b) UNREACHABLE-bad-blob im Pack (Vollbeweis)"); } || { fail=$((fail+1)); RESULTS+=("FAIL  [got=$r want=REJECT] (7b) unreachable-bad-blob"); }
+
+# (7d-loose) loose-Objekt present aber unlesbar/garbage -> REJECT (raw_presence=true, cat-file failt)
+Ql="$(mktemp -d)"; mkdir -p "$Ql/ab"; printf 'garbage-no-git-object' > "$Ql/ab/cccccccccccccccccccccccccccccccccccccc"
+echo "0000000000000000000000000000000000000000 abcccccccccccccccccccccccccccccccccccccc refs/heads/main" \
+  | env GIT_QUARANTINE_PATH="$Ql" GIT_OBJECT_DIRECTORY="$Ql" GIT_PUSH_OPTION_COUNT=0 FORGEJO_SECRETS_POLICY_DIR="$POLICY_DIR" FORGEJO_SECRETS_SCAN_DIR="$LIBDIR" FORGEJO_SECRETS_REPO_KEY=test/secrets \
+    bash "$HOOK" >/dev/null 2>&1 && r=ACCEPT || r=REJECT
+[ "$r" = REJECT ] && { pass=$((pass+1)); RESULTS+=("PASS  [REJECT] (7d-loose) loose-Objekt unlesbar"); } || { fail=$((fail+1)); RESULTS+=("FAIL  [got=$r want=REJECT] (7d-loose) loose unlesbar"); }
+
 # ---- Report ----------------------------------------------------------------
 echo "=== §7-Oracle (lokal, echte git-push-Quarantine + Direct-Invoke) ==="
 printf '%s\n' "${RESULTS[@]}"
