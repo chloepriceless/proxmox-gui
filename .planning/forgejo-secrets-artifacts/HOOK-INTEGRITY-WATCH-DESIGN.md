@@ -200,11 +200,16 @@ LIVE-Canary-Lauf als root auf LXC 160.
 - [x] Watcher + systemd-Units + Oracle GEBAUT (`hook-integrity-watch.{sh,service,timer}` + `-oracle.sh`).
 - [x] Codex R22-Refute R1–R4 gefoldet; bash -n grün; kein stiller Bypass im Verifier.
 - [x] Schnüffi R22-Arm-Gate (NOT-YET, 0fcdd00): R5-Lens-Befunde (worktreeConfig, env-attestation, Control-TCB)
-      gefoldet; Oracle **36/36** grün; B-Feasibility recherchiert.
-- [ ] **Schnüffi: Bestätigungs-Lens auf R5-Fold (commit-getrieben) + finale Enforcement-Modell-Entscheidung
-      (A vs Hybrid, mit B-Feasibility-Befund) + Entscheid Restpunkte.**
-- [ ] **LIVE-Canary als root auf LXC 160:** Forgejo-Toleranz immutable config/hooks + receive-pack-env-Dump
-      (Attestations-Quelle) + B-Wrapper-Feasibility + Oracle inkl. inv #9/effective_forbidden.
+      gefoldet; B-Feasibility recherchiert.
+- [x] Schnüffi Bestätigungs-Lens (NOT-YET, a372897): 3 R5-Folds bestätigt + 1 [VERIFIED] BLOCKER
+      (`$GIT_DIR/commondir`-Redirect) + 2 Härtungen gefoldet → **positive Resolve-Prüfung** (`rev-parse
+      --git-path hooks/pre-receive`==golden, enumeration-unabhängig), RP_ENV→tcb_fail, env-schema-validate;
+      Oracle **38/38** grün. **A FINAL endorsed / B verworfen** (B-Feasibility codex-bestätigt). MED4
+      alternates → Hook-Canary.
+- [ ] **Schnüffi: nächste Bestätigungs-Lens auf R5-confirm-Fold (commit 1f0943a).**
+- [ ] **LIVE-Canary als root auf LXC 160 (A-Modell):** Forgejo-Toleranz immutable config/hooks **+ repo.git/-Dir-
+      Immutabilität** (Dir-Ebene gegen commondir-Erzeugung; packed-refs/gc?) + receive-pack-env+**argv**-Dump
+      (SSH+HTTP getrennt) als Attestations-Quelle + Oracle inkl. inv #9/resolve/effective_forbidden.
 - [ ] **LIVE-Canary als root auf LXC 160:** Forgejo-Toleranz von immutable config/hooks/global-config
       (bleibt Push grün?) + Oracle-Lauf inkl. inv #9 (chattr) + effective_forbidden (runuser+GIT_DIR).
 - Entkoppelt vom Arm-Fix; beide vor erstem echten Secret.
