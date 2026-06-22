@@ -96,6 +96,28 @@ ECHTEN Push-Pfad auf LXC 160 `forgejo-sec` (Forgejo 15.0.3). Canary-Repo `dvhub/
 - [ ] **§8-Landing (Operator/proxmox-master)** bleibt Gate fürs ERSTE echte Secret: op-connect weg .240,
       m-of-n Shamir-Recovery gedrillt, DVhub-Split (Brettli).
 
+## Config-Lockdown (LXC 160, angewendet 2026-06-22, app.ini.bak-pre-lockdown gesichert)
+Forgejo nach Änderung sauber neugestartet (`is-active=active`, API antwortet). Gesetzt:
+| Setting | Wert | Warum |
+|---|---|---|
+| `[mirror] ENABLED` | `false` | 🔴 Pull-Mirror umgeht pre-receive (R1/B1) — war default-an, jetzt aus |
+| `[server] LFS_START_SERVER` | `false` | LFS = Nicht-git-Content-Pfad (H1-Bypass) |
+| `[security] DISABLE_GIT_HOOKS` | `true` | keine user-definierten Git-Hooks (könnten 50-secrets umgehen) |
+| `[packages] ENABLED` | `false` | Package-Registry = Nicht-git-Secret-Store |
+| `[attachment] ENABLED` | `false` | Attachments = Nicht-git-Content mit Secrets |
+| `[repository] DISABLED_REPO_UNITS` | issues,ext_issues,wiki,ext_wiki,projects,packages,actions,releases | Nicht-Code-Units (Klartext-Kanäle) aus; Code/pulls bleiben |
+- **agit/proc-receive:** `proc-receive.d/gitea` vorhanden; `refs/for/*` wird vom Hook per default-deny REJECTed
+  (ref-Namespace-Check), und Objekte laufen ohnehin durch Quarantine+pre-receive VOR proc-receive → kein Bypass.
+- **Offen (R6/R7-MED):** `receive.procReceiveRefs` explizit absent verifizieren je Secret-Repo (durch hook-integrity-watch
+  mit abdecken). **TLS/COOKIE_SECURE** = separate Härtung (LAN/Zone, später). **Migration/Mirror-erzeugte Repos ohne
+  Hook** → vom hook-integrity-watch-Backstop (HIGH-5) abgefangen (read-only bis Hook present).
+
+## Offene Verify-Frage (nächster Live-Test, braucht Hook scharf auf einem Repo)
+- **Triggert ein Forgejo WEB-EDIT / API-Content-Create den `pre-receive.d/50-secrets`?** Wenn der interne
+  Schreibpfad die on-disk-Hooks umginge, wäre das ein Klartext-Leak-Loch. Muss live geprüft werden (Canary,
+  nach Schnüffi-Sign-off). Default-Annahme: Forgejo-interne Pushes laufen durch dieselbe receive-pack-Maschinerie
+  (Hook greift) — aber NICHT angenommen lassen, MESSEN.
+
 ## Was die Live-Oracle BEWIESEN hat (Integrations-Schicht, die das lokale oracle.sh NICHT abdeckt)
 - Forgejo 15 INVOKED den `pre-receive.d/50-secrets`-Hook tatsächlich (Dispatcher iteriert .d/*) ✓
 - `GIT_QUARANTINE_PATH` wird im Forgejo-Push-Pfad gesetzt → `raw_presence`/PHYS_OIDS greifen ✓
