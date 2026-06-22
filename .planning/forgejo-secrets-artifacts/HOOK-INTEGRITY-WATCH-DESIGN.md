@@ -210,6 +210,8 @@ LIVE-Canary-Lauf als root auf LXC 160.
 - [ ] **LIVE-Canary als root auf LXC 160 (A-Modell):** Forgejo-Toleranz immutable config/hooks **+ repo.git/-Dir-
       Immutabilität** (Dir-Ebene gegen commondir-Erzeugung; packed-refs/gc?) + receive-pack-env+**argv**-Dump
       (SSH+HTTP getrennt) als Attestations-Quelle + Oracle inkl. inv #9/resolve/effective_forbidden.
+      → **Ausführungsfertiger Runbook: `CANARY-RUNBOOK-LXC160.md`** (exakte Befehlssequenz + R31-Oracle C-A..C-G
+      + Rollback; gated nur auf Operator-GO).
 - [ ] **LIVE-Canary als root auf LXC 160:** Forgejo-Toleranz von immutable config/hooks/global-config
       (bleibt Push grün?) + Oracle-Lauf inkl. inv #9 (chattr) + effective_forbidden (runuser+GIT_DIR).
 - Entkoppelt vom Arm-Fix; beide vor erstem echten Secret.
