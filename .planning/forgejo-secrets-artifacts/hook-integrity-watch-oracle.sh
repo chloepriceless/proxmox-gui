@@ -130,6 +130,22 @@ expect "C2. repo.git/config group-writable -> LOCKDOWN-FAILED (non-root)" 4 yes 
 fresh_env; git --git-dir="$(RD testorg/r)" config core.hooksPath ""; run_watch
 expect "C6. leerer core.hooksPath -> Lockdown" 1 yes down
 
+# === C7. extensions.worktreeConfig=true -> Lockdown (Schnüffi-R5-BLOCKER1) ===================
+fresh_env; git --git-dir="$(RD testorg/r)" config extensions.worktreeConfig true; run_watch
+expect "C7. extensions.worktreeConfig -> Lockdown" 1 yes down
+
+# === C8. config.worktree mit core.hooksPath -> Lockdown (Schnüffi-R5-BLOCKER1 Surface) =======
+fresh_env; printf '[core]\n\thooksPath = /tmp/empty-wt\n' > "$(RD testorg/r)/config.worktree"; run_watch
+expect "C8. config.worktree core.hooksPath -> Lockdown" 1 yes down
+
+# === T1. POLICY_DIR group-writable -> Control-TCB-Bruch -> LOCK-ALL exit5 (Schnüffi-R5-HIGH) =
+fresh_env; chmod g+w "$POLICY_DIR"; run_watch
+expect "T1. POLICY_DIR group-writable -> TCB lock-all (exit5)" 5 yes down
+
+# === T2. .kuma-push-url group-writable -> Control-TCB-Bruch -> LOCK-ALL exit5 ================
+fresh_env; chmod g+w "$POLICY_DIR/.kuma-push-url"; run_watch
+expect "T2. kuma-url group-writable -> TCB lock-all (exit5)" 5 yes down
+
 # === C3. AKTIVER GLOBAL-BYPASS (git-user-global core.hooksPath) -> LOCK-ALL exit3 ============
 fresh_env; mk_repo testorg/second
 git config -f "$GITHOME/.gitconfig" core.hooksPath /tmp/empty-global

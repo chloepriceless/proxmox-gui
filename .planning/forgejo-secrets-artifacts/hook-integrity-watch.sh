@@ -46,9 +46,13 @@ KUMA_URL_FILE="${FORGEJO_SECRETS_KUMA_FILE:-$POLICY_DIR/.kuma-push-url}"
 GIT_USER="${FORGEJO_GIT_USER:-git}"
 GIT_HOME="${FORGEJO_GIT_HOME:-}"
 SYSTEM_GITCONFIG="${FORGEJO_SYSTEM_GITCONFIG:-/etc/gitconfig}"
+RP_ENV_FILE="${FORGEJO_SECRETS_RP_ENV:-$POLICY_DIR/.receive-pack-env}"      # attestierte receive-pack-env (KEY=VAL/Zeile)
 TEST_MODE="${FORGEJO_SECRETS_TEST_MODE:-0}"
 LOCK_MARKER="# HOOK-INTEGRITY-WATCH-LOCKDOWN"
-FORBIDDEN_KEYS="core.hooksPath receive.procReceiveRefs"
+# Verbotene git-config-Keys, die den pre-receive-Hook umlenken/abschalten (Codex R1-R4 + Schnueffi-R5):
+# core.hooksPath (Hook-Dir-Redirect), receive.procReceiveRefs (agit-Bypass), extensions.worktreeConfig
+# (aktiviert $GIT_DIR/config.worktree als ZUSAETZLICHE git-writable Redirect-Surface, Schnueffi-R5-BLOCKER1).
+FORBIDDEN_KEYS="core.hooksPath receive.procReceiveRefs extensions.worktreeConfig"
 
 GOLDEN_SHA=""
 KUMA_URL=""
@@ -131,8 +135,17 @@ effective_forbidden() {  # $1=repo_dir -> echo't reason-codes (space-sep), "" = 
   # PRAESENZ per Exit-Status (leerer Wert deaktiviert Hooks trotzdem, Codex-R4-BLOCKER).
   local repo_dir="$1" out="" key f
   if [ "$TEST_MODE" != 1 ] && [ "$(id -u 2>/dev/null)" = 0 ] && command -v runuser >/dev/null 2>&1; then
+    # BLOCKER2 (Schnueffi-R5): in der ATTESTIERTEN receive-pack-env laufen (env -i), sonst sieht der
+    # Watcher einen anderen Config-Zustand als der echte Push (HOME/XDG/GIT_CONFIG_*). RP_ENV_FILE wird
+    # in main auf Integritaet geprueft (config_fail wenn fehlt/unsicher) -> hier vertrauenswuerdig.
+    local -a rpenv=(); local line
+    if [ -r "$RP_ENV_FILE" ]; then
+      while IFS= read -r line; do case "$line" in ''|'#'*) : ;; *=*) rpenv+=("$line") ;; esac; done < "$RP_ENV_FILE"
+    else
+      rpenv=("HOME=$GIT_HOME" "PATH=${PATH:-/usr/bin:/bin}" "GIT_CONFIG_NOSYSTEM=1" "XDG_CONFIG_HOME=$GIT_HOME/.config")
+    fi
     for key in $FORBIDDEN_KEYS; do
-      if runuser -u "$GIT_USER" -- env GIT_DIR="$repo_dir" git config --includes --get-all "$key" >/dev/null 2>&1; then out="$out effective:${key}=set"; fi
+      if runuser -u "$GIT_USER" -- env -i "${rpenv[@]}" GIT_DIR="$repo_dir" git config --includes --get-all "$key" >/dev/null 2>&1; then out="$out effective:${key}=set"; fi
     done
   else
     for key in $FORBIDDEN_KEYS; do
@@ -199,9 +212,12 @@ authoritative_lockdown() {  # $1=repo_dir  $2=key
   if ! grep -q "$LOCK_MARKER" "$disp" 2>/dev/null; then write_deny_all "$disp" "$key" || true; fi
   # Redirect-Source in ALLEN Origin-Dateien der Kette neutralisieren (inkl. Includes, Codex-R3-BLOCKER#1)
   neutralize_keys_in_chain "$cfg"
+  # config.worktree-Surface mit-neutralisieren (Schnueffi-R5-BLOCKER1)
+  [ -e "$repo_dir/config.worktree" ] && neutralize_keys_in_chain "$repo_dir/config.worktree"
   # prod: Redirect-Surface + Hook-Eintraege immutabel machen -> Lockdown durable (Codex-R4-BLOCKER#1).
   if [ "$TEST_MODE" != 1 ] && command -v chattr >/dev/null 2>&1; then
     chattr +i "$cfg" "$disp" "$repo_dir/hooks" "$repo_dir/hooks/pre-receive.d" 2>/dev/null || true
+    [ -e "$repo_dir/config.worktree" ] && chattr +i "$repo_dir/config.worktree" 2>/dev/null || true
   fi
   verify_lockdown "$disp" "$repo_dir"
 }
@@ -255,6 +271,12 @@ check_repo() {  # $1=key  $2=repo_dir  $3=origin
   r="$(path_secure "$cfg" 1)" || reasons+=("repo-config-insecure:$r")
   # inv #4/#7 — verbotene Keys (core.hooksPath/procReceiveRefs) inkl. include-Kette + Origin-Integritaet
   cfgr="$(audit_config "$cfg")"; [ -n "$cfgr" ] && reasons+=("repo-config:${cfgr# }")
+  # BLOCKER1 (Schnueffi-R5): config.worktree ist eine ZUSAETZLICHE git-writable Redirect-Surface, wenn
+  # extensions.worktreeConfig aktiv ist (oben verboten). Falls die Datei existiert -> als Surface auditieren.
+  if [ -e "$repo_dir/config.worktree" ]; then
+    r="$(path_secure "$repo_dir/config.worktree" 1)" || reasons+=("config.worktree-insecure:$r")
+    cfgr="$(audit_config "$repo_dir/config.worktree")"; [ -n "$cfgr" ] && reasons+=("config.worktree:${cfgr# }")
+  fi
   cfgr="$(effective_forbidden "$repo_dir")"; [ -n "$cfgr" ] && reasons+=("${cfgr# }")
   # inv #5 — .allow (WARN only)
   local allow="$POLICY_DIR/$key.allow"
@@ -331,7 +353,7 @@ finish() {  # gemeinsamer Exit mit Aggregat-Kuma
 }
 
 main() {
-  local config_fail=0 config_reasons=() r
+  local config_fail=0 tcb_fail=0 config_reasons=() r
   if r="$(path_secure "$GOLDEN_FILE" 1)"; then
     if [ -r "$GOLDEN_FILE" ]; then
       GOLDEN_SHA="$(tr -cd '0-9a-fA-F' < "$GOLDEN_FILE" | head -c 64)"
@@ -341,14 +363,23 @@ main() {
   r="$(path_secure "$SECRET_ORGS_FILE" 1)" || { config_fail=1; config_reasons+=("secret-orgs-insecure:$r"); }
   [ -d "$VIOL_DIR" ] || mkdir -p "$VIOL_DIR" 2>/dev/null
   r="$(path_secure "$VIOL_DIR")" || { config_fail=1; config_reasons+=("violations-dir-insecure:$r"); }
+  # BLOCKER2 (Schnueffi-R5): receive-pack-env-Attestation muss vorhanden+immutabel sein, sonst ist der
+  # effektive Check nicht beweisbar receive-pack-aequivalent. prod-only (TEST hat keine Attestation).
+  if [ "$TEST_MODE" != 1 ]; then
+    r="$(path_secure "$RP_ENV_FILE" 1)" || { config_fail=1; config_reasons+=("rp-env-attestation:$r"); }
+  fi
+
+  # HIGH (Schnueffi-R5) Control-TCB: POLICY_DIR + .kuma-push-url (Alarm-Kanal) muessen immutabel sein.
+  # Bruch hier = Alarm-Kanal evtl. selbst umgebogen -> NICHT auf Kuma verlassen (tcb_fail -> lock-all).
+  r="$(path_secure "$POLICY_DIR" 1)" || { tcb_fail=1; config_reasons+=("policy-dir-insecure:$r"); }
+  if [ -e "$KUMA_URL_FILE" ]; then
+    if r="$(path_secure "$KUMA_URL_FILE" 1)"; then KUMA_URL="$(tr -d '[:space:]' < "$KUMA_URL_FILE" 2>/dev/null)"
+    else tcb_fail=1; config_reasons+=("kuma-url-insecure:$r"); fi
+  else log warn KUMA "kuma-url-file fehlt — journald+Marker bleiben aktiv"; fi
 
   check_global_git_config config_reasons
   # git-erreichbare unsichere/erzeugbare Global-Config = Race-Enabler (Codex-R2-HIGH + R3-BLOCKER#2)
   case " ${config_reasons[*]:-} " in *"insecure:"*|*"global-missing-creatable"*) config_fail=1 ;; esac
-
-  if r="$(path_secure "$KUMA_URL_FILE")"; then
-    [ -r "$KUMA_URL_FILE" ] && KUMA_URL="$(tr -d '[:space:]' < "$KUMA_URL_FILE")"
-  else log warn KUMA "kuma-url-file fehlt/unsicher ($r) — journald+Marker bleiben aktiv"; fi
 
   # AKTIVER GLOBAL-BYPASS -> SOURCE neutralisieren + LOCK-ALL + exit 3 (bzw. 4 bei Lockdown-Fehler)
   if [ "$GLOBAL_BYPASS" = 1 ]; then
@@ -360,6 +391,14 @@ main() {
     fi
     kuma_push down "GLOBAL-BYPASS lock-all violated=$T_VIOLATED total=$T_TOTAL"
     exit 3
+  fi
+  # CONTROL-TCB-BRUCH (POLICY_DIR/kuma-url unsicher) -> Alarm-Kanal evtl. selbst umgebogen, NICHT auf
+  # Kuma verlassen: LOCK-ALL + journald-loud (lokal, schwer umlenkbar) + best-effort-Kuma (Schnueffi-R5-HIGH).
+  if [ "$tcb_fail" = 1 ]; then
+    log err CONFIG "CONTROL-TCB-BRUCH -> LOCK-ALL (Alarm-Kanal nicht vertrauenswuerdig): ${config_reasons[*]}"
+    enumerate force_lock
+    kuma_push down "CONTROL-TCB-BRUCH lock-all violated=$T_VIOLATED lockfail=$T_LOCKFAIL: ${config_reasons[*]}"
+    exit 5
   fi
   # WATCHER-CONFIG blind -> Alarm-only (kein Auto-Lockdown-ALL)
   if [ "$config_fail" = 1 ]; then
