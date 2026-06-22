@@ -120,9 +120,15 @@ fresh_env; git --git-dir="$(RD testorg/r)" config core.hooksPath /tmp/empty-hook
 expect "C1. core.hooksPath repo-local -> Lockdown" 1 yes down
 [ -z "$(hookspath testorg/r)" ] && ok "C1b. core.hooksPath neutralisiert" || bad "C1b. neutralisiert" "noch: $(hookspath testorg/r)"
 
-# === C2. repo.git/config group-writable -> Lockdown (inv #8) =================================
+# === C2. repo.git/config group-writable -> nicht durable lockbar (Codex-R4-BLOCKER#1) =========
+# In NON-ROOT-TEST kann der Watcher die writable config nicht immutabel machen -> verify schlaegt
+# fehl -> LOCKDOWN-FAILED exit4 (ehrlich). PROD: authoritative_lockdown chattr +i config -> durable exit1.
 fresh_env; chmod g+w "$(RD testorg/r)/config"; run_watch
-expect "C2. repo.git/config group-writable -> Lockdown" 1 yes down
+expect "C2. repo.git/config group-writable -> LOCKDOWN-FAILED (non-root)" 4 yes down
+
+# === C6. leerer core.hooksPath="" -> per Exit-Status erkannt -> Lockdown (Codex-R4-BLOCKER) ===
+fresh_env; git --git-dir="$(RD testorg/r)" config core.hooksPath ""; run_watch
+expect "C6. leerer core.hooksPath -> Lockdown" 1 yes down
 
 # === C3. AKTIVER GLOBAL-BYPASS (git-user-global core.hooksPath) -> LOCK-ALL exit3 ============
 fresh_env; mk_repo testorg/second

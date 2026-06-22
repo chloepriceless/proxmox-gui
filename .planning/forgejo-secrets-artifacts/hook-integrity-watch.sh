@@ -108,11 +108,12 @@ path_secure() {  # $1=pfad  $2=require_immutable(0/1, optional)
 # Config-Audit EINER Datei: forbidden-Werte (mit --includes!) + Integritaet ALLER Origin-Dateien
 # der Include-Kette (Codex-R2-BLOCKER#4). Echo't space-getrennte Reason-Codes.
 audit_config() {  # $1=config-datei
-  local f="$1" out="" key v origin r
+  local f="$1" out="" key origin r
   [ -e "$f" ] || return 0
   for key in $FORBIDDEN_KEYS; do
-    v="$(git config -f "$f" --includes --get-all "$key" 2>/dev/null || true)"
-    [ -n "$v" ] && out="$out ${key}=set"
+    # PRAESENZ per Exit-Status, NICHT per nicht-leerem Wert: leerer core.hooksPath="" deaktiviert
+    # Hooks ebenso, liefert aber Leerstring (Codex-R4-BLOCKER). exit0 = Key gesetzt (auch leer).
+    if git config -f "$f" --includes --get-all "$key" >/dev/null 2>&1; then out="$out ${key}=set"; fi
   done
   while IFS= read -r origin; do
     [ -n "$origin" ] || continue
@@ -127,20 +128,18 @@ audit_config() {  # $1=config-datei
 # Prueft NUR effektiv aufgeloeste verbotene WERTE (nicht Origin-Integritaet — die ist separat eine
 # Violation-Ursache, NICHT das Lockdown-Erfolgskriterium: ein deny-all blockt auch bei writable config).
 effective_forbidden() {  # $1=repo_dir -> echo't reason-codes (space-sep), "" = effektiv sauber
-  local repo_dir="$1" out="" key v f
+  # PRAESENZ per Exit-Status (leerer Wert deaktiviert Hooks trotzdem, Codex-R4-BLOCKER).
+  local repo_dir="$1" out="" key f
   if [ "$TEST_MODE" != 1 ] && [ "$(id -u 2>/dev/null)" = 0 ] && command -v runuser >/dev/null 2>&1; then
     for key in $FORBIDDEN_KEYS; do
-      v="$(runuser -u "$GIT_USER" -- env GIT_DIR="$repo_dir" git config --includes --get-all "$key" 2>/dev/null || true)"
-      [ -n "$v" ] && out="$out effective:${key}=set"
+      if runuser -u "$GIT_USER" -- env GIT_DIR="$repo_dir" git config --includes --get-all "$key" >/dev/null 2>&1; then out="$out effective:${key}=set"; fi
     done
   else
     for key in $FORBIDDEN_KEYS; do
-      v="$(git config -f "$repo_dir/config" --includes --get-all "$key" 2>/dev/null || true)"
-      [ -n "$v" ] && out="$out effective:${key}=set"
+      if git config -f "$repo_dir/config" --includes --get-all "$key" >/dev/null 2>&1; then out="$out effective:${key}=set"; fi
       for f in "${GLOBAL_CFGS[@]:-}"; do
         { [ -n "$f" ] && [ -e "$f" ]; } || continue
-        v="$(git config -f "$f" --includes --get-all "$key" 2>/dev/null || true)"
-        [ -n "$v" ] && out="$out effective-global:${key}=set"
+        if git config -f "$f" --includes --get-all "$key" >/dev/null 2>&1; then out="$out effective-global:${key}=set"; fi
       done
     done
   fi
@@ -186,17 +185,24 @@ verify_lockdown() {  # $1=disp  $2=repo_dir -> 0 wenn wirksamer Lockdown verifiz
     [ "$(stat -c '%u' "$disp" 2>/dev/null)" = 0 ] || return 1
     is_immutable "$disp" || return 1
   fi
-  # Effektiv-Check (Codex-R3): erst Erfolg, wenn KEIN Redirect-Key mehr effektiv aufgeloest wird.
+  # Effektiv-Check (Codex-R3): kein Redirect-Key mehr effektiv aufgeloest.
   [ -z "$(effective_forbidden "$repo_dir")" ] || return 1
+  # DURABLE (Codex-R4-BLOCKER#1): die Redirect-Surface (repo-config) MUSS sicher/immutabel sein, sonst
+  # kann der git-User nach dem Lockdown core.hooksPath re-setzen und am deny-all vorbei pushen.
+  path_secure "$repo_dir/config" 1 >/dev/null 2>&1 || return 1
   return 0
 }
-# AUTORITATIVER, VERIFIZIERTER Lockdown. return 0 = wirksam gesperrt, 1 = LOCKDOWN-FAILED.
+# AUTORITATIVER, VERIFIZIERTER, DURABLER Lockdown. return 0 = wirksam gesperrt, 1 = LOCKDOWN-FAILED.
 authoritative_lockdown() {  # $1=repo_dir  $2=key
   local repo_dir="$1" key="$2" disp="$1/hooks/pre-receive" cfg="$1/config"
   mkdir -p "$1/hooks" 2>/dev/null || true
   if ! grep -q "$LOCK_MARKER" "$disp" 2>/dev/null; then write_deny_all "$disp" "$key" || true; fi
   # Redirect-Source in ALLEN Origin-Dateien der Kette neutralisieren (inkl. Includes, Codex-R3-BLOCKER#1)
   neutralize_keys_in_chain "$cfg"
+  # prod: Redirect-Surface + Hook-Eintraege immutabel machen -> Lockdown durable (Codex-R4-BLOCKER#1).
+  if [ "$TEST_MODE" != 1 ] && command -v chattr >/dev/null 2>&1; then
+    chattr +i "$cfg" "$disp" "$repo_dir/hooks" "$repo_dir/hooks/pre-receive.d" 2>/dev/null || true
+  fi
   verify_lockdown "$disp" "$repo_dir"
 }
 
