@@ -155,6 +155,13 @@ run_watch
 expect "CD1. commondir-Redirect (kein Key) -> Lockdown" 1 yes down
 [ ! -e "$(RD testorg/r)/commondir" ] && ok "CD1b. commondir beim Lockdown entfernt" || bad "CD1b. commondir entfernt" "noch present"
 
+# === SL1. pre-receive-Symlink -> Symlink-Redirect erkannt -> Lockdown (Schnüffi-R5c-HIGH) ====
+fresh_env
+ln -sf /tmp/evil-hook "$(RD testorg/r)/hooks/pre-receive"
+run_watch
+expect "SL1. pre-receive-Symlink -> Lockdown" 1 yes down
+[ ! -L "$(RD testorg/r)/hooks/pre-receive" ] && ok "SL1b. Symlink durch echte deny-all ersetzt" || bad "SL1b. Symlink ersetzt" "noch Symlink"
+
 # === C3. AKTIVER GLOBAL-BYPASS (git-user-global core.hooksPath) -> LOCK-ALL exit3 ============
 fresh_env; mk_repo testorg/second
 git config -f "$GITHOME/.gitconfig" core.hooksPath /tmp/empty-global

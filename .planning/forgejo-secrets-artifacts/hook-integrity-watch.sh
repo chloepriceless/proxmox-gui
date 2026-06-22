@@ -157,6 +157,10 @@ effective_git() {  # $1=repo_dir; rest=git-args -> stdout, rc
 # UNABHAENGIG. 0 = git resolved hooks/pre-receive == golden literal $repo_dir/hooks/pre-receive.
 hook_resolve_ok() {  # $1=repo_dir
   local repo_dir="$1" want resolved
+  # Symlink-Redirect SELBST fangen (Schnueffi-R5c-HIGH): readlink -m kanonisiert beide Seiten aufs selbe
+  # Ziel -> ein Symlink wuerde rc=0 liefern. NICHT auf path_secures [-L]-Check koppeln (Fragilitaet).
+  [ ! -L "$repo_dir/hooks" ] || return 1
+  [ ! -L "$repo_dir/hooks/pre-receive" ] || return 1
   want="$(readlink -m "$repo_dir/hooks/pre-receive" 2>/dev/null)"
   resolved="$(effective_git "$repo_dir" rev-parse --git-path hooks/pre-receive)"
   [ -n "$resolved" ] || return 1
@@ -217,6 +221,9 @@ write_deny_all() {  # $1=zielpfad  $2=key(log) -> 0 ok / 1 fail. prod: immutabel
 }
 verify_lockdown() {  # $1=disp  $2=repo_dir -> 0 wenn wirksamer Lockdown verifiziert
   local disp="$1" repo_dir="$2"
+  # Symlink-Redirect selbst fangen (Schnueffi-R5c-HIGH, self-contained statt nur via hook_resolve_ok)
+  [ ! -L "$repo_dir/hooks" ] || return 1
+  [ ! -L "$disp" ] || return 1
   [ -f "$disp" ] && [ -x "$disp" ] || return 1
   grep -q "$LOCK_MARKER" "$disp" 2>/dev/null || return 1
   if [ "$TEST_MODE" != 1 ]; then
@@ -237,6 +244,12 @@ verify_lockdown() {  # $1=disp  $2=repo_dir -> 0 wenn wirksamer Lockdown verifiz
 authoritative_lockdown() {  # $1=repo_dir  $2=key
   local repo_dir="$1" key="$2" disp="$1/hooks/pre-receive" cfg="$1/config"
   mkdir -p "$1/hooks" 2>/dev/null || true
+  # Symlink-Hook entfernen, damit der deny-all als ECHTE Datei am golden Pfad landet (sonst schreibt
+  # printf durch den Symlink ins Ziel + verify_lockdown faengt den Symlink = LOCKDOWN-FAILED). Schnueffi-R5c.
+  if [ -L "$disp" ]; then
+    [ "$TEST_MODE" != 1 ] && command -v chattr >/dev/null 2>&1 && chattr -i "$disp" 2>/dev/null || true
+    rm -f "$disp" 2>/dev/null || true
+  fi
   if ! grep -q "$LOCK_MARKER" "$disp" 2>/dev/null; then write_deny_all "$disp" "$key" || true; fi
   # Redirect-Source in ALLEN Origin-Dateien der Kette neutralisieren (inkl. Includes, Codex-R3-BLOCKER#1)
   neutralize_keys_in_chain "$cfg"
@@ -407,7 +420,7 @@ main() {
   if [ "$TEST_MODE" != 1 ]; then
     if r="$(path_secure "$RP_ENV_FILE" 1)"; then
       # HIGH3: Attestation schema-validieren — keine config/hook/object-UMLENKENDEN env-Keys erlaubt.
-      if grep -Eq '^(GIT_CONFIG_(PARAMETERS|COUNT|KEY|VALUE)|GIT_COMMON_DIR|GIT_OBJECT_DIRECTORY|GIT_ALTERNATE_OBJECT_DIRECTORIES|GIT_DIR)=' "$RP_ENV_FILE" 2>/dev/null; then
+      if grep -Eq '^(GIT_CONFIG_(PARAMETERS|COUNT|KEY|VALUE|GLOBAL|SYSTEM)|GIT_COMMON_DIR|GIT_OBJECT_DIRECTORY|GIT_ALTERNATE_OBJECT_DIRECTORIES|GIT_DIR|GIT_NAMESPACE|GIT_WORK_TREE)=' "$RP_ENV_FILE" 2>/dev/null; then
         tcb_fail=1; config_reasons+=("rp-env-dangerous-key")
       fi
     else tcb_fail=1; config_reasons+=("rp-env-attestation:$r"); fi
