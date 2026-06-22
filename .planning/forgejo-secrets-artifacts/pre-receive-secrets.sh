@@ -49,8 +49,18 @@ command -v python3 >/dev/null || reject "python3 fehlt (strikter SOPS-Parser)"
 [ -r "$SOPS_VALIDATE" ]       || reject "SOPS-Validator fehlt: $SOPS_VALIDATE"
 [ -d "$POLICY_DIR" ]          || reject "admin-Policy-Dir fehlt: $POLICY_DIR"
 
-# Repo-Identitaet fuer die out-of-band-Policy (NICHT aus dem Push ableitbar).
-REPO_KEY="${FORGEJO_SECRETS_REPO_KEY:-${GITEA_REPO_OWNER_NAME:-}/${GITEA_REPO_NAME:-}}"
+# Repo-Identitaet fuer die out-of-band-Policy (NICHT vom Pusher beeinflussbar).
+# PATH-PRIMAER: der physische bare-Repo-Pfad (.../<owner>/<repo>.git), den Forgejo als
+# cwd/GIT_DIR server-seitig setzt, ist die Quelle der Wahrheit — env-naming-ROBUST.
+# (Forgejo 15 setzt GITEA_REPO_USER_NAME, NICHT GITEA_REPO_OWNER_NAME; eine env-var-Name-
+#  Annahme hat die Policy-Aufloesung gebrochen — Pfad vermeidet diese Brittleness ganz.)
+# Live gemessen am Canary (LXC 160): GIT_QUARANTINE_PATH + cwd == bare-Repo-Pfad. (LIVE-ORACLE-FINDINGS.md)
+_repo_dir="$(git rev-parse --absolute-git-dir 2>/dev/null || echo "${PWD:-}")"
+[ -n "$_repo_dir" ] || reject "Repo-Pfad nicht aufloesbar (fail-closed)"
+_path_owner="$(basename "$(dirname "$_repo_dir")")"
+_path_repo="$(basename "$_repo_dir" .git)"
+REPO_KEY="${FORGEJO_SECRETS_REPO_KEY:-${_path_owner}/${_path_repo}}"
+case "$REPO_KEY" in ''|/|*/'') reject "Repo-Key nicht aufloesbar: '${REPO_KEY}' (fail-closed)" ;; esac
 ALLOW_FILE="$POLICY_DIR/${REPO_KEY}.allow"
 [ -r "$ALLOW_FILE" ] || reject "admin-Recipient-Policy fehlt fuer Repo (out-of-band): ${REPO_KEY}"
 

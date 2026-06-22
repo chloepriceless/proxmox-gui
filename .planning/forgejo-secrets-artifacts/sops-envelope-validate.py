@@ -114,7 +114,19 @@ def main():
     allow_path = sys.argv[1]
     try:
         with open(allow_path, "r", encoding="utf-8") as f:
-            allowed = {ln.strip() for ln in f if ln.strip() and not ln.startswith("#")}
+            allowed = set()
+            for ln in f:
+                ln = ln.strip()
+                if not ln or ln.startswith("#"):
+                    continue
+                # "@recovery age1..." gewaehrt UND markiert den Recovery-Recipient in EINER
+                # Zeile (dokumentiertes Format, Spec §Z.65). Prefix strippen, sonst faellt der
+                # nackte age1... aus dem Containment (Z.169) -> fail-closed-False-Reject jedes
+                # legitimen Pushes (Recovery ist Pflicht je Datei). Siehe LIVE-ORACLE-FINDINGS.md BUG-1.
+                if ln.startswith("@recovery "):
+                    ln = ln.split(None, 1)[1].strip()
+                if ln:
+                    allowed.add(ln)
     except Exception:
         reject("admin-Recipient-Policy nicht lesbar (fail-closed)")
     if not allowed:

@@ -13,7 +13,7 @@
 - **`python3-yaml` (pyyaml)** installieren (Hook fail-closed't sonst auf YAML-Dateien — by design, aber YAML-Tier-A braucht es). JSON-Pfad braucht es nicht.
 - **`gitleaks`** für Tier-B-Entropy-Scan (Tier-A nutzt den strukturellen SOPS-Zwang; gitleaks optional härtend).
 - Hook → `<repo>.git/hooks/pre-receive.d/50-secrets` (0755, root-owned); Validator → `/usr/local/lib/forgejo-secrets/`.
-- admin out-of-band Policy → `/etc/forgejo-secrets-policy/<org>/<repo>.allow` (root-only, eine `age1…`-Zeile je erlaubtem Recipient; Recovery-Zeile mit Prefix `@recovery `).
+- admin out-of-band Policy → `/etc/forgejo-secrets-policy/<org>/<repo>.allow` — **root-owned, Mode `0644`** (oder `0640 root:git`) — der Hook+Validator laufen als User **git** und MÜSSEN sie LESEN; „root-only" meint nur root-WRITABLE (Inhalt = age-**Public**-Recipients, nicht geheim). Dirs `0755` (git-traversierbar). **`chmod 600` bricht JEDEN Push fail-closed** (BUG-3, LIVE-ORACLE-FINDINGS.md). Format: eine `age1…`-Zeile je erlaubtem Recipient; der Recovery-Recipient als EINE Zeile `@recovery age1…` (gewährt UND markiert — Validator strippt den Prefix).
 - `[security] DISABLE_GIT_HOOKS=true`, `[mirror] ENABLED=false`, `[lfs] ENABLED=false`, Issues/Wiki/Attachments/Packages/Web-Editor aus, **`receive.procReceiveRefs` absent verifizieren** (R6/R7-MED).
 
 ## Noch zu bauen (nächste Schritte)
@@ -21,7 +21,7 @@
 2. **Oracle-Harness** (`oracle.sh`) — §7, 7 Kriterien + **20-Punkt-Negativ-Matrix a–t**, mit echten Fixtures (`git pack-objects`+`receive-pack`):
    - Krit.7 load-bearing: (a) objekttragend count>0, (b) **Positiv-Kontrolle** unreachable-bad-blob+push-cert in PHYS_OIDS→REJECT, (c) legit Null-Objekt-Push passt + Secret-Refname geblockt, (d) **broken-enum** — BEIDE Fälle: Glob künstlich 0 UND realistisch `.pack` present/`.idx` fehlt-korrupt → raw_presence=true + REJECT (Schnüffi-Hint).
    - G1-Vollplatten-grep (journald/WAL/swap/coredump/`cat-file --batch-all-objects`), G2/G3/B4-Vault-403/Break-Glass-Drill (m-of-n-Rekonstruktion).
-3. **Deploy auf LXC 160 + LIVE-Oracle mit Canary-FAKE-Secret** → gemessene REJECT/PASS-Zahlen je Sub-Test an Schnüffi (per6ezmd/l3hcyv1x) zum R31-Review, BEVOR ein echtes Secret landet.
+3. ✅ **Deploy auf LXC 160 + LIVE-Oracle mit Canary-FAKE-Secret** — DONE 2026-06-22: **8/8 reason-asserted** durch Forgejos echten Push-Pfad; fing 3 Integrations-Bugs (BUG-1 Recovery-Containment, BUG-2 REPO_KEY-env, BUG-3 .allow-Perms), alle gefixt. Gemessene Zahlen + Fix-Diffs → `LIVE-ORACLE-FINDINGS.md`. **Wartet auf Schnüffi R22/R31-Cross-Refute der Fixes VOR Scharf-Schalten.**
 4. **Perf-Limits live kalibrieren** am echten LXC-160-Durchsatz (R7-MED).
 
 ## §8 (Operator/proxmox-master — blockt nur das ERSTE echte Secret, nicht den Bau)

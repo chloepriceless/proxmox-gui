@@ -23,7 +23,10 @@ LIBDIR="$WORK/lib"; mkdir -p "$LIBDIR"; cp "$VALIDATOR" "$LIBDIR/sops-envelope-v
 # admin out-of-band Policy fuer Repo "test/secrets": ein erlaubter + ein Recovery-Recipient
 RCPT='age1validrecipientxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx0'
 RECOV='age1recoveryxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx1'
-printf '%s\n@recovery %s\n%s\n' "$RCPT" "$RECOV" "$RECOV" > "$POLICY_DIR/test/secrets.allow"
+# DOKUMENTIERTES Format: Recovery-Recipient steht NUR auf der @recovery-Zeile (eine Zeile
+# gewaehrt UND markiert). Frueher zusaetzlich redundant plain gelistet -> pappte BUG-1 zu
+# (Validator-Containment-False-Reject). Jetzt testet der Harness das echte Format. (LIVE-ORACLE-FINDINGS.md)
+printf '%s\n@recovery %s\n' "$RCPT" "$RECOV" > "$POLICY_DIR/test/secrets.allow"
 
 # Bare-Target mit installiertem Hook (Wrapper exportiert Test-Env, ruft echten Hook)
 BARE="$WORK/target.git"; git init -q --bare "$BARE"
