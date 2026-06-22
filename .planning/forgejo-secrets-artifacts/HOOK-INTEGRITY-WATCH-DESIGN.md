@@ -66,6 +66,29 @@ Fläche, konsistent mit BUG-2-Lehre „weniger env/cred-Kopplung"), self-contain
 5. `git config receive.procReceiveRefs refs/for` gesetzt → VIOLATION. 6. neues Repo in Secret-Org ohne Hook → Lockdown.
 7. Lockdown reversibel: golden-Hook re-deployed + 00-LOCKDOWN entfernt → Push wieder ACCEPT.
 
+## Schnüffi R22-Design-Refute (29b6f40) + Canary-Verify des BLOCKERs (2026-06-22)
+Schnüffi: Grundwahl SOUND, deny-all-Hook (B) ENDORSED, **1 BLOCKER**: Invariante #3 prüft die Hook-DATEI,
+aber LÖSCHUNG hängt am VERZEICHNIS — git-writable `hooks/`bzw.`pre-receive.d/` ⇒ git kann root-owned
+50-secrets (UND 00-LOCKDOWN) trotzdem löschen. → **am Canary verifiziert (nicht angenommen):**
+- ✅ Hook-DIRS `root:root 0755` → **Push funktioniert weiter** (Forgejo braucht Dir-Write nicht für Push).
+- ✅ git-User kann root-owned `50-secrets` **NICHT löschen** (rm exit≠0, Hook bleibt) und **keine Datei einschleusen**.
+- ✅ Dispatcher **fail-fast bestätigt**: `00-LOCKDOWN(exit1)+99-noop(exit0)` → REJECT (deny-all wirkt, reihenfolge-egal).
+- ⚠️ `forgejo admin regenerate hooks` als git in root-owned Dir = write-needing → Runbook: regenerate/Upgrade als
+  ROOT (oder Dir temporär git-writable) + danach re-harden + 50-secrets re-deployen; integrity-watch erkennt Fehlen.
+
+### NEUE Invariante (BLOCKER-Fold)
+6. **Hook-DIRS `hooks/` + `hooks/pre-receive.d/` root-owned + nicht-git-writable (0755).** Verifiziert (s.o.):
+   schließt die Dir-Level-Lösch/Inject-Attacke; macht 50-secrets + 00-LOCKDOWN git-immutabel.
+
+### Antworten auf die 2 Design-Fragen (durch BLOCKER-Fold beantwortet)
+- **Frage 1 (token-frei deny-all-Hook B):** Schnüffi ENDORSE — Admin-Token-at-rest = schlechtere Fläche.
+- **Frage 2 (60s vs inotify):** **60s-Timer REICHT** — da der Hook (root-owned Dir) git-UNLÖSCHBAR ist, kann Drift
+  nur durch root/admin/regenerate entstehen = KEIN Angreifer-Push-Race. inotify nicht nötig (nur optionales Enhancement).
+
 ## Status
-- [ ] Schnüffi R22-Refute dieser Design-Position (bes. Enforcement-Wahl B + 60s-vs-inotify).
-- [ ] Nach GO: bauen + Akzeptanz-Oracle (7 Fälle) auf Canary messen → an Schnüffi.
+- [x] Schnüffi R22-Design-Refute (29b6f40): Grundwahl sound, B endorsed, 1 BLOCKER.
+- [x] BLOCKER am Canary verifiziert + gefoldet (Invariante #6 Hook-DIR-Ownership; 60s reicht; Dispatcher fail-fast OK).
+- [ ] Schnüffis Bestätigung des BLOCKER-Folds (kurzer Re-Look).
+- [ ] DANN bauen (`hook-integrity-watch.sh` + systemd-Timer + secret-orgs/golden/violations root-owned) +
+      voller R22-Codex-Refute des gebauten Watchers + 9-Fall-Akzeptanz-Oracle (inkl. V1 Dispatcher, V2 Enum-Integrität, V3 Kuma-egress).
+- Entkoppelt vom Arm-Fix; beide parallel, beide vor erstem echten Secret.
