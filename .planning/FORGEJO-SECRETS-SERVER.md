@@ -34,8 +34,8 @@ Volldoc: `orchestrator-security/reviews/2026-06-22-secrets-forgejo-hardening-len
 - **CVE/Threat-Watch:** Schnüffi nimmt die Secrets-Instanz in ihren CVE-Scan auf (Forgejo gepinnt+gepatcht halten).
 
 ## NÄCHSTE SCHRITTE (autonom, gating-Pfad)
-1. SOPS+age-at-rest-Workflow + Bootstrap-Cred-Modell (1Password-Broker T-0206) als konsolidiertes Doc designen.
-2. Kombinierter Codex-Refute aufs Modell (R22) → Schnüffi-Sign-off.
+1. ✅ **DONE (2026-06-22):** konsolidiertes SOPS+age-at-rest + Bootstrap-Cred-Modell → **`.planning/FORGEJO-SECRETS-SOPS-MODEL.md`**. Refute-Round-1 (R26 fresh-context Claude-Lens) gefoldet: 4 BLOCKER + 5 HIGH + 3 MED (Pull-Mirror umgeht Hook, SOPS-partial-encryption, self-authorizing Recipient-Policy, Hook-Survival, Non-Git-Speicher/LFS, op-connect-Flaky-Node u.a.) — alle eingearbeitet.
+2. ⏳ **IN ARBEIT:** Schnüffis GPT-codex-Lens (2. konvergente Lens, R22) auf die R1-gefoldete Fassung → ihr Sign-off. Default=BLOCK bis dahin.
 3. TLS + Egress-deny + Webhooks-off + Feature-Trim umsetzen (Härtung).
 4. Per-Konsument Deploy-Keys/Org-ACL (nach Bootstrap-Cred-Modell).
 5. Green-Light + SOPS-Workflow an Brettli/DVhub/merkel-curator → erste (SOPS-verschlüsselte) Secrets landen.
