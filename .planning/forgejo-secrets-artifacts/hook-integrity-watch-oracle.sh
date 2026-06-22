@@ -146,6 +146,15 @@ expect "T1. POLICY_DIR group-writable -> TCB lock-all (exit5)" 5 yes down
 fresh_env; chmod g+w "$POLICY_DIR/.kuma-push-url"; run_watch
 expect "T2. kuma-url group-writable -> TCB lock-all (exit5)" 5 yes down
 
+# === CD1. $GIT_DIR/commondir-Redirect OHNE verbotenen Key -> Resolve-Mismatch -> Lockdown =====
+# (Schnüffi-R5-confirm-BLOCKER: git löst Hooks aus commondir-Ziel auf, eine Ebene unter file-Surface)
+fresh_env
+AT="$WORK/attacker.git"; git init -q --bare "$AT"
+printf '%s\n' "$AT" > "$(RD testorg/r)/commondir"
+run_watch
+expect "CD1. commondir-Redirect (kein Key) -> Lockdown" 1 yes down
+[ ! -e "$(RD testorg/r)/commondir" ] && ok "CD1b. commondir beim Lockdown entfernt" || bad "CD1b. commondir entfernt" "noch present"
+
 # === C3. AKTIVER GLOBAL-BYPASS (git-user-global core.hooksPath) -> LOCK-ALL exit3 ============
 fresh_env; mk_repo testorg/second
 git config -f "$GITHOME/.gitconfig" core.hooksPath /tmp/empty-global

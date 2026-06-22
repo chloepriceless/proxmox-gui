@@ -131,21 +131,46 @@ audit_config() {  # $1=config-datei
 # sieht. prod: runuser als git-User mit GIT_DIR; TEST_MODE/non-root: Fallback -f-Audit (repo-local + globals).
 # Prueft NUR effektiv aufgeloeste verbotene WERTE (nicht Origin-Integritaet — die ist separat eine
 # Violation-Ursache, NICHT das Lockdown-Erfolgskriterium: ein deny-all blockt auch bei writable config).
+# Attestierte receive-pack-env (BLOCKER2, Schnueffi-R5) lazy in RP_ENV_ARR laden.
+RP_ENV_ARR=()
+build_rp_env() {
+  [ "${#RP_ENV_ARR[@]}" -gt 0 ] && return 0
+  local line
+  if [ -r "$RP_ENV_FILE" ]; then
+    while IFS= read -r line; do case "$line" in ''|'#'*) : ;; *=*) RP_ENV_ARR+=("$line") ;; esac; done < "$RP_ENV_FILE"
+  else
+    RP_ENV_ARR=("HOME=$GIT_HOME" "PATH=${PATH:-/usr/bin:/bin}" "GIT_CONFIG_NOSYSTEM=1" "XDG_CONFIG_HOME=$GIT_HOME/.config")
+  fi
+}
+# git im receive-pack-AEQUIVALENTEN Kontext ausfuehren (prod: git-User + attested env -i; test: direkt).
+effective_git() {  # $1=repo_dir; rest=git-args -> stdout, rc
+  local repo_dir="$1"; shift
+  if [ "$TEST_MODE" != 1 ] && [ "$(id -u 2>/dev/null)" = 0 ] && command -v runuser >/dev/null 2>&1; then
+    build_rp_env
+    runuser -u "$GIT_USER" -- env -i "${RP_ENV_ARR[@]}" GIT_DIR="$repo_dir" git "$@" 2>/dev/null
+  else
+    git --git-dir="$repo_dir" "$@" 2>/dev/null
+  fi
+}
+# POSITIVE Resolve-Pruefung (Schnueffi-R5-confirm-BLOCKER): wo loest git den Hook TATSAECHLICH auf?
+# Faengt JEDEN Redirect (core.hooksPath, $GIT_DIR/commondir, GIT_COMMON_DIR, alternates) enumeration-
+# UNABHAENGIG. 0 = git resolved hooks/pre-receive == golden literal $repo_dir/hooks/pre-receive.
+hook_resolve_ok() {  # $1=repo_dir
+  local repo_dir="$1" want resolved
+  want="$(readlink -m "$repo_dir/hooks/pre-receive" 2>/dev/null)"
+  resolved="$(effective_git "$repo_dir" rev-parse --git-path hooks/pre-receive)"
+  [ -n "$resolved" ] || return 1
+  case "$resolved" in /*) : ;; *) resolved="$repo_dir/$resolved" ;; esac   # rel -> abs (git gibt rel zurueck)
+  resolved="$(readlink -m "$resolved" 2>/dev/null)"
+  [ -n "$resolved" ] && [ "$resolved" = "$want" ]
+}
 effective_forbidden() {  # $1=repo_dir -> echo't reason-codes (space-sep), "" = effektiv sauber
   # PRAESENZ per Exit-Status (leerer Wert deaktiviert Hooks trotzdem, Codex-R4-BLOCKER).
   local repo_dir="$1" out="" key f
   if [ "$TEST_MODE" != 1 ] && [ "$(id -u 2>/dev/null)" = 0 ] && command -v runuser >/dev/null 2>&1; then
-    # BLOCKER2 (Schnueffi-R5): in der ATTESTIERTEN receive-pack-env laufen (env -i), sonst sieht der
-    # Watcher einen anderen Config-Zustand als der echte Push (HOME/XDG/GIT_CONFIG_*). RP_ENV_FILE wird
-    # in main auf Integritaet geprueft (config_fail wenn fehlt/unsicher) -> hier vertrauenswuerdig.
-    local -a rpenv=(); local line
-    if [ -r "$RP_ENV_FILE" ]; then
-      while IFS= read -r line; do case "$line" in ''|'#'*) : ;; *=*) rpenv+=("$line") ;; esac; done < "$RP_ENV_FILE"
-    else
-      rpenv=("HOME=$GIT_HOME" "PATH=${PATH:-/usr/bin:/bin}" "GIT_CONFIG_NOSYSTEM=1" "XDG_CONFIG_HOME=$GIT_HOME/.config")
-    fi
+    # in der ATTESTIERTEN receive-pack-env (BLOCKER2). RP_ENV in main integritaets-geprueft -> trusted.
     for key in $FORBIDDEN_KEYS; do
-      if runuser -u "$GIT_USER" -- env -i "${rpenv[@]}" GIT_DIR="$repo_dir" git config --includes --get-all "$key" >/dev/null 2>&1; then out="$out effective:${key}=set"; fi
+      if effective_git "$repo_dir" config --includes --get-all "$key" >/dev/null 2>&1; then out="$out effective:${key}=set"; fi
     done
   else
     for key in $FORBIDDEN_KEYS; do
@@ -203,6 +228,9 @@ verify_lockdown() {  # $1=disp  $2=repo_dir -> 0 wenn wirksamer Lockdown verifiz
   # DURABLE (Codex-R4-BLOCKER#1): die Redirect-Surface (repo-config) MUSS sicher/immutabel sein, sonst
   # kann der git-User nach dem Lockdown core.hooksPath re-setzen und am deny-all vorbei pushen.
   path_secure "$repo_dir/config" 1 >/dev/null 2>&1 || return 1
+  # RESOLVE (Schnueffi-R5-confirm): der deny-all ist nur wirksam, wenn git den Hook auch DORT aufloest
+  # (kein commondir/GIT_COMMON_DIR/core.hooksPath-Redirect mehr).
+  hook_resolve_ok "$repo_dir" || return 1
   return 0
 }
 # AUTORITATIVER, VERIFIZIERTER, DURABLER Lockdown. return 0 = wirksam gesperrt, 1 = LOCKDOWN-FAILED.
@@ -214,6 +242,12 @@ authoritative_lockdown() {  # $1=repo_dir  $2=key
   neutralize_keys_in_chain "$cfg"
   # config.worktree-Surface mit-neutralisieren (Schnueffi-R5-BLOCKER1)
   [ -e "$repo_dir/config.worktree" ] && neutralize_keys_in_chain "$repo_dir/config.worktree"
+  # Hook-Redirect via commondir entfernen, damit der deny-all am golden Pfad aufgeloest wird
+  # (Schnueffi-R5-confirm-BLOCKER): sonst zeigt git an unserem deny-all vorbei.
+  if [ -e "$repo_dir/commondir" ]; then
+    [ "$TEST_MODE" != 1 ] && command -v chattr >/dev/null 2>&1 && chattr -i "$repo_dir/commondir" 2>/dev/null || true
+    rm -f "$repo_dir/commondir" 2>/dev/null || true
+  fi
   # prod: Redirect-Surface + Hook-Eintraege immutabel machen -> Lockdown durable (Codex-R4-BLOCKER#1).
   if [ "$TEST_MODE" != 1 ] && command -v chattr >/dev/null 2>&1; then
     chattr +i "$cfg" "$disp" "$repo_dir/hooks" "$repo_dir/hooks/pre-receive.d" 2>/dev/null || true
@@ -278,6 +312,10 @@ check_repo() {  # $1=key  $2=repo_dir  $3=origin
     cfgr="$(audit_config "$repo_dir/config.worktree")"; [ -n "$cfgr" ] && reasons+=("config.worktree:${cfgr# }")
   fi
   cfgr="$(effective_forbidden "$repo_dir")"; [ -n "$cfgr" ] && reasons+=("${cfgr# }")
+  # BLOCKER (Schnueffi-R5-confirm): POSITIVE Resolve-Pruefung — git muss den Hook am golden literal
+  # aufloesen, sonst Redirect (commondir/GIT_COMMON_DIR/core.hooksPath) = Bypass. + commondir als Surface.
+  hook_resolve_ok "$repo_dir" || reasons+=("hook-path-redirect")
+  [ -e "$repo_dir/commondir" ] && reasons+=("commondir-present")
   # inv #5 — .allow (WARN only)
   local allow="$POLICY_DIR/$key.allow"
   if [ ! -f "$allow" ]; then log warn "$key" "allow-missing (push fail-closed-rejected ohnehin)"; elif [ ! -r "$allow" ]; then log warn "$key" "allow-unreadable"; fi
@@ -363,10 +401,16 @@ main() {
   r="$(path_secure "$SECRET_ORGS_FILE" 1)" || { config_fail=1; config_reasons+=("secret-orgs-insecure:$r"); }
   [ -d "$VIOL_DIR" ] || mkdir -p "$VIOL_DIR" 2>/dev/null
   r="$(path_secure "$VIOL_DIR")" || { config_fail=1; config_reasons+=("violations-dir-insecure:$r"); }
-  # BLOCKER2 (Schnueffi-R5): receive-pack-env-Attestation muss vorhanden+immutabel sein, sonst ist der
-  # effektive Check nicht beweisbar receive-pack-aequivalent. prod-only (TEST hat keine Attestation).
+  # BLOCKER2 (Schnueffi-R5): receive-pack-env-Attestation muss vorhanden+immutabel sein. FEHLT/UNSICHER ->
+  # tcb_fail (LOCK-ALL), NICHT config_fail-alarm-only: ohne attestierte env ist der effektive Check blind,
+  # und ein Sweep-Skip waere fail-OPEN im regenerate-Fenster (Schnueffi-R5-confirm-BLOCKER2). prod-only.
   if [ "$TEST_MODE" != 1 ]; then
-    r="$(path_secure "$RP_ENV_FILE" 1)" || { config_fail=1; config_reasons+=("rp-env-attestation:$r"); }
+    if r="$(path_secure "$RP_ENV_FILE" 1)"; then
+      # HIGH3: Attestation schema-validieren — keine config/hook/object-UMLENKENDEN env-Keys erlaubt.
+      if grep -Eq '^(GIT_CONFIG_(PARAMETERS|COUNT|KEY|VALUE)|GIT_COMMON_DIR|GIT_OBJECT_DIRECTORY|GIT_ALTERNATE_OBJECT_DIRECTORIES|GIT_DIR)=' "$RP_ENV_FILE" 2>/dev/null; then
+        tcb_fail=1; config_reasons+=("rp-env-dangerous-key")
+      fi
+    else tcb_fail=1; config_reasons+=("rp-env-attestation:$r"); fi
   fi
 
   # HIGH (Schnueffi-R5) Control-TCB: POLICY_DIR + .kuma-push-url (Alarm-Kanal) muessen immutabel sein.
