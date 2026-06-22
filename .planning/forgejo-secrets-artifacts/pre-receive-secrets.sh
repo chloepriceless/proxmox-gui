@@ -38,7 +38,9 @@ reject() {  # $1 = Grund (OHNE Secret-Wert)
 }
 # JEDER unerwartete Fehler/Abbruch -> fail-closed REJECT (nicht fail-open).
 trap 'reject "interner Hook-Fehler (fail-closed)"' ERR
-on_exit() { local rc=$?; [ "$rc" -ne 0 ] && [ "$rc" -ne 1 ] && reject "unerwarteter Exit $rc"; }
+# EXIT-Trap entschaerft: ERR zuerst disarmen (sonst feuert ein benignes [ ]==1 im Trap
+# selbst den ERR-Trap unter set -e) + if-Form statt && (das war die False-Reject-Ursache).
+on_exit() { local rc=$?; trap - ERR; if [ "$rc" -ne 0 ] && [ "$rc" -ne 1 ]; then reject "unerwarteter Exit $rc"; fi; }
 trap on_exit EXIT
 
 # --- 0. Sanity: Tooling + Policy vorhanden (fail-closed) ---------------------
@@ -69,7 +71,7 @@ while read -r old new ref; do
   if printf '%s' "$ref" | grep -Eq "$SECRET_RE"; then
     reject "Secret-Pattern im Refname"
   fi
-  [ "$new" != "$ZERO" ] && NEW_TIPS+=("$new")
+  if [ "$new" != "$ZERO" ]; then NEW_TIPS+=("$new"); fi
 done
 
 # --- 2. raw_presence: rohe physische Datei-Praesenz, UNABHAENGIG vom OID-Parse
@@ -95,7 +97,7 @@ fi
 #        (R5/B1 — Alternates wuerden Main-Store over-includen) ----------------
 declare -A SEEN=()
 PHYS_OIDS=()
-add_oid() { local o="$1"; [ -z "${SEEN[$o]:-}" ] && { SEEN[$o]=1; PHYS_OIDS+=("$o"); }; }
+add_oid() { local o="$1"; if [ -z "${SEEN[$o]:-}" ]; then SEEN[$o]=1; PHYS_OIDS+=("$o"); fi; }
 
 # loose: Verzeichnis-Prefix (2) + Dateiname (38) = OID
 shopt -s nullglob
@@ -109,7 +111,7 @@ for idx in "$QUAR"/pack/*.idx; do
   if ! oids="$(git show-index < "$idx" 2>/dev/null | awk '{print $2}')"; then
     reject "pack-idx nicht lesbar (Enumeration kaputt, fail-closed)"
   fi
-  while read -r o; do [ -n "$o" ] && add_oid "$o"; done <<< "$oids"
+  while read -r o; do if [ -n "$o" ]; then add_oid "$o"; fi; done <<< "$oids"
 done
 # Realistischer broken-enum-Fall: .pack ohne (lesbare) .idx -> Enumeration unvollstaendig
 for p in "$QUAR"/pack/*.pack; do
@@ -141,7 +143,7 @@ for oid in "${PHYS_OIDS[@]}"; do
     commit|tag)
       # komplettes rohes Objekt: Header/tagger/gpgsig/mergetag/Message/Identity
       git cat-file -p "$oid" 2>/dev/null | scan_text_for_secret "Commit/Tag-Objekt"
-      [ "$typ" = tag ] && [ "$oid" = "$GIT_PUSH_CERT" ] && cert_seen=true
+      if [ "$typ" = tag ] && [ -n "$GIT_PUSH_CERT" ] && [ "$oid" = "$GIT_PUSH_CERT" ]; then cert_seen=true; fi
       ;;
     tree)
       # Tree-Namen/Gitlink-Pfade/.gitmodules (R4/B1), NUL-getrennt
@@ -152,14 +154,14 @@ for oid in "${PHYS_OIDS[@]}"; do
       ;;
     blob)
       sz="$(git cat-file -s "$oid" 2>/dev/null)" || reject "Blob-Groesse nicht lesbar"
-      [ "$sz" -gt "$MAX_BLOB_BYTES" ] && reject "Blob zu gross (>$MAX_BLOB_BYTES) — Perf-Limit"
+      if [ "$sz" -gt "$MAX_BLOB_BYTES" ]; then reject "Blob zu gross (>$MAX_BLOB_BYTES) — Perf-Limit"; fi
       content="$(git cat-file -p "$oid" 2>/dev/null)" || reject "Blob nicht lesbar"
       # 5a. Privkey-Detektor ueber JEDEN Blob, inkl. spaeter Allowlist (R1/M2)
       if printf '%s' "$content" | grep -Eq "$PRIVKEY_RE"; then
         reject "Private-Key in Blob/Datei"
       fi
       # push-cert-Blob mitscannen (R4/B2)
-      [ -n "$GIT_PUSH_CERT" ] && [ "$oid" = "$GIT_PUSH_CERT" ] && cert_seen=true
+      if [ -n "$GIT_PUSH_CERT" ] && [ "$oid" = "$GIT_PUSH_CERT" ]; then cert_seen=true; fi
       ;;
     *) reject "unbekannter Objekt-Typ: $typ" ;;
   esac
@@ -168,9 +170,9 @@ done
 # --- 6. Pfad/Inhalt-Policy je Datei im NEUEN Tree (Tier-A default-encrypt-all)
 # Fuer jeden erreichbaren neuen Commit-Tip: jede Datei = Allowlist ODER SOPS-Envelope.
 for tip in "${NEW_TIPS[@]:-}"; do
-  [ -z "$tip" ] && continue
+  if [ -z "$tip" ]; then continue; fi
   ttyp="$(git cat-file -t "$tip" 2>/dev/null || true)"
-  [ "$ttyp" = commit ] || continue
+  if [ "$ttyp" != commit ]; then continue; fi
   while IFS= read -r -d '' path; do
     # Pfad-Allowlist?
     if printf '%s' "$path" | grep -Eq "$ALLOWLIST_RE"; then
@@ -178,9 +180,8 @@ for tip in "${NEW_TIPS[@]:-}"; do
       case "$path" in
         recipients/*.pub)
           pub="$(git cat-file -p "$tip:$path" 2>/dev/null || true)"
-          printf '%s' "$pub" | grep -Eq 'AGE-SECRET-KEY-' && reject "Privkey in recipients/*.pub"
-          printf '%s' "$pub" | grep -Eq '(^|[^A-Za-z0-9])age1[0-9a-z]{20,}' \
-            || reject "recipients/*.pub kein age-Pubkey"
+          if printf '%s' "$pub" | grep -Eq 'AGE-SECRET-KEY-'; then reject "Privkey in recipients/*.pub"; fi
+          if ! printf '%s' "$pub" | grep -Eq '(^|[^A-Za-z0-9])age1[0-9a-z]{20,}'; then reject "recipients/*.pub kein age-Pubkey"; fi
           ;;
       esac
       continue   # allowlisted Metadaten — kein SOPS-Zwang
