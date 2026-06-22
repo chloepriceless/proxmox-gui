@@ -109,8 +109,9 @@ ls -t /var/tmp/canary-rpenv/rpenv.* | head -2     # P0-Verify: MUSS 2 Dateien ze
 PAT='^HOME=|^XDG_|^PATH=|^GIT|^GITEA|^PWD'
 diff <(grep -E "$PAT" /var/tmp/canary-rpenv/rpenv.<ssh>) <(grep -E "$PAT" /var/tmp/canary-rpenv/rpenv.<http>)
 ```
-> **Attestiertes `.receive-pack-env`-Set = NUR die STATISCHEN config-relevanten Vars** (`HOME`, `XDG_CONFIG_HOME`, `PATH`, `GIT_DIR`/`GIT_NAMESPACE`-artige, `GITEA_*`), die in SSH UND HTTP gleich + immer präsent sind.
-> **NICHT attestieren (dynamisch, ändern sich pro Push):** `GIT_QUARANTINE_PATH`, `GIT_OBJECT_DIRECTORY`, `GIT_ALTERNATE_OBJECT_DIRECTORIES`, `GIT_PUSH_OPTION_*`, `GIT_PUSH_CERT*`. (Das Watcher-Schema verbietet `GIT_OBJECT_DIRECTORY`/`*_ALTERNATE_*` ohnehin = korrekt — die gehören nie in eine statische Allowlist.) Transport-divergente Vars ebenfalls NICHT in die fail-closed-Pflichtmenge.
+> **Attestiertes `.receive-pack-env`-Set = NUR die STATISCHEN config-relevanten Vars, die das Watcher-Schema NICHT verbietet:** `HOME`, `XDG_CONFIG_HOME`, `PATH`, `GITEA_*` (informativ/harmlos) + `GIT_CONFIG_NOSYSTEM` falls präsent (Härtung, NICHT vom Schema-grep erfasst). Nur Vars, die in SSH UND HTTP gleich + immer präsent sind.
+> **🔴 NICHT attestieren — `GIT_DIR` / `GIT_NAMESPACE` / `GIT_WORK_TREE` (Schnüffi-Cross-Artefakt-Befund, gg. `hook-integrity-watch.sh` verifiziert):** der Watcher setzt `GIT_DIR="$repo_dir"` SELBST pro Repo (`effective_git`, Z.150), und die Schema-Validierung (Z.423) flaggt `GIT_DIR|GIT_NAMESPACE|GIT_WORK_TREE)=` in `.receive-pack-env` als `rp-env-dangerous-key` → **tcb_fail → LOCK-ALL exit5 bei JEDEM Sweep** = self-inflicted DoS aller Secret-Repos. Diese Vars erscheinen zwar im Dump (drum bleiben sie im `diff`-Pattern für die Analyse) — gehören aber NIE ins attestierte File.
+> **NICHT attestieren (dynamisch, ändern sich pro Push):** `GIT_QUARANTINE_PATH`, `GIT_OBJECT_DIRECTORY`, `GIT_ALTERNATE_OBJECT_DIRECTORIES`, `GIT_PUSH_OPTION_*`, `GIT_PUSH_CERT*`. (Das Watcher-Schema verbietet `GIT_OBJECT_DIRECTORY`/`*_ALTERNATE_*`/`GIT_COMMON_DIR`/`GIT_CONFIG_*` ohnehin = korrekt — die gehören nie in eine statische Allowlist.) Transport-divergente Vars ebenfalls NICHT in die fail-closed-Pflichtmenge.
 > Danach `00-dump` wieder entfernen: `rm "$CANARY_GIT/hooks/pre-receive.d/00-dump"`.
 
 ---
