@@ -350,3 +350,56 @@ Eine Autoritaet fuer Adressen, Namen funktionieren, feste IPs gewaehrleistet.
 anlegen, **danach** statische IPs eintragen — in dieser Reihenfolge.
 
 Status: **nichts an den LXC-Configs geaendert**, Entscheidung liegt bei Netzi.
+
+## Nachtrag 11: Autoritatives Node-Mapping (fuer Netzis static_dns-Records)
+Aus `/etc/pve/.members`, gegengeprueft mit `pvecm status` (Membership):
+```
+proxmox  -> 192.168.20.240   (nodeid 1)
+pve      -> 192.168.20.241   (nodeid 2)
+pz1      -> 192.168.20.68    (nodeid 3)
+pz2      -> 192.168.20.42    (nodeid 4)
+pz3      -> 192.168.20.106   (nodeid 5)
+```
+Cluster meldet `nodes: 5, quorate: 1` — **fuenf** Nodes, nicht vier.
+
+Zwei Korrekturen an Netzis Annahme:
+1. Er vermutete `pve` "in Richtung .240" — **falsch**: `.240` ist `proxmox`, `.241` ist `pve`.
+2. In seiner Liste fehlte `proxmox`/.240 — ausgerechnet der Node aus dem urspruenglichen T-0326-Alarm.
+
+Bestaetigt: die Node-Kurznamen loesen gar nicht auf, `pz1.bikini.bottom.zone` /
+`pve.bikini.bottom.zone` fallen in die Zonen-Wildcard -> 87.139.158.187 (UniFi-Console mit gueltigem
+Zertifikat, also ohne Browser-Warnung). Die Nodes sind die einzigen Hosts ohne DHCP-Lease und damit
+ohne dnsmasq-Record. Hier ist `static_dns` richtig — keine Lease-Quelle, also keine zweite Wahrheit.
+
+## Nachtrag 12: CT143 — beinahe derselbe Fehler wie bei node-red, plus kaputte GUI
+CT143 ist die **Deployment-Instanz dieses Projekts** (Proxmox Self-Service GUI v0.6.2:
+FastAPI + SvelteKit + arq + Redis hinter Caddy, `/opt/proxmox-gui/releases/v0.6.2`).
+
+Ich hatte Netzi `.92` als Pin-Ziel empfohlen ("aktueller Lease ohne dokumentierte Absicht").
+Das war nach derselben Logik falsch, die ich bei node-red aufgedeckt hatte — es gab zwei Quellen fuer `.171`:
+- `/etc/caddy/Caddyfile:41` -> `https://192.168.20.171:443`
+- `scrape.yml.bak-20260914:95` -> `- 192.168.20.171:9100  # proxmox-lxc143`
+
+**Realer Schaden:** die GUI war unerreichbar. Caddy lauschte auf `*:443`, der Site-Block matchte aber
+nur den Host `.171` -> TLS-Handshake brach ab, auch aus dem Container heraus (`curl https://127.0.0.1/`
+-> 000). Port 443 war offen, das Symptom sah nach TLS-Fehler aus, nicht nach Adress-Drift.
+
+**Entscheidung: NICHT auf .171 zurueckgedreht, sondern die App nachgezogen.** `Caddyfile:37` sagt selbst,
+dass `bootstrap.sh` dort die *Installations-IP* einsetzt — `.171` war nie bewusst gewaehlt, nur zufaellig
+da. `.92` ist durch die Reservierung jetzt stabiler als `.171` je war. Damit ist CT143 **nicht** der
+node-red-Fall (dort gab es eine stehende Reservierung als echte Absicht).
+
+Umgesetzt: `Caddyfile` Site-Adresse `.171` -> `.92` (Backup `Caddyfile.bak-20260914`),
+`caddy validate` -> "Valid configuration", Restart. Verifiziert: Zertifikat neu auf `identifiers:["192.168.20.92"]`,
+`https://192.168.20.92/` HTTP 303, `/api/v1/health` HTTP 200, api/frontend/worker/redis alle active, Targets 44/44.
+
+**Projekt-Bug, der daraus folgt (Repo-relevant):** `bootstrap.sh` backt die Installations-IP fest ins
+Caddyfile. Jede spaetere Adressaenderung macht die GUI unerreichbar — mit einem Symptom (TLS-Abbruch),
+das nicht nach IP-Problem aussieht. Kandidat fuer einen echten Fix (Site-Adresse `:443` statt IP,
+oder Reinstall-Hinweis in der Doku).
+Nebenbefund: `systemctl reload caddy` kann hier **nie** funktionieren, weil `admin off` im Caddyfile
+die Admin-API auf :2019 abschaltet. Nur `restart` ist gueltig.
+
+**Offen:** CT143 heisst `proxmox` und verdeckt damit den Hypervisor-Node gleichen Namens
+(`proxmox` -> .92 statt .240). Rename auf `proxmox-gui` geplant, terminlich mit Netzi abgestimmt,
+damit der dnsmasq-Record nicht waehrend seiner Record-Anlage wechselt.
