@@ -304,3 +304,49 @@ Unterscheidungsmerkmal. Erst nach vollem Zyklus bewerten.
 ### Netz-Topologie-Gegenprobe (fuer Netzis Pins)
 CT141/CT143/CT144 sind alle **single-homed** (nur `net0`). Cluster-weit tragen genau zwei Gaeste
 `tag=42`: CT126 und VM142 (Coder). Sonst niemand.
+
+## Nachtrag 9: eth1-Hostname geloest (zweiter Anlauf) — Namens-Ambiguitaet dauerhaft weg
+Erster Versuch ueber die ifupdown-Stanza `hostname ...` in `/etc/network/interfaces` hatte eth1
+abgeschossen (s. Nachtrag 2). Zweiter Anlauf ueber die **per-Interface-Syntax von dhclient**
+in `/etc/dhcp/dhclient.conf` (Backup: `dhclient.conf.bak-20260914`):
+
+```
+interface "eth1" {
+  send host-name "victoriametrics-dev";
+}
+```
+
+**Am Draht verifiziert** (tcpdump auf vmbr0 waehrend `dhclient -r eth1 && dhclient eth1`):
+`Hostname (12), length 19: "victoriametrics-dev"`.
+
+Aufloesung danach:
+```
+victoriametrics      -> 192.168.20.163   (VLAN20-Bein)
+victoriametrics-dev  -> 192.168.42.165   (VLAN42-Bein)
+grafana              -> 192.168.20.153
+node-red             -> 192.168.20.57
+```
+Damit ist Netzis Einschraenkung ("nicht dauerhaft geloest, nur gerade guenstig — beide Beine melden
+denselben Namen, bei der naechsten eth1-Erneuerung kann es auf .42.165 zurueckkippen") **strukturell
+erledigt**: eth1 beansprucht den Namen `victoriametrics` nicht mehr.
+eth0 unangetastet, Default-Route auf eth0, `.42.42:9100` HTTP 200, Targets 44/44.
+
+## Nachtrag 10: Statische IPs in den LXC-Configs — bewusst NICHT eingetragen
+Netzi gab gruenes Licht, ich habe **widersprochen**. Begruendung folgt aus seinem eigenen Befund,
+dass `static_dns` auf der UDM **leer** ist (0 Records): saemtliche Namensaufloesung ist
+**lease-abgeleitet** (dnsmasq expand-hosts).
+
+Wuerde man `ip=dhcp` durch `ip=<addr>/24,gw=...` ersetzen, zieht der Container keinen Lease mehr:
+- `grafana`, `victoriametrics`, `node-red` wuerden **aufhoeren aufzuloesen**
+- `victoriametrics.bikini.bottom.zone` fiele zurueck in die **Zonen-Wildcard** -> 87.139.158.187 (extern)
+- Netzis Gate 2b ("genau eine Adresse pro Name") waere gegenstandslos
+
+Der einzige Zugewinn waere Unabhaengigkeit von einem DHCP-Server-Ausfall — zu teuer erkauft, da die
+Reservierungen die feste Adresse bereits garantieren.
+
+**Empfehlung (a), Ist-Zustand:** `ip=dhcp` in der LXC-Config + Reservierung auf der UDM.
+Eine Autoritaet fuer Adressen, Namen funktionieren, feste IPs gewaehrleistet.
+**Alternative (b)**, nur bei gewuenschter DHCP-Ausfallsicherheit: zuerst `static_dns`-Records
+anlegen, **danach** statische IPs eintragen — in dieser Reihenfolge.
+
+Status: **nichts an den LXC-Configs geaendert**, Entscheidung liegt bei Netzi.
