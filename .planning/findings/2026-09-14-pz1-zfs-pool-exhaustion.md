@@ -88,3 +88,30 @@ der VM namentlich zu, obwohl die Config sie nicht referenziert. Migrations-Leich
 - Kosmetisch: CT126 dhclient nutzt aktuell `/var/lib/dhcp/dhclient.leases` statt der ifupdown-Pfade
   (Folge des manuellen `dhclient eth0`). Beim naechsten Reboot uebernimmt ifupdown wieder — kein Funktionsrisiko.
 - Optional: `zfs destroy` der beiden Volumes (Entscheidung Christin). Ohne Eile.
+
+## Nachtrag DNS (korrigiert durch Netzi, 2026-09-14)
+Erste Einschaetzung von mir war falsch: ich hielt `victoriametrics.bikini.bottom.zone -> 87.139.158.187`
+fuer einen host-spezifischen Fehl-Record. Netzi hat mit einem Gegenbeispiel widerlegt — ein frei
+erfundener Name unter der Zone loest auf dieselbe WAN-IP auf. Es ist eine **Zonen-Wildcard**,
+kein VictoriaMetrics-Problem. Praktische Folge ist breiter: jeder Tippfehler interner Clients
+landet auf 87.139.158.187 (dort u.a. UniFi-Console:443). Bewertung liegt bei `security` (Schnueffi).
+
+Gemessen (nebeneinander):
+```
+victoriametrics.bikini.bottom.zone               -> 87.139.158.187   (Wildcard)
+quatsch-existiert-nicht-12345.bikini.bottom.zone -> 87.139.158.187   (Wildcard, Gegenbeispiel)
+grafana.bikini.bottom.zone                       -> 192.168.20.78    (echter A-Record)
+```
+Verfeinerung: `grafana` hat einen echten Record, `victoriametrics` **keinen** — nur deshalb faellt
+letzterer in die Wildcard. Netzis geplanter `static_dns`-Eintrag schliesst genau diese Luecke.
+Zusaetzlich: kurzer Name `victoriametrics` loest auf das VLAN42-Bein (.42.165) auf, nicht auf 20.x.
+
+**Lehre fuer mich:** aus einer einzelnen Aufloesung auf einen host-spezifischen Record geschlossen,
+ohne das Gegenbeispiel zu pruefen — derselbe Fehlertyp, den ich am selben Tag beim Hub kritisiert habe.
+Bei DNS-Befunden immer einen garantiert nicht existierenden Namen gegenmessen.
+
+## Netz-Folgearbeit (Netzi, laufend)
+MACs geliefert: CT100 eth0 `BC:24:11:45:1B:DF` -> .153 · CT126 eth0 `BC:24:11:8A:35:FF` -> .163 ·
+CT126 eth1 `BC:24:11:EF:7C:B6` -> .42.165 · CT115 eth0 `BC:24:11:73:76:9F` -> .157.
+Reihenfolge (Netzi): Reservierung -> messen -> `static_dns`. Feste IPs in den LXC-Configs trage ich
+erst nach Netzis Signal ein, sonst Kollision. Dual-Homing CT126 bleibt (belegt tragend, s.o.).
