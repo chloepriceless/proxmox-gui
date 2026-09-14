@@ -115,3 +115,39 @@ MACs geliefert: CT100 eth0 `BC:24:11:45:1B:DF` -> .153 · CT126 eth0 `BC:24:11:8
 CT126 eth1 `BC:24:11:EF:7C:B6` -> .42.165 · CT115 eth0 `BC:24:11:73:76:9F` -> .157.
 Reihenfolge (Netzi): Reservierung -> messen -> `static_dns`. Feste IPs in den LXC-Configs trage ich
 erst nach Netzis Signal ein, sonst Kollision. Dual-Homing CT126 bleibt (belegt tragend, s.o.).
+
+## Nachtrag 2: DHCP-Hostname — Ursache liegt UDM-seitig, nicht im Container
+Netzis Hypothese (CT126 eth0 melde beim DHCP keinen Hostnamen, darum gewinne das VLAN42-Bein
+den Namen) ist **am Draht widerlegt**. tcpdump auf `vmbr0` waehrend eines erzwungenen Renew:
+
+```
+DHCP-Message (53): Discover | Requested-IP (50): 192.168.20.79 | Hostname (12), len 15: "victoriametrics"
+DHCP-Message (53): Request  |                                   Hostname (12), len 15: "victoriametrics"
+DHCP-Message (53): ACK      |                                   Hostname (12), len 15: "victoriametrics"
+```
+Client-seitig alles korrekt: `/etc/dhcp/dhclient.conf:15 send host-name = gethostname();`,
+`/etc/hostname = victoriametrics` — identisch zu CT100. Die UDM **echot** den Namen sogar im ACK.
+Das `**` in der UDM-Lease-Tabelle ist also ein Controller-seitiger Aussetzer (vermutlich stale
+Client-Eintrag nach ~50 Leases derselben MAC waehrend des Storms), kein fehlendes Option-12.
+**Netzis Schluss bleibt richtig (expliziter Record noetig), der Grund ist ein anderer.**
+
+### Fehlgeschlagener Versuch (dokumentiert, nicht verschwiegen)
+Source-seitiger Rename des VLAN42-Beins via `hostname victoriametrics-dev` in
+`/etc/network/interfaces` unter `iface eth1`: nach `ifdown/ifup eth1` war eth1 **ohne Adresse**.
+Sofortiger Rollback aus `/etc/network/interfaces.bak-20260914`, eth1 wieder auf `.42.165`,
+VictoriaMetrics durchgehend `active`, `192.168.42.42:9100` von CT126 aus HTTP 200.
+Ausfall im Sekundenbereich. **Erneuter Versuch nur ausserhalb von Netzis Arbeitsfenster**,
+dann ueber per-Interface `send host-name` statt der ifupdown-Stanza.
+
+## Nachtrag 3: 13 von 46 Scrape-Targets DOWN
+**Gruppe A — Lease-Storm-Leichen** (`job=lxc-hosts`, :9100): `.57 .99 .126 .127 .153 .163 .171 .179`.
+Vier stichprobenartig gegengeprueft (.57/.99/.163/.179): kein ping, tot. Die `scrape.yml` ist gegen
+DHCP-Adressen geschrieben — Beleg dafuer, dass die Umstellung auf feste IPs ueber CT100/CT126 hinausgeht.
+Ein toter `lxc-hosts`-Target alarmiert nicht, er verschwindet still.
+
+**Gruppe B — echte Dienst-Ausfaelle** (keine IP-Drift):
+- `192.168.20.163:8428` `instance=victoriametrics-self` — Self-Scrape, bestaetigt unabhaengig, dass
+  die laufende Config CT126 auf **.163** erwartet. Netzis Pin repariert ihn mit.
+- `.241/.68/.42/.106:19999` `job=netdata` = die vier Proxmox-Nodes (feste IPs, nichts gewandert)
+  -> **netdata laeuft auf keinem Node**. Aelterer, unabhaengiger Befund; Entscheidung ueber
+  Weiterbetrieb vs. Targets entfernen liegt bei monitoring.
