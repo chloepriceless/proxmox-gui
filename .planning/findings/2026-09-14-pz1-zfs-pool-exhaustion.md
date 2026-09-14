@@ -257,3 +257,50 @@ Eine Wurzel (406G verwaiste `refreservation` auf `Samsung_1TB`), fuenf Symptome 
 5. **13 tote Scrape-Targets** (IP-Drift + netdata-ACL auf .163) — 6 behoben, 7 pin-abhaengig
 
 Keiner dieser fuenf Punkte war als Speicherproblem erkennbar. `zpool list` zeigte CAP 23%.
+
+## Nachtrag 8: Pins gesetzt, Renewals durchgefuehrt — Gegentest 44/44 up
+Netzi hat die DHCP-Reservierungen geschrieben (CT100 -> .153, CT126 -> .163, live in der
+dnsmasq-Config der UDM). Eine Reservierung wirkt erst beim naechsten Renewal, daher per `pct exec`
+**strikt `dhclient -r eth0 && dhclient eth0`** (nie ohne Interface — sonst kann die Default-Route
+auf VLAN42 kippen und den `.42.42`-Scrape abschiessen):
+
+| CT | vorher | nachher | Default-Route |
+|---|---|---|---|
+| 115 node-red | .157 | **.57** | `via 192.168.20.1 dev eth0` unveraendert |
+| 100 grafana | .78 | **.153** | unveraendert |
+| 126 victoriametrics | .79 | **.163** | unveraendert, eth1 `.42.165` unberuehrt |
+
+`192.168.42.42:9100` von CT126 aus weiterhin HTTP 200 — das VLAN42-Bein hat der Eingriff nicht beruehrt.
+
+### Korrektur an meiner Zuordnung: node-red gehoert auf .57, nicht .157
+Netzi fand beim Pre-Image, dass CT115 **bereits** eine Reservierung auf `.57` hatte. Mein
+scrape.yml-Edit `.57 -> .157` war damit falsch und haette beim naechsten Renewal gebrochen.
+Zurueckgezogen: Zeile 86 steht wieder auf `192.168.20.57:9100`.
+
+**Beleg, dass .57 die richtige Adresse ist** (gegen Schnueffis Tippfehler-Verdacht `.57` vs `.157`):
+`scrape.yml.bak-20260914` Zeile 88 — das Backup von *vor* allen Edits — zeigte bereits auf `.57`.
+Zwei unabhaengige Altquellen fuer `.57` (UDM-Reservierung + Scrape-Config), **null** fuer `.157`.
+`.157` war reiner Storm-Zufall.
+
+**Wichtige Abgrenzung:** node-red ist NICHT derselbe Fall wie `.39/.92/.55`. Dort sind die Adressen
+Storm-Hinterlassenschaften ohne dokumentierte Wunschadresse (Configs wurden angepasst). Bei node-red
+ist `.57` die dokumentierte Wahrheit und `.157` der Unfall — Richtung umgekehrt.
+
+### 🎯 Gegentest: **44/44 up**
+`cadvisor 5/5 · homeassistant 1/1 · lxc-hosts 19/19 · netdata 5/5 · node_exporter 5/5 ·
+services 2/2 · smartctl_exporter 5/5 · vm-hosts 2/2`
+
+Die vier netdata-Targets sind gruen — **bestaetigt die ACL-These nachtraeglich** (nur `.163` durfte
+verbinden). Self-Scrape `.163:8428` ebenfalls up.
+
+### Eigener Messfehler, dokumentiert
+Direkt nach den Renewals stand die Bilanz bei **16/44** und sah nach einer Katastrophe aus.
+Fehlschluss: ich vermutete veraltete Sockets (die Fehlermeldungen nannten noch die alte Quell-IP
+`.79`) und startete VictoriaMetrics neu — unnoetig. **Tatsaechliche Ursache: VictoriaMetrics staffelt
+Scrapes nach einem (Neu-)Start ueber die Intervalle**; manche Jobs brauchen Minuten bis zur ersten
+Runde. Ein `down` ohne `lastError` heisst "noch nie gescrapet", nicht "kaputt" — das ist das
+Unterscheidungsmerkmal. Erst nach vollem Zyklus bewerten.
+
+### Netz-Topologie-Gegenprobe (fuer Netzis Pins)
+CT141/CT143/CT144 sind alle **single-homed** (nur `net0`). Cluster-weit tragen genau zwei Gaeste
+`tag=42`: CT126 und VM142 (Coder). Sonst niemand.
