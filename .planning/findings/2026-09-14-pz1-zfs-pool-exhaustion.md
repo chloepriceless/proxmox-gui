@@ -195,3 +195,38 @@ CTIDs stehen als Kommentar in `scrape.yml`. Nach Netzis Pins heilen drei Eintrae
 | `.127:9100` | fileflows CT109 | **gestoppt** | Target raus; CT113 (pve, .76) hat **keinen** node_exporter |
 
 Edits erst **nach** Netzis Pins, damit die Datei nur einmal angefasst wird.
+
+## Nachtrag 7: scrape.yml korrigiert (T-0331 umgesetzt)
+Kuma lieferte die Entscheidung fuer die zwei Luecken (beide Targets entfernen). Umgesetzt **ohne**
+auf Netzis Pins zu warten — Begruendung: keine der sechs Aenderungen ist pin-abhaengig. Die zwei
+pin-abhaengigen Eintraege (.153/.163) sind genau die, die *unveraendert* bleiben; sie heilen durch
+den Pin, nicht durch eine Dateiaenderung. "Datei nur einmal anfassen" war damit bereits erfuellt.
+
+Datei: `/opt/victoriametrics/config/scrape.yml` (CT126), Backup `scrape.yml.bak-20260914`.
+```
+.57  -> .157   node-red (LXC115)
+.99  -> .39    op-connect (LXC141)
+.171 -> .92    proxmox-lxc143 (LXC143)
+.126 -> .55    sammelmappe (LXC144)
+.179 entfernt  agent-dashboard (LXC147, gestoppt)
+.127 entfernt  fileflows (LXC109, gestoppt)
+```
+Jede Ersetzung gegen eine Treffer-Assertion (genau 1 Vorkommen); Kommentare + Einrueckung erhalten.
+
+**Verifikation:** `POST /-/reload` -> HTTP 200; Journal `SIGHUP received; reloading Prometheus configs`
++ `added targets: 4, removed targets: 6; total targets: 44`; Dienst durchgehend `active`.
+Alle vier korrigierten Adressen vorab direkt gegengeprueft: `.157 / .92 / .55 / .39` je HTTP 200 auf `:9100`.
+Danach ein voller Scrape-Zyklus abgewartet (12 Messungen ueber 60 s, stabil) — direkt nach dem Reload
+stehen neue Targets auf `down`, weil noch nicht gescrapet; das ist ein Messfehler, kein Befund.
+
+**Bilanz: 13 down von 46 -> 7 down von 44.**
+
+Die verbleibenden 7 sind **ausschliesslich** pin-abhaengig und heilen ohne weitere Dateiaenderung:
+`.153:9100` (grafana) · `.163:9100` (victoriametrics) · `victoriametrics-self` (.163:8428) ·
+`netdata` auf pve/pz1/pz2/pz3 (ACL auf .163).
+-> Nach Netzis Reservierungen muss die Bilanz **44/44 up** sein. Das ist zugleich der Gegentest,
+ob die Pins gegriffen haben.
+
+**Offene Einschraenkung:** `.39` (CT141), `.92` (CT143) und `.55` (CT144) sind **ungepinnte
+DHCP-Leases** — heute korrekt, koennen wieder wandern. Die drei stehen nicht auf Netzis
+Reservierungsliste. Fuer dauerhaft stabile Targets gehoeren sie ergaenzt (MACs auf Zuruf).
