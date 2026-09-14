@@ -448,3 +448,17 @@ Alle Kern-Infra-Container haben DHCP-Reservierungen (br0: 64 Eintraege, br42: 2)
 3. **Projekt-Bug `bootstrap.sh`** — backt die Installations-IP fest ins Caddyfile; jede Adressaenderung
    macht die GUI unerreichbar, mit einem Symptom (TLS-Abbruch) das nicht nach IP-Problem aussieht.
    Kandidat: Site-Adresse `:443` statt fester IP. Projektentscheidung, nicht eigenmaechtig umgesetzt.
+
+## Nachtrag 14: Die Regel, geschaerft (Netzi) und in Merkel abgelegt
+Meine Unterscheidung "dokumentierte Wahrheit vs. Zufallswert" war als Faustregel formuliert und
+haette im Ernstfall nicht getragen. Netzi hat sie zu einem **entscheidbaren Test** gemacht:
+
+> Gibt es fuer die ALTE Adresse eine Quelle, die **aelter ist als der Vorfall** UND **nicht aus
+> einem Automatismus** stammt? Ja -> Host bewegen. Nein -> festschreiben, Config nachziehen.
+
+Beide Ausschlusskriterien sind noetig. Ohne das zweite haette man CT143s `.171` faelschlich als
+dokumentierte Wahrheit gelesen — es sah aus wie zwei unabhaengige Quellen, bis `Caddyfile:37` den
+Automatismus (`bootstrap.sh` setzt die Installations-IP) offenlegte.
+Ergaenzung: **eine Reservierung in der DB beweist allein nichts** — sie ist nur die aeltere Quelle.
+
+Merkel-Slug: `dokumentierte-wahrheit-vs-zufallswert-welche-adresse-gewinnt-wenn-host-und-confi`
