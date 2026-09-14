@@ -403,3 +403,48 @@ die Admin-API auf :2019 abschaltet. Nur `restart` ist gueltig.
 **Offen:** CT143 heisst `proxmox` und verdeckt damit den Hypervisor-Node gleichen Namens
 (`proxmox` -> .92 statt .240). Rename auf `proxmox-gui` geplant, terminlich mit Netzi abgestimmt,
 damit der dnsmasq-Record nicht waehrend seiner Record-Anlage wechselt.
+
+## Nachtrag 13: CT143 umbenannt `proxmox` -> `proxmox-gui`
+Der Container-Hostname verdeckte den Hypervisor-Node gleichen Namens (`proxmox` -> .92 statt .240).
+Netzi gab den Termin frei, weil er die Node-Records vorerst nicht baut — so gibt es keinen Moment,
+in dem Container und Hypervisor um denselben dnsmasq-Namen konkurrieren.
+
+Ablauf: `pct set 143 --hostname proxmox-gui` · UTS-Namespace nachgezogen · `/etc/hosts` korrigiert
+(stand noch auf `127.0.1.1 proxmox.bikini.bottom.zone proxmox`) · sauberer DHCP-Zyklus
+(Lease-Dateien entfernt, `ip addr flush`, neu gebunden). Gesendet: `option host-name "proxmox-gui"`.
+Adresse blieb **.92** — die Reservierung hat gehalten.
+
+**Gegenprobe (Netzis Auflage):**
+```
+proxmox-gui                     -> 192.168.20.92
+proxmox                         -> loest NICHT auf        <- Zielzustand erreicht
+proxmox-gui.bikini.bottom.zone  -> 192.168.20.92
+proxmox.bikini.bottom.zone      -> 87.139.158.187 (Wildcard, bis static_dns steht)
+```
+Nichts beschaedigt: GUI HTTP 303, `/api/v1/health` HTTP 200, api/frontend/worker/caddy/redis/
+node_exporter alle `active`, Targets **44/44 up**.
+
+**Fuer monitoring relevant:** `node_uname_info{nodename=...}` von CT143 ist von `proxmox` auf
+`proxmox-gui` gewechselt. Das Scrape-Target selbst (`192.168.20.92:9100`) ist IP-basiert und unveraendert.
+
+## Endstand (alles gemessen, 2026-09-14)
+```
+VictoriaMetrics  .163:8428  HTTP 200     Grafana      .153:3000  HTTP 200
+node-red         .57:9100   HTTP 200     op-connect   .39:9100   HTTP 200
+sammelmappe      .55:9100   HTTP 200     proxmox-gui  .92:443    HTTP 303
+victoriametrics-dev -> 192.168.42.165 (eth1, gepinnt)
+Scrape-Targets: 44/44 up          ZFS-Pool Samsung_1TB (pz1): 392G frei
+```
+Alle Kern-Infra-Container haben DHCP-Reservierungen (br0: 64 Eintraege, br42: 2).
+
+## Verbleibend offen
+1. **`static_dns`-Records fuer die 5 Nodes** — blockiert bei Netzi: die Collection ist leer, hat keinen
+   Validator und kein Schema-Vorbild; Raw-Mongo-Write waere Raten. Christin-Gate: **einen** Record ueber
+   die UI anlegen (z.B. `pz1` -> .68) als Schema-Vorlage und als Beweis, ob Raw-Mongo hier provisioniert
+   (Praezedenzfall T-0244/VLAN50: dort provisioniert Raw-Mongo nicht). Bis dahin loesen die Node-Kurznamen
+   nicht auf und die FQDNs fallen in die Zonen-Wildcard -> 87.139.158.187 (UniFi-Console, gueltiges Zertifikat).
+2. **Optionales `zfs destroy`** der verwaisten `Samsung_1TB/vm-142-disk-0/1` — Entscheidung Christin.
+   Nicht dringend: 406G sind ohne Loeschung frei. Rollback: `zfs set refreservation=203G <vol>`.
+3. **Projekt-Bug `bootstrap.sh`** — backt die Installations-IP fest ins Caddyfile; jede Adressaenderung
+   macht die GUI unerreichbar, mit einem Symptom (TLS-Abbruch) das nicht nach IP-Problem aussieht.
+   Kandidat: Site-Adresse `:443` statt fester IP. Projektentscheidung, nicht eigenmaechtig umgesetzt.
