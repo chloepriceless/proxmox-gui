@@ -151,3 +151,47 @@ Ein toter `lxc-hosts`-Target alarmiert nicht, er verschwindet still.
 - `.241/.68/.42/.106:19999` `job=netdata` = die vier Proxmox-Nodes (feste IPs, nichts gewandert)
   -> **netdata laeuft auf keinem Node**. Aelterer, unabhaengiger Befund; Entscheidung ueber
   Weiterbetrieb vs. Targets entfernen liegt bei monitoring.
+
+## Nachtrag 4: netdata (T-0332) — ACL auf .163, kein Ausfall
+netdata ist auf **allen vier Nodes** installiert, `enabled`, `active`, Paket 2.11.0, lauscht auf
+`<node-ip>:19999`, lokal `curl 127.0.0.1:19999` -> HTTP 200. Die Scrapes scheitern an einer ACL,
+identisch in `/etc/netdata/netdata.conf` auf pve/pz1/pz2/pz3:
+
+```
+allow connections from = localhost 192.168.20.163
+```
+
+netdata akzeptiert also ausschliesslich die dokumentierte VictoriaMetrics-Adresse. Seit CT126 durch
+den Lease-Storm auf .79 abgedriftet ist, wird der Scraper abgewiesen ("connection reset by peer").
+Von CT126 aus gemessen: alle vier HTTP 000. **Self-Heal mit Netzis Pin auf .163** — Targets NICHT
+deprecaten. Dritte unabhaengige Bestaetigung, dass .163 die richtige Zieladresse ist.
+
+## Nachtrag 5: CT141 op-connect war ohne IP — Kollateralschaden des Lease-Storms
+CT141 (op-connect, Node proxmox/.240) lief, hatte aber **keine eth0-Adresse**. Journal:
+```
+10:23:21  eth0: dhclient: timeout failed to detect new ip addresses
+10:23:21  eth0: releasing expired dhcp lease...
+10:23:22  DHCPRELEASE of 192.168.20.99 on eth0 to 192.168.20.1
+```
+Der DHCP-Pool war zu dem Zeitpunkt von den ~133 gehorteten Leases (CT100/115/126) leergefegt; die
+Anfrage lief ins Timeout, der Container gab `.99` frei und stand ohne Netz. Disk unauffaellig (42%).
+**Behoben:** eth0 neu gebunden -> jetzt `192.168.20.39`, node_exporter HTTP 200.
+Zeigt, dass der Storm ueber verfaelschte Messungen hinaus realen Schaden auf einem *anderen* Node
+angerichtet hat.
+
+## Nachtrag 6: Zuordnung der 8 toten Scrape-Targets (T-0331)
+CTIDs stehen als Kommentar in `scrape.yml`. Nach Netzis Pins heilen drei Eintraege von selbst:
+
+| scrape.yml | Container | aktuell | Aktion |
+|---|---|---|---|
+| `.153:9100` | grafana CT100 | .78 | wird .153 gepinnt -> **unveraendert** |
+| `.163:9100` | victoriametrics CT126 | .79 | wird .163 gepinnt -> **unveraendert** |
+| `.163:8428` (Z.156, self) | CT126 | .79 | dito -> **unveraendert** |
+| `.57:9100` | node-red CT115 | .157 | -> **.157** |
+| `.99:9100` | op-connect CT141 | .39 | -> **.39** (wiederhergestellt) |
+| `.171:9100` | proxmox CT143 | .92 | -> **.92** |
+| `.126:9100` | sammelmappe CT144 | .55 | -> **.55** |
+| `.179:9100` | agent-dashboard CT147 | **gestoppt** | Target raus |
+| `.127:9100` | fileflows CT109 | **gestoppt** | Target raus; CT113 (pve, .76) hat **keinen** node_exporter |
+
+Edits erst **nach** Netzis Pins, damit die Datei nur einmal angefasst wird.
