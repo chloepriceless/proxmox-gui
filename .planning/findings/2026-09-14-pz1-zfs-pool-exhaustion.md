@@ -1,7 +1,7 @@
 # Finding: ZFS-Pool `Samsung_1TB` (pz1) bei AVAIL=0 durch 406G verwaiste vm-142-Reservierungen
 
 **Datum:** 2026-09-14 · **Anlass:** Anfrage monitoring/Kuma zu T-0326 (pve-240-Recovery-Alarm)
-**Status:** diagnostiziert, NICHT behoben — Go/No-Go fuer destruktiven Fix ausstehend
+**Status:** BEHOBEN 2026-09-14 12:38 MESZ (reversibel, ohne destroy). Optionales Aufraeumen (`zfs destroy`) offen bei Christin.
 
 ## Ausgangslage (Meldung monitoring)
 VictoriaMetrics (:8428) + Grafana (:3000) "down", Hosts .163/.153 pingbar, :22 + :9100 offen.
@@ -41,19 +41,50 @@ Ursache: zwei thick-provisionierte Zvols mit je `refreservation=203G`, `volsize=
 **Mitbetroffen auf demselben Pool:** CT100 grafana (3.7G/3.7G = 100%), CT102 homepage,
 CT115 node-red, CT127 mqtt. Pool ist nodes-shared: pz1, pz3, proxmox (`/etc/pve/storage.cfg`).
 
-## Vorgeschlagener Fix (NICHT ausgefuehrt — destruktiv, geteilte Ressource)
-1. Gegenbestaetigung einholen, dass VM142/Coder nur die nvme-Disk braucht (Christin nutzt Coder aktiv).
-2. `zfs destroy Samsung_1TB/vm-142-disk-0` + `...-disk-1` -> +406G sofort.
-3. CT126: `systemctl reset-failed victoriametrics && systemctl start victoriametrics`.
-4. CT126/CT100: `ifdown eth0 && ifup eth0` gegen die akkumulierten Leases; danach Lease-Datei pruefen.
-5. Monitoring-Targets auf CTID/Hostname statt DHCP-IP umstellen (sonst wiederholt sich der Mess-Nebel).
+## Durchgefuehrter Fix (2026-09-14, reversibel — KEIN destroy)
 
-## Offen
-- Die 12d Downtime aus T-0326 decken sich NICHT mit dem VM-Crash (14.09.) — Scrape-Ausfall ist
-  aelter als der Service-Crash. Wahrscheinlich separater Strang; exakter Scrape-Abriss bei monitoring erfragt.
-- Warum wurden die vm-142-Zvols am 02.06. auf pz1 angelegt und nie aufgeraeumt? (Migration Coder pz1 -> pve?)
+1. `zfs set refreservation=none Samsung_1TB/vm-142-disk-0` + `...-disk-1`
+   Vorher-Werte je `203G`. **Rollback:** `zfs set refreservation=203G <vol>`.
+   -> Pool AVAIL **0B -> 406G**. CT126 rootfs 100% -> 65%, CT100 100% -> 53%.
+2. CT126: `systemctl reset-failed victoriametrics && systemctl start victoriametrics`
+   -> `ActiveState=active SubState=running NRestarts=0`, `:8428` lauscht, 46 Scrape-Targets geladen.
+3. CT126 + CT100: dhclient gekillt, Lease-Dateien entfernt, `ip addr flush dev eth0/eth1`, dhclient neu gebunden.
+   -> eth0-Adressen **CT126 50 -> 1**, **CT100 34 -> 1**. DHCPDECLINE seit Flush: **0**.
 
-## Belege
-Alle Werte live erhoben 2026-09-14 via `ssh root@192.168.20.68` (pz1) / `192.168.20.241` (pve):
-`zpool list`, `zfs list -o name,used,avail,refer -d1 Samsung_1TB`, `zfs get refreservation,volsize,written`,
-`pct exec 126 -- df -h /`, `journalctl -u victoriametrics`, `pct exec 126 -- ip -4 addr`, `ip neigh`.
+**`zfs destroy` wurde NICHT ausgefuehrt.** Irreversibel + geteilte Ressource -> Entscheidung liegt bei Christin.
+Nicht mehr dringend: die 406G sind ohne Loeschung frei.
+
+## Verifikation (R31 — Oracle vor dem Check)
+Oracle: Pool-AVAIL > 400G, beide Dienste HTTP-erreichbar, eth0-Adressen == 1, DHCPDECLINE == 0.
+
+| Pruefung | Methode | Ergebnis |
+|---|---|---|
+| Pool frei | `zfs list -H -o name,used,avail Samsung_1TB` | USED 454G / **AVAIL 406G** (vorher 0B) |
+| VictoriaMetrics | `curl http://192.168.20.79:8428/health` | **HTTP 200, Body "OK"** |
+| Grafana | `curl http://192.168.20.78:3000/api/health` | `{"database":"ok","version":"13.0.1+security-01"}` |
+| Dienst host-seitig | `pct exec 126 -- systemctl show victoriametrics` | active/running, NRestarts=0, Start 12:38:02 CEST |
+| Lease-Storm | `pct exec -- ip -4 -o addr show eth0 \| wc -l` | CT126 **1** (war 50), CT100 **1** (war 34) |
+| DECLINE-Loop | `journalctl --since 12:38:40 \| grep -c DHCPDECLINE` | **0** auf beiden |
+
+Echte VictoriaMetrics-Downtime: **09-14 09:11:56 -> 12:38:02 = 3h26min** (journal-Luecke der Unit,
+host-seitig per `pct exec` belegt) — NICHT 12 Tage. Die 12 Tage gehoeren allein pve-240 (unabhaengiger Vorfall).
+
+## Rohevidenz VM142-Verwaisung (Auflage Hub)
+`qm config 142` @ Node pve: `scsi0: nvme:vm-142-disk-0,format=raw,iothread=1,size=200G` — kein Samsung_1TB-Eintrag.
+`zfs get` beide Volumes: `used=referenced=written=56K`, `volsize=200G`, `usedbysnapshots=0B`, keine Snapshots.
+`pvesm list Samsung_1TB` fuehrt beide weiter unter VMID 142 — daher nie aufgeraeumt: Proxmox ordnet sie
+der VM namentlich zu, obwohl die Config sie nicht referenziert. Migrations-Leiche Coder pz1 -> pve (02.06.).
+
+## IP-Aenderung durch den Flush (wichtig fuers Monitoring)
+- VictoriaMetrics CT126: **192.168.20.79** (vorher u.a. .153)
+- Grafana CT100: **192.168.20.78** (vorher u.a. .163)
+- .153/.163/.126/.162 sind frei.
+
+## Offen / Empfehlung
+- **Statische IPs fuer CT100 + CT126** (Kern-Infra) — Dauerloesung gegen Target-Drift. Hinweis liegt bei `network`.
+- **Monitor auf Pool-AVAIL**: `zfs list -H -o avail Samsung_1TB` auf pz1, Alarm < 50G. Die Ursache war
+  stiller Speicherdruck, kein Dienst- oder CPU-Symptom — genau das hat bisher niemand gesehen.
+- Monitoring-Targets auf Hostname/CTID statt IP (Kuma, T-0327).
+- Kosmetisch: CT126 dhclient nutzt aktuell `/var/lib/dhcp/dhclient.leases` statt der ifupdown-Pfade
+  (Folge des manuellen `dhclient eth0`). Beim naechsten Reboot uebernimmt ifupdown wieder — kein Funktionsrisiko.
+- Optional: `zfs destroy` der beiden Volumes (Entscheidung Christin). Ohne Eile.
