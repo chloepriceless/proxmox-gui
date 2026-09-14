@@ -230,3 +230,30 @@ ob die Pins gegriffen haben.
 **Offene Einschraenkung:** `.39` (CT141), `.92` (CT143) und `.55` (CT144) sind **ungepinnte
 DHCP-Leases** — heute korrekt, koennen wieder wandern. Die drei stehen nicht auf Netzis
 Reservierungsliste. Fuer dauerhaft stabile Targets gehoeren sie ergaenzt (MACs auf Zuruf).
+
+## Reservierungsliste an Netzi (final, Stand 2026-09-14)
+Kuma hat CT141/143/144 nachgefordert, weil `.39/.92/.55` in der korrigierten `scrape.yml` als
+**ungepinnte Leases** stehen — ohne Reservierung waere die Drift nur vertagt.
+
+| CTID | Name | Interface | MAC | Ziel-IP |
+|---|---|---|---|---|
+| 100 | grafana | eth0 | `BC:24:11:45:1B:DF` | .153 |
+| 126 | victoriametrics | eth0 | `BC:24:11:8A:35:FF` | .163 |
+| 115 | node-red | eth0 | `BC:24:11:73:76:9F` | .157 |
+| 141 | op-connect | eth0 | `BC:24:11:16:F2:16` | .39 |
+| 143 | proxmox | eth0 | `BC:24:11:B0:DC:8C` | .92 |
+| 144 | sammelmappe | eth0 | `BC:24:11:94:23:C5` | .55 |
+| 126 | victoriametrics | eth1 (VLAN42) | `BC:24:11:EF:7C:B6` | .42.165 (zweiter Zug) |
+
+**Gegentest nach den Pins:** Scrape-Bilanz muss **44/44 up** erreichen, ohne weitere Dateiaenderung.
+Bleibt danach etwas down, liegt es an den Reservierungen — nicht an der `scrape.yml`.
+
+## Zusammenfassung des Gesamtvorfalls
+Eine Wurzel (406G verwaiste `refreservation` auf `Samsung_1TB`), fuenf Symptome auf drei Ebenen:
+1. **VictoriaMetrics 3h26 tot** (ENOSPC -> flock.lock -> panic -> Start-Limit) — behoben
+2. **DHCP-Lease-Storm** auf CT100/CT115/CT126 (34/49/50 Adressen) — behoben
+3. **CT141 op-connect ohne Netz** auf einem anderen Node (Pool-Erschoepfung) — behoben
+4. **Falscher SSH-Hostkey-Alarm** (CT126s Key auf geliehener IP) — entkraeftet
+5. **13 tote Scrape-Targets** (IP-Drift + netdata-ACL auf .163) — 6 behoben, 7 pin-abhaengig
+
+Keiner dieser fuenf Punkte war als Speicherproblem erkennbar. `zpool list` zeigte CAP 23%.
