@@ -56,3 +56,26 @@ auflösen, solange `static_dns` leer ist (siehe 2026-09-14, Nachtrag 10). Unkrit
 ## Naechster Schritt
 Container-Bau (meine Seite) sobald die Adresse da ist; der Hub installiert SearXNG nativ hinein und
 liefert den Funktionsnachweis (JSON-Antwort mit echten Treffern, nicht "Container laeuft").
+
+## MAC vorab festgelegt (spart eine Abstimmungsrunde)
+```
+CT165  searxng  eth0  BC:24:11:5E:A7:C3   Node pz3   bridge vmbr0, untagged
+```
+Bewusst vorab vergeben statt von Proxmox beim Anlegen generieren zu lassen — so kann Netzi die
+Reservierung schreiben, **bevor** der Container existiert, und Adresse + Reservierung in einem Zug
+erledigen. Kollisionsgeprueft: kein Treffer per `grep -ril` ueber alle
+`/etc/pve/nodes/*/{lxc,qemu-server}/*.conf`, nicht im ARP-Cache. VMID 165 weiterhin frei.
+
+## Provisioning: macht vm-deployment-gui, nicht der Hub
+Der Hub hat Root ueber .240 und koennte es technisch. Bewusst bei mir behalten, damit
+Entscheidung und Umsetzung nicht auseinanderlaufen koennen — ich habe VMID, Node und Specs
+festgelegt, also lege ich auch an. Uebergabe an den Hub: fertiger Container mit statischer IP,
+Gateway, SSH-Key, `onboot=1`. Der Hub installiert SearXNG nativ und liefert den Funktionsnachweis.
+
+## Offener Punkt, aufgefallen beim Node-Vergleich
+Der Hub hatte unabhaengig gemessen und war bei pz2 gelandet (Uptime 28.4 Tage gegen 8.9 bei pz1/pz3).
+Seine Beobachtung ist richtig und mir entgangen: **pz1 und pz3 wurden vor ~9 Tagen neu gestartet**,
+Ursache unbekannt. Zusammen mit dem ungeklaerten 12-Tage-Ausfall von proxmox/.240 (02.09.-14.09.)
+sind das **zwei unerklaerte Node-Ereignisse in zwei Wochen**.
+Kein Blocker fuer SearXNG (die Ueberbuchung von pz2 mit 2.47x wiegt schwerer als der Uptime-Vorteil),
+aber fuer Christin notiert — das gehoert angesehen, bevor es ein drittes Mal passiert.
