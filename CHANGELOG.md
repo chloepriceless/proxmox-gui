@@ -4,6 +4,26 @@ All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this
 project uses [Semantic Versioning](https://semver.org/) (pre-1.0).
 
+## [0.6.4] — 2026-09-18
+
+### Fixed
+- **A DHCP lease change no longer strands the GUI behind an unreachable
+  Caddy.** `bootstrap.sh` baked the install-time IPv4 into the Caddyfile site
+  block once and never revisited it. The LXC runs on DHCP (`net0: ip=dhcp`),
+  so after a lease change Caddy kept serving a certificate for an address the
+  box no longer held: the unit stayed `active`, and every HTTPS request failed
+  the handshake instead (measured: `curl` exit 35, `http_code=000`). CT143 hit
+  exactly this.
+  The site address stays concrete — a bare `:443 { tls internal }` block
+  validates but serves no usable certificate on caddy 2.6.2 — but it is now
+  re-derived from the live default route by `deploy/scripts/render-caddyfile.sh`
+  at install time, on every boot (`proxmox-gui-caddyfile.service`, ordered
+  `Before=caddy.service`) and every two minutes
+  (`proxmox-gui-caddyfile.timer`). The render is content-compared, so an
+  unchanged address is a no-op and Caddy is only restarted when the address
+  actually moved. Restart rather than reload: the Caddyfile sets `admin off`,
+  which is what Debian's `ExecReload` needs.
+
 ## [0.6.3] — 2026-06-06
 
 ### Fixed

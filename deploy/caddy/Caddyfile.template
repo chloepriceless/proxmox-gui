@@ -1,6 +1,10 @@
 # /etc/caddy/Caddyfile — Proxmox GUI (Phase 1 default: LAN / self-signed)
 #
-# This file is installed verbatim by deploy/lxc/bootstrap.sh.
+# This file is rendered into /etc/caddy/Caddyfile by
+# deploy/scripts/render-caddyfile.sh — at install time, on every boot, and on a
+# two-minute timer. Only __SITE_ADDR__ is substituted; everything else is
+# installed verbatim. Edit the template, not /etc/caddy/Caddyfile: the next
+# render overwrites the latter.
 #
 # Architecture (research/ARCHITECTURE.md + Pattern 11):
 #   - Single origin. Browser hits Caddy on :443. Caddy reverse-proxies
@@ -14,9 +18,11 @@
 # and ensure ports 80 + 443 are reachable from the internet plus DNS A/AAAA
 # records point at the LXC. Caddy then handles cert issuance + renewal.
 #
-# For LAN installs (Phase 1 default) we use `:443 { tls internal }` so a
-# fresh LXC works with no DNS configured (Pitfall A9). Caddy's internal
-# CA issues a self-signed cert; the operator accepts it once in the browser.
+# For LAN installs (Phase 1 default) we use `https://<ip>:443 { tls internal }`
+# so a fresh LXC works with no DNS configured (Pitfall A9). Caddy's internal
+# CA issues a self-signed cert for that IP; the operator accepts it once in the
+# browser. Note it has to be the IP and not a bare `:443` — see __SITE_ADDR__
+# below.
 {
 	# Global options
 	admin off
@@ -34,10 +40,14 @@
 	}
 }
 
-# __SITE_ADDR__ is replaced by bootstrap.sh with `https://<LXC-IP>:443` so
-# Caddy's internal CA has a concrete IP to put in the leaf cert's SAN.
-# A bare `:443` block creates a TLS server with no connection policy that
-# can issue a cert — clients then get TLS alert internal_error (80).
+# __SITE_ADDR__ is replaced by render-caddyfile.sh with `https://<LXC-IP>:443`
+# so Caddy's internal CA has a concrete IP to put in the leaf cert's SAN.
+# A bare `:443` block creates a TLS server with no connection policy that can
+# issue a cert — `caddy validate` accepts it, then the handshake fails at
+# runtime (measured on caddy 2.6.2: TCP connects, curl exits 35).
+# The address is re-derived from the live default route on every boot and every
+# two minutes, so a DHCP lease change cannot strand the GUI behind a cert for
+# an address the box no longer has.
 __SITE_ADDR__ {
 	tls internal
 

@@ -380,22 +380,25 @@ install -m 0644 "${INITIAL_RELEASE_DIR}/deploy/systemd/proxmox-gui-frontend.serv
     /etc/systemd/system/proxmox-gui-frontend.service
 install -m 0644 "${INITIAL_RELEASE_DIR}/deploy/systemd/proxmox-gui-worker.service" \
     /etc/systemd/system/proxmox-gui-worker.service
+install -m 0644 "${INITIAL_RELEASE_DIR}/deploy/systemd/proxmox-gui-caddyfile.service" \
+    /etc/systemd/system/proxmox-gui-caddyfile.service
+install -m 0644 "${INITIAL_RELEASE_DIR}/deploy/systemd/proxmox-gui-caddyfile.timer" \
+    /etc/systemd/system/proxmox-gui-caddyfile.timer
 
 echo "==> Installing Caddyfile..."
-# Detect the LXC's primary IPv4 address and substitute it into the
-# Caddyfile so `tls internal` has a concrete SAN anchor. A bare `:443`
-# site block creates a TLS server with no issuable cert — clients then
-# get TLS alert internal_error (80) and the wizard is unreachable.
-LXC_IP="$(hostname -I | awk '{print $1}')"
-if [ -z "$LXC_IP" ]; then
-    echo "ERROR: could not detect LXC primary IPv4 from \`hostname -I\`." >&2
-    exit 1
-fi
-echo "    primary IP detected: ${LXC_IP}"
-sed "s|__SITE_ADDR__|https://${LXC_IP}:443|" \
-    "${INITIAL_RELEASE_DIR}/deploy/caddy/Caddyfile.template" \
-    > /etc/caddy/Caddyfile
-chmod 0644 /etc/caddy/Caddyfile
+# The site block needs a concrete subject so `tls internal` has a SAN anchor —
+# a bare `:443` block validates but serves no usable certificate (measured on
+# caddy 2.6.2: TCP connects, handshake fails, curl exit 35). So the address
+# stays in the Caddyfile; what changed is that it is no longer baked in once
+# at install time.
+#
+# render-caddyfile.sh derives the address from the live default route on every
+# boot (proxmox-gui-caddyfile.service) and every two minutes
+# (proxmox-gui-caddyfile.timer). The LXC runs on DHCP, and a lease change used
+# to leave Caddy holding a certificate for an address the box no longer had —
+# the GUI then became unreachable with no failing unit to point at (CT143 hit
+# exactly this). Re-rendering keeps the concrete SAN and drops the drift.
+bash "${CURRENT_LINK}/deploy/scripts/render-caddyfile.sh"
 
 systemctl daemon-reload
 systemctl enable --now proxmox-gui-api.service
@@ -406,6 +409,12 @@ systemctl enable --now proxmox-gui-frontend.service
 # is the one actually loaded.
 systemctl enable caddy.service
 systemctl restart caddy.service
+# Keep the site address tracking the box's real IPv4 from here on. The oneshot
+# is ordered Before=caddy.service so a reboot onto a new lease re-renders
+# before Caddy reads the file; the timer catches a lease change under a box
+# that stays up. `enable` (not `--now`) for the service: it has just run above.
+systemctl enable proxmox-gui-caddyfile.service
+systemctl enable --now proxmox-gui-caddyfile.timer
 # Phase 3: the arq worker is now wired (depends on redis-server, enabled above).
 systemctl enable --now proxmox-gui-worker.service
 

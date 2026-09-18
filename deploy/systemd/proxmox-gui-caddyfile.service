@@ -1,0 +1,21 @@
+# Re-derive /etc/caddy/Caddyfile from the release template using the LXC's
+# current primary IPv4, so a DHCP lease change cannot leave Caddy serving a
+# certificate for an address the box no longer holds.
+#
+# Runs before caddy.service at boot (the common case: address changed while
+# the box was down) and is re-triggered by proxmox-gui-caddyfile.timer to
+# catch a lease change on a box that stays up.
+[Unit]
+Description=Render Proxmox GUI Caddyfile for the current primary IPv4
+Documentation=https://github.com/ProtectBridge/vm-deployment-gui
+After=network-online.target
+Wants=network-online.target
+Before=caddy.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=no
+ExecStart=/bin/bash /opt/proxmox-gui/current/deploy/scripts/render-caddyfile.sh
+
+[Install]
+WantedBy=multi-user.target

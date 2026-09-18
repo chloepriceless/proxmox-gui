@@ -1,0 +1,16 @@
+# The oneshot alone only covers boot. A DHCP lease can change under a box that
+# never reboots, so poll for drift as well. The render script is a no-op when
+# the address is unchanged (content compare), so the steady-state cost is one
+# `ip route get` plus a `cmp` every two minutes.
+[Unit]
+Description=Periodically re-check the Proxmox GUI Caddyfile site address
+Documentation=https://github.com/ProtectBridge/vm-deployment-gui
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=2min
+AccuracySec=30s
+Unit=proxmox-gui-caddyfile.service
+
+[Install]
+WantedBy=timers.target
