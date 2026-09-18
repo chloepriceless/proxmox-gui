@@ -60,7 +60,21 @@ Zwei verschiedene Ursachen, und die eine ist ein Muster, kein Einzelfall.
   und hat im ganzen Fenster keine NIC-Zeile. Down-Zeit ~70 s = Reboot-Groesse.
   Seit 01.08.: **drei bond0-Totalausfaelle, drei Fences, 1:1 in beide Richtungen** —
   RMA-Argument, keine Vermutung.
-  Struktur bleibt: `corosync.conf` hat nur `ring0_addr` auf dem flachen Produktiv-LAN.
+  **Topologie (Nachtrag 2, `f2251e2`, mit Netzi):** Der Switch ist **USPM24P @ .145**
+  (`f4:e2:c6:ad:a8:c7`), und **alle drei Hypervisor haengen daran**. Quorum-Rechnung:
+  5 Knoten, Quorum 3, drei Stimmen an dem Geraet → faellt es, bleiben `.240`+`.241` = 2 < 3.
+  **Ein Ausfall dieses Switches ist ein TOTALausfall des Clusters**, kein Teilausfall; dass
+  bisher nur zwei Knoten resetteten, lag allein an pz2s nicht scharfem Watchdog.
+  Ein blosser Tausch behebt das nicht — auch ein fehlerfreier Nachfolger nimmt bei jedem
+  Firmware-Reboot alles mit.
+  **Machbarkeit gemessen:** pz1/pz2/pz3 haben je **genau zwei NICs, beide in bond0, beide am
+  USPM24P** — keine freie Schnittstelle, ein dedizierter Corosync-Ring ist ohne neue
+  Hardware physisch unmoeglich. **Aber der zweite Pfad existiert, er ist falsch gesteckt:**
+  ein Kabel pro Knoten auf einen zweiten Switch + `bond-mode active-backup` (LACP kann kein
+  Aggregat ueber zwei UniFi-USW spannen, active-backup braucht das nicht). `bond-miimon 100`
+  ist schon gesetzt → ~100–200 ms Umschaltzeit gegen 4950 ms Token-Timeout.
+  Preis gemessen: bond0 traegt 10.6 / 1.2 / 4.2 Mbit/s bei 5000 Mbit/s Kapazitaet
+  (0,02–0,2 %) — die Aggregation kauft messbar nichts.
 - **.240, 02.–14.09. — Strom.** Journal bricht mitten im Betrieb ab, Watchdog seit 20.08.
   geschlossen (Fencing ausgeschlossen), BMC-SEL hat zwischen 08.08. und 14.09. **keinen Eintrag**
   → auch Standby stromlos. Bei `Power Restore Policy: always-on` heisst das woertlich: 12 Tage
@@ -73,12 +87,15 @@ Zwei verschiedene Ursachen, und die eine ist ein Muster, kein Einzelfall.
    **Danach** reserviert Netzi `.176` auf `BC:24:11:8F:6F:49` — Zwei-Minuten-Zug bei ihm.
    Schritt 2 allein brachte nichts: eine DHCP-Reservierung bringt einen statisch konfigurierten
    ARP-Zweitsprecher nicht zum Schweigen.
-2. **HA-Fencing** (Entscheidung Christin, MC liegt beim Hub) — **Empfehlung nach dem
-   Switch-Nachtrag umsortiert:** (0) **Switch `f4:e2:c6:ad:a8:c7` pruefen/tauschen** —
-   steht jetzt vorn, Netzi ordnet die MAC einem USW zu · (A) HA auf pz1/pz3 abschalten als
-   Sofort-Entschaerfung, waehrend der Switch geklaert wird · (B) zweiter Corosync-Ring —
-   **nur sinnvoll, wenn er nicht ueber dasselbe Blech laeuft**, sonst Kosmetik ·
-   (C) Risiko akzeptieren.
+2. **HA-Fencing / Topologie** (Entscheidung Christin, MC liegt beim Hub) — finale
+   Reihenfolge, mit Netzi abgestimmt:
+   (0) **USPM24P @ .145 pruefen/tauschen** — akut, drei Totalausfaelle in drei Wochen ·
+   (1) **Ein Kabel pro Knoten auf einen zweiten Switch + `bond-mode active-backup`** —
+   struktureller Fix, keine neue Hardware, nur Umstecken + drei Zeilen Config; Netzis Zug,
+   angekuendigtes Wartungsfenster (einzeln unkritisch, Quorum 3 von 5 bleibt) ·
+   (2) zweiter Corosync-Ring — nach (1) erst moeglich und dann weitgehend ueberfluessig,
+   also optional · (A) HA auf pz1/pz3 abschalten als Sofort-Entschaerfung, falls (0)/(1)
+   dauern.
 3. **Stromereignis .240** (nur Christin beantwortbar): was ist am 02.09. ~01:53 an dem Stromkreis
    passiert, und was am 14.09. mittags? Kein Log kann das sagen.
 4. **`zfs destroy`** `Samsung_1TB/vm-142-disk-0/1` — Christin, unkritisch (406G ohne Loeschung frei).
@@ -96,6 +113,7 @@ Zwei verschiedene Ursachen, und die eine ist ein Muster, kein Einzelfall.
   (`repo:"orchestrator"`) — die Channel-Adresse `agent-master-hub` ist **kein** gueltiges
   `send_message`-Ziel. `context` deckelt bei 4000 Zeichen, die Response sagt `truncated`.
 - **Kuma** (`monitoring`), **Schnueffi** (`security`).
+- Netzis Gegenstueck zur Switch-Forensik: `orchestrator-network/.planning/reports/node-reset-forensik-udm-seite-2026-09-18.md` (`fd5ce96`).
 
 ## Merksaetze
 - **Bei allem, was ein Rennen sein koennte, misst man Verteilungen, nicht Werte** (Netzi).
