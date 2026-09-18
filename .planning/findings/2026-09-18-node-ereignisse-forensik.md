@@ -105,6 +105,68 @@ Proxmox-Knoten ist in dessen Kernel-Log datiert, inklusive Down-Zeit und Speed:
 `journalctl | grep -E "NIC Link is (Down|Up)|now running without any active interface"`.
 Als Interims-Sensor brauchbar, bis die Switch-Logs off-box laufen.
 
+### NACHTRAG 2 (03:45) — Topologie: SPOF, Quorum-Rechnung und der machbare Fix
+
+Netzi (`orchestrator-network`, commit `fd5ce96`) hat die MACs zugeordnet:
+
+| Partner MAC | Gerät | Adresse |
+|---|---|---|
+| `f4:e2:c6:ad:a8:c7` | **USPM24P** (USW Pro Max 24 PoE) | 192.168.20.145 |
+| `28:70:4e:cf:56:13` | USL8A | 192.168.20.146 |
+
+Firmware auf allen Switches identisch (`7.5.15.17146`) — ein Versionsunterschied als
+Erklärung fällt aus. Und sein eigentlicher Befund wiegt schwerer als der Defekt:
+**alle drei Hypervisor hängen am USPM24P** (zusammen mit 37 weiteren Clients).
+
+#### Die Quorum-Rechnung macht daraus einen Totalausfall
+
+5 Knoten, Quorum 3. Am USPM24P hängen pz1, pz2 **und** pz3 = drei Stimmen. Fällt das
+Gerät, bleiben `.240` + `.241` = **2 Stimmen < 3** — der überlebende Teil ist ebenfalls
+nicht quorat. Ein USPM24P-Ausfall ist also kein Teil-, sondern ein **Totalausfall des
+Clusters**. Dass bisher nur zwei Knoten hart resetteten, lag allein daran, dass pz2
+keinen scharfen Watchdog hielt.
+
+Damit ist ein Tausch des Geräts nur die halbe Antwort: auch ein fehlerfreier Nachfolger
+nimmt bei jedem Firmware-Reboot und jeder Wartung wieder den ganzen Cluster mit.
+
+#### Hardware-Bestand: keine freie NIC
+
+```
+pz1 / pz2 / pz3   nic0 (igc, 2500) + nic1 (igc, 2500)  →  beide in bond0, beide am USPM24P
+```
+
+**Zwei Ports pro Knoten, beide belegt.** Ein dedizierter Corosync-Ring auf eigener
+Schnittstelle ist ohne neue Hardware physisch unmöglich. Die Ringfrage ist der
+Verteilung damit *nachgelagert*, nicht nebengeordnet.
+
+#### Der zweite Pfad existiert — er ist falsch gesteckt
+
+Nicht ein drittes Kabel, sondern **ein Kabel pro Knoten umstecken** und LACP aufgeben:
+
+```
+statt   bond-mode 802.3ad        nic0+nic1 → USPM24P (aggregiert)
+dann    bond-mode active-backup  nic0 → USPM24P, nic1 → zweiter Switch
+```
+
+LACP kann kein Aggregat über zwei UniFi-USW spannen (kein MLAG) — active-backup braucht
+das nicht, beide Switches sind dieselbe Broadcast-Domäne. `bond-miimon 100` ist auf allen
+drei Knoten bereits gesetzt: Umschaltzeit ~100–200 ms gegen ein Corosync-Token-Timeout von
+**4950 ms**, zwei Größenordnungen Luft. Ein USPM24P-Ausfall löst dann *kein*
+Quorum-Ereignis mehr aus.
+
+**Preis, gemessen statt behauptet** (Durchsatz über `bond0/statistics`, Schnitt seit Boot,
+Kapazität 2×2500 = 5000 Mbit/s):
+
+| Knoten | Schnitt | Anteil der Kapazität |
+|---|---|---|
+| pz1 | 10.6 Mbit/s | 0,2 % |
+| pz2 | 1.2 Mbit/s | 0,02 % |
+| pz3 | 4.2 Mbit/s | 0,08 % |
+
+⚠️ Der Schnitt über 9 Tage verdeckt Spitzen (Backup-Fenster). Er müsste allerdings um
+Faktor >250 überschritten werden, um einen einzelnen 2,5G-Link zu sättigen. Die
+Aggregation kauft hier messbar nichts und kostet aktuell genau die Redundanz, die fehlt.
+
 ### Der Auslöser war das Netz, nicht ein Knoten
 
 pz2 verliert die Links zu Node 2, 3 und 5 **in derselben Sekunde**. Ein Knotenfehler
@@ -181,20 +243,23 @@ welche davon, sagt kein Log.
 
 ## Empfehlungen
 
-0. **Den Switch `f4:e2:c6:ad:a8:c7` prüfen/tauschen** — *neu nach dem Nachtrag, und
+0. **Den Switch USPM24P (`f4:e2:c6:ad:a8:c7`, 192.168.20.145) prüfen/tauschen** — *neu nach dem Nachtrag, und
    jetzt die wichtigste Maßnahme.* Drei Totalausfälle in drei Wochen, ~70 s Down-Zeit
    (Reboot-Größenordnung). Ein Gerät mit dieser Bilanz gehört auf den Prüfstand, bevor
    man die Topologie drumherum umbaut. Netzi ordnet die MAC einem konkreten USW zu.
-1. **Zweiten Corosync-Ring ziehen** (`ring1_addr`) — für Netzi + Christin. Solange
-   Corosync einzügig auf dem Produktiv-LAN liegt, ist jeder Switch-Hüpfer ein
-   potenzieller Doppel-Hard-Reset. Bleibt richtig — nützt aber nur, wenn der zweite Ring
-   nicht über **denselben** Switch läuft; bei einem Gerät, das alle Ports gleichzeitig
-   fallen lässt, wäre ein zweiter Ring auf demselben Blech wirkungslos.
-2. **Prüfen, ob pz1/pz3 überhaupt HA brauchen.** Fencing ist der *Preis* von HA. Wenn die
+1. **Ein Kabel pro Knoten auf einen zweiten Switch, `bond-mode` auf `active-backup`** —
+   *der strukturelle Fix.* Keine neue Hardware, kein Kapazitätsproblem (USL8A und US24PRO
+   haben Platz), nur Umstecken plus drei Zeilen in `/etc/network/interfaces`. Löst den SPOF
+   und das Fencing in einem Zug; der Umbau ist ein kurzer, angekündigter Aussetzer pro
+   Knoten (einzeln unkritisch, Quorum 3 von 5 bleibt gewahrt).
+2. **Zweiter Corosync-Ring** (`ring1_addr`) — nach Punkt 1 erst *möglich* (vorher fehlt die
+   freie NIC), danach aber weitgehend **überflüssig**: ist der Pfad selbst redundant,
+   braucht der Ring keine eigene Redundanz. Als optional führen, nicht als Pflicht.
+3. **Prüfen, ob pz1/pz3 überhaupt HA brauchen.** Fencing ist der *Preis* von HA. Wenn die
    Gäste auf pz1/pz3 kein automatisches Failover brauchen, beseitigt das Entfernen der
    HA-Ressourcen die Hard-Resets sofort und ohne Netzumbau — die günstigste Sofortmaßnahme.
    Braucht man HA, ist Empfehlung 1 Pflicht, keine Kür.
-3. **Ereignis B ist keine Cluster-Baustelle.** Nichts an Proxmox reparieren; die Frage
+4. **Ereignis B ist keine Cluster-Baustelle.** Nichts an Proxmox reparieren; die Frage
    gehört an die Elektrik. Bis das geklärt ist, bleibt .240 ein Knoten, der jederzeit
    ohne Vorwarnung 12 Tage weg sein kann — beim Platzieren neuer LXCs entsprechend werten
    (deckt sich mit dem bestehenden Vermerk „.240 instabil, keine Prod-VMs").
