@@ -215,9 +215,20 @@ awk '/^Slave Interface:/{s=$3} /details partner lacp pdu:/{p=1;next} p&&/port nu
 
 #### (c) Was der Zielport tragen muss
 
-`untagged` (nativ, Knoten-Adressen `192.168.20.x`) plus **tagged VLAN 3, 4, 6, 42**
+`untagged` (nativ VLAN 20, Knoten-Adressen `192.168.20.x`) plus **tagged VLAN 3, 4, 6, 42**
 (aus den Gast-Configs in pmxcfs, clusterweit — jeder Knoten muss alles tragen, sonst
-bricht Migration).
+bricht Migration). Belegung der IDs laut Netzi: **3 = Management · 4 = DMZ ·
+6 = VPN_Mullvad · 42 = DEV-Network**.
+
+⚠️ **Nicht „korrigieren": PVID 1 auf der Bridge ist richtig.** `bridge vlan show` zeigt
+`bond0  1 PVID Egress Untagged`, der Switch nennt sein natives VLAN aber 20. Kein
+Widerspruch — der Switch entfernt den Tag, der Host legt untagged auf seine eigene PVID,
+und welche Nummer die trägt, ist rein lokal. Wer die Bridge-PVID im Fenster „auf 20
+zieht", macht die Knoten unerreichbar. Die Host-Seite ändert **nur** `bond-mode`.
+
+**Gegen-Orakel nach dem Umbau** (vorab festgelegt): `/proc/net/bonding/bond0` zeigt
+`active-backup`, beide Slaves `up`, die beiden Partner-MACs sind **verschieden**, und ein
+`ifdown` des aktiven Slaves kostet keinen Quorum-Verlust.
 
 #### (d) ⚠️ Die Falle im Fenster selbst
 
@@ -227,9 +238,19 @@ der Reparatur zu. Also entweder HA vorher abschalten (= Empfehlung 3 ohnehin, da
 Extraschritt) oder jede Unterbrechung unter ~50 s halten. Ersteres ist entspannter, weil man
 dann nicht gegen eine Uhr arbeitet.
 
+**Netzseitig bestätigt (Netzi, `e14e034`):** Die Port-Overrides am USPM24P zeigen
+`Port 17 aggregate_members=[17,18]`, `Port 19 → [19,20]`, `Port 21 → [21,22]`, jeweils
+`op_mode=aggregate` — **deckungsgleich mit der LACPDU-Auslesung oben**, zwei unabhängige
+Quellen. Die drei LAGs müssen im Fenster aufgelöst werden.
+Zweite Korrektur von seiner Seite: `forward` ist flottenweit **nicht** überall `all` —
+ausgerechnet am empfohlenen Ziel **US24PRO2 (.63)** stehen Port 2 auf `native` und
+Port 3/4/12 auf `customize`. „Jeder freie Port trägt alle VLANs" gilt dort nicht; der
+Zielport ist einzeln zu prüfen.
+
 Reihenfolge im Fenster: HA entschärfen → pro Knoten einzeln (nie zwei gleichzeitig, Quorum
-3 von 5) Aggregation entfernen, Host auf `active-backup`, ein Kabel umstecken → danach HA
-wieder scharf, falls die Gäste es brauchen.
+3 von 5): LAG am Switch auflösen, Zielport auf `forward=all` + nativ VLAN 20 prüfen/setzen,
+Host auf `active-backup`, ein Kabel umstecken → danach HA wieder scharf, falls die Gäste es
+brauchen.
 
 Host-seitige Änderung:
 ```diff
