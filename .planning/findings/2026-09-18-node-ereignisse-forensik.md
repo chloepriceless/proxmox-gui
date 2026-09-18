@@ -43,6 +43,68 @@ LRM hatte keinen scharfen Watchdog — er ging in `wait_for_quorum` und wartete 
 Gefencet wurden **exakt die beiden Knoten mit scharfem HA-Watchdog**. Wer HA-Ressourcen
 hält, zahlt beim LAN-Aussetzer mit einem Hard-Reset; wer keine hält, wartet ihn ab.
 
+### NACHTRAG (03:30) — der Auslöser ist identifiziert: ein Switch
+
+Die erste Fassung dieses Dokuments sagte „ein LAN-Ereignis, Ursache von hier nicht
+bestimmbar". Das war zu vorsichtig — ich hatte nur `grep corosync` gemacht und die
+**Kernel-Zeilen** nicht angesehen. Die stehen da, und sie sind eindeutig:
+
+```
+2026-09-09T03:24:15  pz1  igc nic1: NIC Link is Down · igc nic0: NIC Link is Down
+2026-09-09T03:24:15  pz1  bond0: now running without any active interface!
+2026-09-09T03:24:15  pz2  … identisch, dieselbe Sekunde
+2026-09-09T03:24:15  pz3  … identisch, dieselbe Sekunde
+```
+
+**Drei Knoten, beide LACP-Slaves, dieselbe Sekunde — zwei Sekunden bevor corosync
+(03:24:17) etwas merkt.** Corosync war das Symptom, nicht der Sensor.
+
+Zuordnung über den LACP-Partner:
+
+| Knoten | Partner MAC | Link | NIC-Event 03:24:15 |
+|---|---|---|---|
+| pz1, pz2, pz3 | `f4:e2:c6:ad:a8:c7` | 2× 2500 Mbps | **ja, alle drei** |
+| pve (.241) | `28:70:4e:cf:56:13` | 2× 10000 Mbps | **nein, keine Zeile** |
+
+`.241` hängt an einem anderen Switch und verlor das Quorum nur, weil die anderen weg
+waren. Damit ist der Verursacher **der Switch `f4:e2:c6:ad:a8:c7`** (Ubiquiti-OUI), der
+um 03:24:15 alle seine Ports fallen ließ. Ein Kabel- oder Einzelport-Defekt scheidet aus —
+sonst wäre nicht jeder Slave jedes Knotens gleichzeitig weg.
+
+**Dauer**, gemessen an pz2 (der einzige, der überlebte und die Rückkehr noch loggen konnte):
+`03:24:15 now running without any active interface!` → `03:25:25 NIC Link is Up 2500 Mbps`
+= **~70 s**. Das ist keine Reconvergence-, das ist eine Reboot-Zeit.
+
+#### Und es sind exakt dieselben drei Ereignisse
+
+```
+$ journalctl --since 2026-08-01 | grep "now running without any active interface"
+  2026-08-18T04:02:44   →  Fence 04:03:19  (35 s später)
+  2026-08-20T16:49:38   →  Fence 16:50:32  (54 s später)
+  2026-09-09T03:24:15   →  Fence 03:25:11  (56 s später)
+```
+
+**Drei Totalausfälle des Bonds seit 01.08., drei Fence-Ereignisse — 1:1, ohne Ausreißer
+in beide Richtungen.** Kein Bond-Ausfall ohne Fence, kein Fence ohne Bond-Ausfall.
+(Der Journal-Bestand auf pz1 reicht bis 03.08. zurück, der Zeitraum ist also gedeckt.)
+
+Damit ist es kein diffuses „das LAN zuckt gelegentlich", sondern **ein Gerät mit drei
+dokumentierten Totalausfällen in drei Wochen**, von denen jeder zwei Hypervisor hart
+zurückgesetzt hat. Das ist ein RMA-Argument, keine Vermutung.
+
+**Abgrenzung zum UDM-Befund (Netzi, `orchestrator-network`, commit `4a77f71`):** Die UDM
+hat an allen drei Zeitpunkten *nichts* geloggt, und das ist korrekt — der Vorfall fand
+nicht auf ihr statt. Ihr separates `eth10`/SFP+-Problem (10G↔1G-Oszillation, Flap
+03:14:27–03:15:12) erklärt das Flappen von `pve`/.241 im **Vorlauf** derselben Nacht,
+nicht den Trigger 9 Minuten später. Zwei unabhängige Defekte, beide echt.
+
+**Nebenprodukt für die Netzwerk-Forensik:** Es gibt in dieser Installation keine
+Switch-Port-Historie (UniFi-`event`/`alarm` leer, `/var/log/messages` rotiert nach ~20 h).
+Die **andere Seite des Kabels** protokolliert aber mit — jeder Port-Ausfall an einem
+Proxmox-Knoten ist in dessen Kernel-Log datiert, inklusive Down-Zeit und Speed:
+`journalctl | grep -E "NIC Link is (Down|Up)|now running without any active interface"`.
+Als Interims-Sensor brauchbar, bis die Switch-Logs off-box laufen.
+
 ### Der Auslöser war das Netz, nicht ein Knoten
 
 pz2 verliert die Links zu Node 2, 3 und 5 **in derselben Sekunde**. Ein Knotenfehler
@@ -119,9 +181,15 @@ welche davon, sagt kein Log.
 
 ## Empfehlungen
 
+0. **Den Switch `f4:e2:c6:ad:a8:c7` prüfen/tauschen** — *neu nach dem Nachtrag, und
+   jetzt die wichtigste Maßnahme.* Drei Totalausfälle in drei Wochen, ~70 s Down-Zeit
+   (Reboot-Größenordnung). Ein Gerät mit dieser Bilanz gehört auf den Prüfstand, bevor
+   man die Topologie drumherum umbaut. Netzi ordnet die MAC einem konkreten USW zu.
 1. **Zweiten Corosync-Ring ziehen** (`ring1_addr`) — für Netzi + Christin. Solange
    Corosync einzügig auf dem Produktiv-LAN liegt, ist jeder Switch-Hüpfer ein
-   potenzieller Doppel-Hard-Reset. Das ist der eigentliche Fix.
+   potenzieller Doppel-Hard-Reset. Bleibt richtig — nützt aber nur, wenn der zweite Ring
+   nicht über **denselben** Switch läuft; bei einem Gerät, das alle Ports gleichzeitig
+   fallen lässt, wäre ein zweiter Ring auf demselben Blech wirkungslos.
 2. **Prüfen, ob pz1/pz3 überhaupt HA brauchen.** Fencing ist der *Preis* von HA. Wenn die
    Gäste auf pz1/pz3 kein automatisches Failover brauchen, beseitigt das Entfernen der
    HA-Ressourcen die Hard-Resets sofort und ohne Netzumbau — die günstigste Sofortmaßnahme.
