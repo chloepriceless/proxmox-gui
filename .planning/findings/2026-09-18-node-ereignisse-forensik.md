@@ -226,9 +226,16 @@ Widerspruch — der Switch entfernt den Tag, der Host legt untagged auf seine ei
 und welche Nummer die trägt, ist rein lokal. Wer die Bridge-PVID im Fenster „auf 20
 zieht", macht die Knoten unerreichbar. Die Host-Seite ändert **nur** `bond-mode`.
 
-**Gegen-Orakel nach dem Umbau** (vorab festgelegt): `/proc/net/bonding/bond0` zeigt
-`active-backup`, beide Slaves `up`, die beiden Partner-MACs sind **verschieden**, und ein
-`ifdown` des aktiven Slaves kostet keinen Quorum-Verlust.
+**Abnahme-Orakel nach dem Umbau** — vorab festgelegt, beide Seiten (mit Netzi abgestimmt):
+
+| Seite | Kriterium |
+|---|---|
+| Host (Infra) | `/proc/net/bonding/bond0` zeigt `active-backup` · beide Slaves `up` · **die beiden Partner-MACs sind VERSCHIEDEN** · `ifdown` des aktiven Slaves kostet keinen Quorum-Verlust |
+| Netz (Netzi) | kein `op_mode=aggregate` mehr auf Port 17/19/21 · Zielport `forward=all` + nativ VLAN 20 · `last_uplink_mac` des umgezogenen Slaves wechselt auf den neuen Switch · dnsmasq-Confs md5-unverändert (der Umbau berührt kein DHCP) |
+
+**Kernkriterium sind die verschiedenen Partner-MACs.** Alles andere kann grün sein,
+während beide Kabel weiter im selben Gerät stecken — und genau das ist die Aussage, die
+gemessen und nicht angenommen werden soll. Der Rest ist Begleitmessung.
 
 #### (d) ⚠️ Die Falle im Fenster selbst
 
