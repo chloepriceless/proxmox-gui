@@ -94,8 +94,18 @@ Zwei verschiedene Ursachen, und die eine ist ein Muster, kein Einzelfall.
    struktureller Fix, keine neue Hardware, nur Umstecken + drei Zeilen Config; Netzis Zug,
    angekuendigtes Wartungsfenster (einzeln unkritisch, Quorum 3 von 5 bleibt) ·
    (2) zweiter Corosync-Ring — nach (1) erst moeglich und dann weitgehend ueberfluessig,
-   also optional · (A) HA auf pz1/pz3 abschalten als Sofort-Entschaerfung, falls (0)/(1)
-   dauern.
+   also optional · (A) **HA auf pz1/pz3 abschalten** — nicht mehr nur Alternative, sondern
+   **Vorbedingung fuer (1)**: solange der Watchdog scharf ist, fenct sich der Knoten, an dem
+   gearbeitet wird, nach ~60 s selbst.
+   **Fuers Fenster vorbereitet** (Nachtrag 3, `b4f4179`): Netzi hat netzseitig freigegeben
+   (`portconf: 0`, Ziel **US24PRO2 .63** oder **US24PRO .44**, nicht USL8A). Aber:
+   die **Aggregation muss von den Ports runter** — LACP liegt bei UniFi in den
+   Port-Overrides, nicht in den Port-Profilen, und der Switch spricht nachweislich LACP
+   (lebender Partner in der LACPDU). Echte Portbelegung aus der LACPDU ausgelesen:
+   **pz1 19+20, pz2 17+18, pz3 21+22** — Netzis Client-Tabelle zeigte nur 19/17/21, weil der
+   Controller den Aggregat-MAC nur an einem Port fuehrt; seine Freiliste unterzaehlt deshalb.
+   Zielport braucht untagged + **tagged VLAN 3/4/6/42**. Host-Aenderung: `bond-mode
+   active-backup` + `bond-primary nic0`, `bond-xmit-hash-policy` faellt weg.
 3. **Stromereignis .240** (nur Christin beantwortbar): was ist am 02.09. ~01:53 an dem Stromkreis
    passiert, und was am 14.09. mittags? Kein Log kann das sagen.
 4. **`zfs destroy`** `Samsung_1TB/vm-142-disk-0/1` — Christin, unkritisch (406G ohne Loeschung frei).
