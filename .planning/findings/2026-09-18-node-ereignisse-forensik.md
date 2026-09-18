@@ -167,6 +167,81 @@ Kapazität 2×2500 = 5000 Mbit/s):
 Faktor >250 überschritten werden, um einen einzelnen 2,5G-Link zu sättigen. Die
 Aggregation kauft hier messbar nichts und kostet aktuell genau die Redundanz, die fehlt.
 
+### NACHTRAG 3 (04:00) — Umbau-Vorbereitung: was im Wartungsfenster nicht überraschen darf
+
+Netzi hat netzseitig freigegeben (`portconf: 0` → alle Ports auf Default-Trunk, ein
+umgestecktes Kabel trägt dieselben VLANs) und Zielkandidaten benannt: **US24PRO2 (.63)**
+oder **US24PRO (.44)**, *nicht* USL8A (nur 8 Ports, 41 Clients). Drei Punkte von der
+Host-Seite, die den Plan präzisieren:
+
+#### (a) Netzseitig ist doch eine Änderung nötig: die Aggregation muss weg
+
+`portconf: 0` beantwortet die VLAN-Frage, nicht die LACP-Frage — Link Aggregation liegt
+bei UniFi in den Port-Overrides des Device-Dokuments, nicht in den Port-Profilen. Dass der
+Switch LACP **aktiv spricht**, ist am Bond belegt:
+
+```
+details partner lacp pdu:
+    system mac address: f4:e2:c6:ad:a8:c7      (nicht 00:00:00:00:00:00)
+    oper key: 1002 · port priority: 1 · port state: 61
+Actor Churn State: none · Partner Churn State: none
+Active Aggregator: Number of ports: 2
+```
+
+Ohne LACPDUs vom Switch stünde dort ein Null-Partner und die Slaves lägen in **getrennten**
+Aggregatoren. Beim Wechsel auf `active-backup` muss die Aggregation auf den Ports entfernt
+werden, sonst erwartet der Switch weiter LACPDUs von einem Host, der keine mehr schickt.
+
+#### (b) Die Portbelegung ist doppelt so hoch wie die Client-Tabelle zeigt
+
+Die LACPDU trägt die Portnummer **des Switches** — damit lässt sich die Belegung vom Host
+aus auslesen, ohne Controller-Zugang:
+
+| Knoten | nic0 | nic1 |
+|---|---|---|
+| pz1 | Port 20 | Port 19 |
+| pz2 | Port 18 | Port 17 |
+| pz3 | Port 22 | Port 21 |
+
+Netzis Client-Tabelle zeigte **19, 17, 21** — die geraden Nachbarn fehlen alle drei, weil
+der Controller den Aggregat-MAC nur an einem Port führt. Sechs Ports belegt, drei sichtbar.
+Dieselbe Unterzählung gilt für jeden anderen LACP-Bond auf den Zielswitches: „15 ohne
+Client-Sichtung" ist eine **Kandidaten-, keine Freiliste**.
+
+Methode, übertragbar auf jeden LACP-gebondeten Linux-Host:
+```bash
+awk '/^Slave Interface:/{s=$3} /details partner lacp pdu:/{p=1;next} p&&/port number:/{print s" -> Port "$3; p=0}' /proc/net/bonding/bond0
+```
+
+#### (c) Was der Zielport tragen muss
+
+`untagged` (nativ, Knoten-Adressen `192.168.20.x`) plus **tagged VLAN 3, 4, 6, 42**
+(aus den Gast-Configs in pmxcfs, clusterweit — jeder Knoten muss alles tragen, sonst
+bricht Migration).
+
+#### (d) ⚠️ Die Falle im Fenster selbst
+
+**Solange HA auf pz1/pz3 scharf ist, fenct sich der Knoten, an dem gerade gearbeitet wird,
+nach ~60 s selbst** — genau der Mechanismus, den der Umbau abstellen soll, schlägt während
+der Reparatur zu. Also entweder HA vorher abschalten (= Empfehlung 3 ohnehin, dann kein
+Extraschritt) oder jede Unterbrechung unter ~50 s halten. Ersteres ist entspannter, weil man
+dann nicht gegen eine Uhr arbeitet.
+
+Reihenfolge im Fenster: HA entschärfen → pro Knoten einzeln (nie zwei gleichzeitig, Quorum
+3 von 5) Aggregation entfernen, Host auf `active-backup`, ein Kabel umstecken → danach HA
+wieder scharf, falls die Gäste es brauchen.
+
+Host-seitige Änderung:
+```diff
+ iface bond0 inet manual
+ 	bond-slaves nic0 nic1
+ 	bond-miimon 100
+-	bond-mode 802.3ad
+-	bond-xmit-hash-policy layer3+4
++	bond-mode active-backup
++	bond-primary nic0
+```
+
 ### Der Auslöser war das Netz, nicht ein Knoten
 
 pz2 verliert die Links zu Node 2, 3 und 5 **in derselben Sekunde**. Ein Knotenfehler
