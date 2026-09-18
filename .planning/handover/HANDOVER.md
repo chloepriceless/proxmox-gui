@@ -53,7 +53,14 @@ Zwei verschiedene Ursachen, und die eine ist ein Muster, kein Einzelfall.
   Knoten mit scharfem `pve-ha-lrm`-Watchdog setzen sich ~60 s spaeter selbst hart zurueck
   (`watchdog0: watchdog did not stop!` als letzte Journal-Zeile, keine Shutdown-Sequenz).
   **Dieselbe Signatur auch am 18.08. 04:03 und 20.08. 16:50 — dreimal in drei Wochen.**
-  Struktur: `corosync.conf` hat nur `ring0_addr` auf dem flachen Produktiv-LAN, kein `ring1_addr`.
+  **Ausloeser identifiziert (Nachtrag, `ecef376`): ein Switch.** Der Kernel meldet den
+  Link-Verlust **2 s vor corosync** — pz1, pz2 und pz3 verlieren um 03:24:15 gleichzeitig
+  **beide LACP-Slaves** (`bond0: now running without any active interface!`). Alle drei
+  bonden gegen Partner **`f4:e2:c6:ad:a8:c7`**; `pve`/.241 haengt an `28:70:4e:cf:56:13`
+  und hat im ganzen Fenster keine NIC-Zeile. Down-Zeit ~70 s = Reboot-Groesse.
+  Seit 01.08.: **drei bond0-Totalausfaelle, drei Fences, 1:1 in beide Richtungen** —
+  RMA-Argument, keine Vermutung.
+  Struktur bleibt: `corosync.conf` hat nur `ring0_addr` auf dem flachen Produktiv-LAN.
 - **.240, 02.–14.09. — Strom.** Journal bricht mitten im Betrieb ab, Watchdog seit 20.08.
   geschlossen (Fencing ausgeschlossen), BMC-SEL hat zwischen 08.08. und 14.09. **keinen Eintrag**
   → auch Standby stromlos. Bei `Power Restore Policy: always-on` heisst das woertlich: 12 Tage
@@ -66,9 +73,12 @@ Zwei verschiedene Ursachen, und die eine ist ein Muster, kein Einzelfall.
    **Danach** reserviert Netzi `.176` auf `BC:24:11:8F:6F:49` — Zwei-Minuten-Zug bei ihm.
    Schritt 2 allein brachte nichts: eine DHCP-Reservierung bringt einen statisch konfigurierten
    ARP-Zweitsprecher nicht zum Schweigen.
-2. **HA-Fencing** (Entscheidung Christin, MC liegt beim Hub): (A) HA auf pz1/pz3 abschalten, falls
-   die Gaeste kein Failover brauchen — sofort wirksam, kein Netzumbau, meine Empfehlung ·
-   (B) zweiter Corosync-Ring mit Netzi · (C) Risiko akzeptieren.
+2. **HA-Fencing** (Entscheidung Christin, MC liegt beim Hub) — **Empfehlung nach dem
+   Switch-Nachtrag umsortiert:** (0) **Switch `f4:e2:c6:ad:a8:c7` pruefen/tauschen** —
+   steht jetzt vorn, Netzi ordnet die MAC einem USW zu · (A) HA auf pz1/pz3 abschalten als
+   Sofort-Entschaerfung, waehrend der Switch geklaert wird · (B) zweiter Corosync-Ring —
+   **nur sinnvoll, wenn er nicht ueber dasselbe Blech laeuft**, sonst Kosmetik ·
+   (C) Risiko akzeptieren.
 3. **Stromereignis .240** (nur Christin beantwortbar): was ist am 02.09. ~01:53 an dem Stromkreis
    passiert, und was am 14.09. mittags? Kein Log kann das sagen.
 4. **`zfs destroy`** `Samsung_1TB/vm-142-disk-0/1` — Christin, unkritisch (406G ohne Loeschung frei).
@@ -95,6 +105,15 @@ Zwei verschiedene Ursachen, und die eine ist ein Muster, kein Einzelfall.
 - **`caddy validate` / `systemctl is-active` sind keine Orakel fuer „liefert aus".**
   Abnahme gegen den Nutz-Output. Standard-Fehlerklasse dieser Flotte.
 - **Bei einem Cluster-Ereignis ist der beste Zeuge der Knoten, der NICHT rebootet hat.**
+  Nur er kann die *Rueckkehr* noch loggen — und damit die Down-Zeit liefern, die Flap von
+  Reboot trennt.
+- **Der Kernel ist der Sensor, corosync der Alarm.** `grep corosync` zeigt das Symptom
+  2 s zu spaet; `NIC Link is Down` / `now running without any active interface` zeigt die
+  Ursache. Zuordnung zum Geraet ohne Switch-Zugriff: `Partner Mac Address` aus
+  `/proc/net/bonding/bond0` — gleiche Partner-MAC = gleicher Switch.
+- **Korrelation in BEIDE Richtungen pruefen.** Drei Ausfaelle → drei Fences ist erst dann
+  ein Argument, wenn es auch keinen Ausfall ohne Fence gibt. Nur die Hinrichtung zu
+  pruefen ist der uebliche Fehler.
 - **`journalctl -b -1/-2/-3` auf die letzten Zeilen** verwandelt ein Einzelereignis in ein Muster.
 - **`ipmitool`-Felder wie `Last Power Event` sind gelatcht und ohne Zeitstempel** — die
   SEL-**Luecke** ist der belastbare Beleg, nicht das Feld.
