@@ -190,3 +190,51 @@ Das ist dasselbe Muster wie zweimal zuvor diese Woche:
 Drei verschiedene Dienste, dieselbe Falle. **Konsequenz, die der Hub gezogen hat und die richtig ist:
 Abnahme gegen den Nutz-Output pruefen (echte JSON-Treffer), nie gegen `systemctl status`.**
 Deckt sich mit R31 (Done heisst verifiziert gegen ein unabhaengiges Signal).
+
+## Eskalation: die Zonen-Wildcard ist ein Datenabfluss-Risiko, kein Schoenheitsfehler
+Der Hub hat den Befund richtig hoeher gehaengt, und Netzi hat ihn konkret gemacht: zwischen
+Provisionierung und erstem neuem Lease hatte `searxng` **gar keinen Record** — er hat waehrend dieses
+Lochs gemessen, dass der Name nach draussen zeigte. Das Loch entsteht bei **jedem** Umpinn-Vorgang.
+
+**Kernaussage:** ein verlorener Record verwandelt eine Suchanfrage in einen Datenabfluss. Kein
+DNS-Fehler, kein Log, keine Warnung — die Anfrage geht woanders hin und bekommt eine Antwort.
+Suchanfragen eines Modells sind Inhalt, nicht Metadaten.
+
+### Eigene Messung: das Weiterleiten ist der Unterschied
+```
+searxng.bikini.bottom.zone           -> 192.168.20.210    (Record vorhanden)
+quatsch-xyz-999.bikini.bottom.zone   -> 87.139.158.187    (Wildcard, WAN)
+quatsch-xyz-999.example.invalid      -> NXDOMAIN          (korrektes Verhalten!)
+87.139.158.187:443 -> OFFEN · :80 -> OFFEN
+```
+Der dritte Fall ist der Beleg: bei einer **anderen** Domain antwortet der Resolver korrekt mit
+NXDOMAIN. Nur `bikini.bottom.zone` wird upstream weitergeleitet, und oben liegt die Wildcard.
+Die WAN-IP hat auf 80 **und** 443 offene Listener — das Ziel ist erreichbar, nicht theoretisch.
+
+### Vorgeschlagener struktureller Fix (Netzis Domaene, Entscheidung bei ihm)
+`static_dns` zu befuellen behebt die Namen, an die man **denkt** — nicht den Tippfehler von morgen.
+Die Klasse loest man in dnsmasq:
+```
+local=/bikini.bottom.zone/
+```
+= "diese Zone niemals upstream fragen, nur aus lokalen Daten beantworten". Unbekannte Namen darunter
+bekommen **NXDOMAIN statt der WAN-IP** — der Fehler wird laut statt still.
+
+**Reihenfolge ist wichtig, kein Entweder-oder:** `local=` allein wuerde die fuenf Hypervisor-Namen
+(die heute gar keinen Record haben) auf NXDOMAIN setzen — besser als nach draussen zu zeigen, aber
+`ssh pz1` waere dann kaputt statt gefaehrlich. Also **erst die Node-Records, dann `local=`**.
+Offen bleibt, ob die UniFi-Config das durchlaesst oder beim naechsten Provisioning ueberschreibt.
+
+### Uebernommene Verfahrensregel (Netzi)
+**Bei produktiven Diensten: erst den static_dns-Record auf die Zieladresse, dann umpinnen.**
+Sonst zeigt der Name waehrend des Lease-Lochs still nach draussen statt zu scheitern.
+Bei CT165 folgenlos (nicht produktiv), bei einem Dienst mit Zugangsdaten nicht.
+
+### .200 / caddy-proxy
+Netzi bucht `use_fixedip`. Zugestimmt: der Proxy zieht nicht um, und **.200 war unsichtbar, weil sie
+die Luecke war** — sie "selbst zu halten" ohne Eintrag in seiner Liste wuerde die Falle nachbauen.
+
+### Konsens mit dem Hub: kein Abschluss ohne Nutzlast-Nachweis
+Vier Faelle in einer Woche — Caddy auf `*:443` ohne Inhalt, netdata mit abgewiesenem Scraper,
+uwsgi ohne `plugins = python3`, und die Pipeline des Hubs, die einen fehlgeschlagenen Install als
+Exit 0 meldete. `systemctl status` beweist, dass ein Prozess lebt, nicht dass er seine Aufgabe tut.
