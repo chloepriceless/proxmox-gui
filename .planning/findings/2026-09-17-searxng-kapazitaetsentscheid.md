@@ -143,3 +143,50 @@ Netzis Nebenbefund erklaert die Unsichtbarkeit: der Controller **kennt** die .20
 Clients aus Switch-Traffic, nicht nur aus DHCP), nur `use_fixedip=false` haelt sie aus jeder
 Reservierungsliste raus. Die Falle ist also nicht "unbekanntes Geraet", sondern "bekanntes Geraet
 ohne Flag" — wer nach Luecken in der Reservierungsliste sucht, sieht sie nie.
+
+## Abschluss: CT165 auf .210, verifiziert (2026-09-18)
+Netzi hat die Reservierung geschrieben (Schnueffi-GO, gegen vorab festgelegtes Orakel gemessen:
+genau +1 Zeile in der br0-Conf, 64 -> 65, `dnsmasq --test` OK, 9 uebrige Confs md5 unveraendert).
+Reboot von CT165 **nach** dem Install des Hubs (ein Reboot mitten im pip-Lauf waere destruktiv gewesen).
+
+**Gegentest bestanden:** vorher `.109`, 8 Sekunden nach dem Reboot `192.168.20.210/24` —
+kein NAK-Umweg noetig.
+
+| Pruefung | Ergebnis |
+|---|---|
+| Lease | `192.168.20.210/24` auf MAC `BC:24:11:5E:A7:C3` |
+| **`searxng`** | -> **192.168.20.210** |
+| **`searxng.bikini.bottom.zone`** | -> **192.168.20.210** |
+| systemd | `running`, 0 failed (Maskierungen persistent ueber Reboot) |
+| searxng / nginx | beide `active` **und** `enabled` (stop-mode-Backup-resilient) |
+| RAM | 261 M / 1024 M |
+| `/healthz` | HTTP 200 |
+| `/search?...&format=json` | **42 Treffer**, Engines brave + duckduckgo + google cse, Schema vollstaendig |
+
+Eigene Anfrage gestellt statt den Test des Hubs nachzusprechen.
+
+**Die Namensaufloesung ist der Beleg, dass die Umentscheidung richtig war** — genau das haette die
+statische Config gekostet. `static_dns` blieb unberuehrt.
+
+**Die 261 M bestaetigen die nativ-statt-Docker-Entscheidung nachtraeglich:** mit Daemon waere man bei
+~450-500 M gelandet, unter Last mit vier uwsgi-Workern waere 1 GB dann knapp geworden.
+
+### ACL-Erweiterung des Hubs (akzeptiert)
+Der Hub hat `allow 192.168.42.0/24` ergaenzt, weil er als **192.168.42.42** ankommt — das ist die
+VLAN42-Adresse der Coder-VM (VM142), in der sein Docker-Container sitzt und die ihn dorthin NATet.
+Dieselbe Adresse ist der einzige VLAN42-Scrape-Target von VictoriaMetrics (`scrape.yml:169`).
+Cluster-weit haengen in VLAN42 genau zwei Gaeste (CT126, VM142) — kleiner, bekannter Kreis,
+`deny all` bleibt, nichts oeffentlich. Bitte an den Hub: Zeile spaeter entfernen, falls sie nur fuer
+seine Tests war und Christins Modell aus VLAN20 anfragt.
+
+### Wiederkehrendes Muster dieser Woche: gruene Unit ueber echtem Defekt
+Der Hub fand in seinem Skript, dass **Debians modulares uwsgi ohne `plugins = python3`** den Socket
+bindet, `active (running)` meldet und die App **nie laedt** (`no request plugin is loaded`).
+Das ist dasselbe Muster wie zweimal zuvor diese Woche:
+- **CT143/Caddy** lauschte auf `*:443` und servierte nichts (Site-Block matchte nur die alte IP)
+- **netdata** lief auf allen vier Nodes und wies den Scraper ab (ACL auf `.163`)
+- **uwsgi** laeuft, bindet, laedt die App nicht
+
+Drei verschiedene Dienste, dieselbe Falle. **Konsequenz, die der Hub gezogen hat und die richtig ist:
+Abnahme gegen den Nutz-Output pruefen (echte JSON-Treffer), nie gegen `systemctl status`.**
+Deckt sich mit R31 (Done heisst verifiziert gegen ein unabhaengiges Signal).
