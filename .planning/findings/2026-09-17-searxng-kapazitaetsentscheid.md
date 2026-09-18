@@ -79,3 +79,67 @@ Ursache unbekannt. Zusammen mit dem ungeklaerten 12-Tage-Ausfall von proxmox/.24
 sind das **zwei unerklaerte Node-Ereignisse in zwei Wochen**.
 Kein Blocker fuer SearXNG (die Ueberbuchung von pz2 mit 2.47x wiegt schwerer als der Uptime-Vorteil),
 aber fuer Christin notiert — das gehoert angesehen, bevor es ein drittes Mal passiert.
+
+## Umentscheidung: DHCP + Reservierung statt statisch (2026-09-17, spaet)
+Netzi hat den Pool gemessen: `dhcpd_start=192.168.20.30` / `dhcpd_stop=192.168.20.199`
+(UniFi `networkconf`, identisch in der gerenderten dnsmasq-Config, ein DHCP-Server, kein Relay).
+**.210 zugewiesen**, 11 Adressen oberhalb der Pool-Obergrenze; er deklariert `.200-.229` als Block
+fuer statisch konfigurierte Infra-Dienste.
+
+**Entscheidender Befund von ihm:** eine `dhcp-host`-Reservierung greift auf dieser Box auch
+**ausserhalb** der `dhcp-range` — belegt an `.240`/`.241`, die beide draussen liegen und live
+zugeteilt werden. Damit gibt es keinen Grund mehr fuer eine statische Container-Config:
+`ip=dhcp` + Reservierung liefert dieselbe feste Adresse **plus** den dnsmasq-Namen.
+
+**Ich habe meine eigene Festlegung revidiert.** Mein "kein DHCP im Boot-Weg" kam aus dem CT141-Fall —
+aber CT141 lief ins Timeout, **weil der Pool leergefegt war**, und das ist ausserhalb von `.30-.199`
+strukturell unmoeglich. Ich hatte eine Lehre auf einen Fall uebertragen, auf den sie nicht passt.
+Dazu Netzis eigenes Argument vom 14.09., das hier eins zu eins gilt: der DHCP-Server **ist** die UDM;
+faellt sie aus, fehlen Routing, DNS und Gateway ohnehin. Eine statisch gebundene Meta-Suchmaschine
+waere dann zuverlaessig erreichbar und koennte nichts liefern.
+
+**Final:** `net0: ...,hwaddr=BC:24:11:5E:A7:C3,ip=dhcp` + Reservierung auf `.210`.
+`static_dns` wird dafuer **nicht** gebraucht — der Name kommt ueber den Lease.
+
+## CT165 angelegt und verifiziert (Node pz3)
+```
+pct create 165 local:vztmpl/debian-13-standard_13.1-2_amd64.tar.zst \
+  --hostname searxng --cores 2 --memory 1024 --swap 512 \
+  --rootfs Samsung_1TB:8 \
+  --net0 name=eth0,bridge=vmbr0,hwaddr=BC:24:11:5E:A7:C3,ip=dhcp,type=veth \
+  --unprivileged 1 --onboot 1 --ostype debian --timezone Europe/Berlin \
+  --ssh-public-keys <christin + id_ed25519>
+```
+`authorized_keys`: Christins Fleet-Key (Standard in allen Containern) + `id_ed25519`
+(damit auch der Hub reinkommt — er nutzt denselben Key fuer den Cluster-Zugang).
+
+### systemd 257 unter unprivileged — nesting war NICHT noetig
+Proxmox warnt beim Anlegen und bei jedem Start: *"Systemd 257 detected. You may need to enable nesting."*
+Erster Boot: `degraded`, drei fehlgeschlagene Mount-Units — `dev-mqueue.mount`, `run-lock.mount`, `tmp.mount`.
+
+**Nicht mit `nesting=1` geloest**, sondern geprueft, ob die Pfade trotzdem nutzbar sind: alle drei
+existieren und sind beschreibbar. systemd wollte lediglich tmpfs darueberlegen und durfte es nicht.
+-> Units maskiert (`systemctl mask dev-mqueue.mount run-lock.mount tmp.mount`), Reboot.
+
+**Verifiziert nach Reboot:** `systemctl is-system-running` -> **`running`**, 0 failed units,
+`/tmp` + `/run/lock` beschreibbar, RAM 16M/1024M, Disk 601M/8.0G (8%).
+Nebeneffekt positiv: ohne tmpfs-`/tmp` konkurriert nichts mit den 1 GB RAM.
+
+**Merksatz:** Die Proxmox-Warnung betrifft systemd-Komfortmounts, nicht die Funktion.
+Fuer eine Python/uwsgi-App reicht Maskieren — `nesting=1` waere hier Overkill gewesen.
+
+### Gluecklicher Nebeneffekt: Netzis Blocker aufgeloest
+Der Test-Boot hat regulaer per DHCP bezogen (`.109` aus dem Pool). Damit **kennt der Controller die
+MAC** — Netzi war bei "0 von 67 Praezedenzfaellen" fuer einen handgelegten Doc einer nie gesehenen MAC
+(Worst Case: synthetischer Doc zerschiesst den Config-Generator -> hausweiter DHCP-Ausfall).
+Jetzt ist es der Standardfall: `use_fixedip` + `fixed_ip=.210` auf einem echten, gelernten Doc flippen.
+Danach Reboot von CT165, Gegentest beim zweiten Bezug.
+
+### .200 aufgeklaert
+`CT200 caddy-proxy @ pz1`, MAC `BC:24:11:48:21:F5`, statisch (`ip=192.168.20.200/24`), `onboot=1`,
+1 core/256 MB, Ports 22/80/443. Kein Verwaister — **VMID 200 und IP .200 bewusst aufeinandergelegt**,
+Adresse ausserhalb des Pools. Bleibt wo sie ist, Netzi bucht sie als Kollisionsschutz.
+Netzis Nebenbefund erklaert die Unsichtbarkeit: der Controller **kennt** die .200 (lernt verkabelte
+Clients aus Switch-Traffic, nicht nur aus DHCP), nur `use_fixedip=false` haelt sie aus jeder
+Reservierungsliste raus. Die Falle ist also nicht "unbekanntes Geraet", sondern "bekanntes Geraet
+ohne Flag" — wer nach Luecken in der Reservierungsliste sucht, sieht sie nie.
