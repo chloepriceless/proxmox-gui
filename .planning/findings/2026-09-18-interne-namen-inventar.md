@@ -87,3 +87,63 @@ FQDN der Zone. Die Fleet-Policy fuer Merkel nutzt durchgehend **IPs**
 - **Option A (Wildcard verengen, Christin-Gate)** bleibt der Strukturfix. Mit diesem Inventar ist die
   Vorbedingung des Hubs erfuellt: im Proxmox-Cluster haengt **nichts** an einem FQDN der Zone ausser
   den Proxy-vhosts und `game.` auf CT103.
+
+## 🔴 Vorgelagerter Befund (Netzi): drei Hypervisor-Adressen liegen ungesichert im DHCP-Pool
+Beim Gegenpruefen der C-Zielliste fand Netzi, dass die Node-Adressen selbst nicht gesichert sind.
+Von mir gemessen und **verschaerft**: es sind **drei** Nodes, nicht zwei.
+
+```
+.42  (pz2)   im Pool (.30-.199), statisch belegt, KEINE Reservierung   -> ungeschuetzt
+.68  (pz1)   im Pool, statisch belegt, KEINE Reservierung              -> ungeschuetzt
+.106 (pz3)   im Pool, Reservierung auf 00:e0:4c:56:36:92 — real ist :93 -> greift NIE, ungeschuetzt
+.240 (proxmox) / .241 (pve)   ausserhalb des Pools                      -> strukturell sicher
+```
+Die Nodes sind statisch konfiguriert und halten **keinen Lease** — es schuetzt sie also nichts davor,
+dass dnsmasq ihre Adresse an ein anderes Geraet vergibt. Dieselbe Zeitbombe wie am 14.09., nur an der
+Wurzel der Hypervisoren statt an den Containern.
+
+### Node-Identitaet, am IP-tragenden Interface gemessen
+```
+pz1   192.168.20.68    vmbr0 <- bond0   00:e0:4c:5b:96:b2
+pz2   192.168.20.42    vmbr0 <- bond0   00:e0:4c:5b:96:98
+pz3   192.168.20.106   vmbr0 <- bond0   00:e0:4c:56:36:93
+```
+Methode: auf jedem Node das Interface ermittelt, das die Adresse traegt, dann dessen MAC gelesen —
+nicht aus einer Liste zugeordnet. Deckt sich mit `/etc/pve/.members` und `pvecm status`.
+
+**MAC-Stabilitaet geprueft** (weil es Bonds sind): alle drei `802.3ad`, `fail_over_mac: none`, und
+**beide Slaves tragen jeweils schon die Bond-MAC** (nic0 == nic1). Slave-Ausfall oder Umreihung
+aendert die MAC nicht -> eine Reservierung darauf ist belastbar.
+
+### Betriebsentscheidung: reservieren wo sie sind, NICHT umziehen
+Netzi hatte den Umzug in den statischen Block mit "kostet je einen Node-Neustart" bewertet — das ist
+deutlich zu guenstig:
+```
+/etc/pve/corosync.conf:   pz1 ring0_addr: 192.168.20.68
+                          pz2 ring0_addr: 192.168.20.42
+                          pz3 ring0_addr: 192.168.20.106
+```
+**Die Node-IPs sind die corosync-Ring-Adressen.** Eine Adressaenderung ist kein Netzwerk-Reboot,
+sondern ein Eingriff in die **Cluster-Mitgliedschaft**: `corosync.conf` versioniert aendern, alle fuenf
+Nodes muessen die neue Sicht uebernehmen, ein Fehler kostet **Quorum**. Bei laufenden Gaesten auf pz1
+(grafana, victoriametrics, node-red, caddy-proxy, HomeAssistant) und pz2 (merkel, checkmk,
+forgejo-runner, protectbridge) ist das geplante Wartung mit Rueckfallplan.
+
+Eine Reservierung auf eine nachweislich stabile MAC ist dagegen reversibel, sofort wirksam, risikofrei.
+Falls die Adressen langfristig aus dem Pool sollen, waere **die Pool-Untergrenze von `.30` auf `.45`
+anheben** der billigere Weg als drei Node-Umzuege (nimmt .42 raus, laesst .68/.106 drin) — eigener
+geplanter Vorgang, nicht jetzt.
+
+### Stale Reservierungen freigeben
+`.65` und `.105` antworten nicht auf ping. Es sind `ZimaBoard2`-Docs zu den MACs, die real auf `.68`
+und `.106` sitzen — nie nachgezogen, als die Hosts auf statisch umgestellt wurden. Koennen zurueck in den Pool.
+
+### Reihenfolge (Netzis, bestaetigt)
+Adressen vor Namen — ein Record auf eine Adresse, die morgen jemand anderem gehoert, ist schlimmer
+als kein Record.
+1. `.42` / `.68` / `.106` auf die drei MACs reservieren, `.106`s Off-by-one korrigieren
+2. `.65` / `.105` freigeben
+3. Dann C: sechs vhosts + `caddy-proxy` auf `.200`, fuenf Node-Namen auf ihre Adressen
+
+**CT200 hat kein `hostname`-Feld** (Netzi) — da kaeme auch mit DHCP kein Name heraus. Der Proxy
+braucht seinen `static_dns`-Eintrag also zwingend, die Reservierung allein reicht nicht.
