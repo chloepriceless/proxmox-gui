@@ -136,8 +136,11 @@ fi
 # ----------------------------------------------------------------------------
 echo "==> apt-get update + base packages..."
 apt-get update -qq
+# sudo: the Debian 12 standard LXC template does not ship it, but Step 5c
+# writes /etc/sudoers.d/ + runs visudo, and the self-update job calls
+# `sudo -n systemctl restart` (GitHub issue #1).
 apt-get install -y -qq \
-    ca-certificates curl git \
+    ca-certificates curl git sudo \
     sqlite3 \
     nodejs npm \
     caddy \
